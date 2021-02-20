@@ -181,6 +181,8 @@ public class RequestHandler implements HttpHandler {
 			h.add("Access-Control-Allow-Origin", "*");
 			h.add("Access-Control-Allow-Headers", "*");
 			h.add("Access-Control-Allow-Methods", "GET, POST");
+			h.add("Cache-Control", "no-cache");
+			h.add("X-Content-Type-Options", "nosniff");
 		}
 
 		public List<String> getParameterValues(String key) {
@@ -272,7 +274,6 @@ public class RequestHandler implements HttpHandler {
 			}
 
 			long mtime = r.modTime;
-			addHeader("Content-Cache", "max-age=2592000,no-cache");
 			addHeader("Last-Modified", HDATE.format(new Date(mtime)));
 
 			String ifmod = request.getRequestHeaders().getFirst("If-Modified-Since");

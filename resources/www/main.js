@@ -14,7 +14,7 @@ function evt(sel, t, fn, dom) {
 }
 
 document.addEventListener('click', function (e) {
-	if (e.target && e.target.matches('a[href="#"]')) {
+	if (!e.target && e.target.matches('a[href="#"]')) {
 		e.preventDefault();
 	}
 });
@@ -26,6 +26,29 @@ window.addEventListener('DOMContentLoaded', function () {
 		navigator.sendBeacon('/del-session?id=' + _instanceId);
 	});
 });
+
+function addMsg(message, cls) {
+	var m = document.createElement('div');
+	m.className = cls || 'error';
+	m.innerHTML = message;
+	sel('#message').appendChild(m);
+	setTimeout(function () { m.remove() }, 5000);
+}
+function delMsg() {
+	sel('#message').innerHTML = '';
+}
+function addConfirm(message, callback) {
+	var m = document.createElement('div');
+	m.className = 'confirm';
+	m.innerHTML = message + '<a href="#" class="btn error yes">Yes</a> <a href="#" class="btn cancel">Cancel</a>';
+	m.addEventListener('click', function (e) {
+		if (!e.target || !e.target.matches('.yes,.cancel')) return;
+		e.target.closest('.confirm').remove();
+		if (e.target.matches('.yes')) callback();
+	});
+	sel('body').appendChild(m);
+
+}
 
 function ttip(dom, event) {
 	var c = dom.offsetParent;
@@ -52,9 +75,8 @@ function ttip(dom, event) {
 	return t;
 }
 document.addEventListener('click', function (e) {
-	if (e.target) {
-		each('.tooltip', function (i) { i.remove(); }, e.target);
-	}
+	if (!e.target) return;
+	each('.tooltip', function (i) { i.remove(); }, e.target);
 });
 
 var Editor = function (dom) {
@@ -70,12 +92,13 @@ var Editor = function (dom) {
 	});
 
 	dom.addEventListener('click', function (e) {
-		if (e.target && e.target.matches('[data-render]')) {
+		if (!e.target) return;
+		if (e.target.matches('[data-render]')) {
 			var cid = parseInt(e.target.dataset.render);
 			if (self.chunks[cid]) self.render(cid);
 		}
 
-		if (e.target && e.target.matches('.plus-one')) {
+		if (e.target.matches('.plus-one')) {
 			var cid = parseInt(e.target.dataset.cid);
 			dom.insertBefore(self.renderChunk(cid), e.target);
 			if (self.chunks.length > cid + 1) {
@@ -86,8 +109,8 @@ var Editor = function (dom) {
 		}
 	});
 
-	window.addEventListener('beforeunload', function(e) {
-		if (self.changed(true)) {
+	window.addEventListener('beforeunload', function (e) {
+		if (!self.onsaved()) {
 			e.preventDefault();
 			e.returnValue = 'Unsaved changes!';
 			return 'Unsaved changes!';
@@ -164,22 +187,25 @@ Editor.prototype.load = function (data, show_filler) {
 	onload();
 
 }
-Editor.prototype.changed = function (no_dialog) {
-	var changed = false;
+Editor.prototype.onsaved = function (callback) {
+	var saved = true;
 	var self = this;
 	each('[data-cid]', function (i) {
 		var c = self.chunks[i.dataset.cid];
 		var t = (c.name ? Editor.TYPES[c.name] : false) || Editor.TYPES._default_;
 		if (c.id && t.getValue) {
 			if (c.value != (t || Editor.TYPES._default_).getValue(i, c)) {
-				changed = true;
+				saved = false;
 			}
 		}
 	}, self.dom);
-	if (!changed || no_dialog) {
-		return changed;
+	if (!callback) {
+		return saved;
+	} else if (saved) {
+		callback();
+		return;
 	}
-	return !confirm('There are unsaved changes! Are you sure?');
+	addConfirm('There are unsaved changes! Are you sure?', callback);
 }
 Editor.prototype.onchange = function (input) {
 	var c = this.chunks[input.dataset.cid];
@@ -190,21 +216,21 @@ Editor.prototype.onchange = function (input) {
 	}
 }
 Editor.prototype.render = function (cid) {
-	if (this.changed()) {
-		return;
-	}
-	this.dom.innerHTML = '';
-	this.dom.appendChild(this.renderPaginator(cid));
-	this.dom.appendChild(this.renderChunk(cid));
+	var self = this;
+	self.onsaved(function () {
+		self.dom.innerHTML = '';
+		self.dom.appendChild(self.renderPaginator(cid));
+		self.dom.appendChild(self.renderChunk(cid));
 
-	if (this.chunks.length > cid + 1) {
-		var a = document.createElement('a');
-		a.setAttribute('href', '#');
-		a.className = 'btn plus-one';
-		a.dataset.cid = cid + 1;
-		a.innerHTML = '+1';
-		this.dom.appendChild(a);
-	}
+		if (self.chunks.length > cid + 1) {
+			var a = document.createElement('a');
+			a.setAttribute('href', '#');
+			a.className = 'btn plus-one';
+			a.dataset.cid = cid + 1;
+			a.innerHTML = '+1';
+			self.dom.appendChild(a);
+		}
+	});
 }
 Editor.prototype.renderChunk = function (cid) {
 	var c = this.chunks[cid];
@@ -248,40 +274,27 @@ Editor.prototype.renderPaginator = function (cid) {
 
 var editor = new Editor(sel('#editor'));
 
-function addMsg(message, cls) {
-	var m = document.createElement('div');
-	m.className = cls || 'error';
-	m.innerHTML = message;
-	sel('#message').appendChild(m);
-	setTimeout(function () { m.remove() }, 5000);
-}
-function delMsg() {
-	sel('#message').innerHTML = '';
-}
-
 function open() {
-	if (editor.changed()) {
-		return;
-	}
-	fetch('/open').then(r => r.json()).then(function (data) {
-		if (!data.success) {
-			addMsg(data.error || 'Unknown Error');
-			return;
-		}
-		editor.load(data);
+	editor.onsaved(function () {
+		fetch('/open').then(r => r.json()).then(function (data) {
+			if (!data.success) {
+				addMsg(data.error || 'Unknown Error');
+				return;
+			}
+			editor.load(data);
+		});
 	});
 }
 
 function restore() {
-	if (editor.changed()) {
-		return;
-	}
-	fetch('/restore?id=' + (localStorage.last_id || 0)).then(r => r.json()).then(function (data) {
-		if (!data.success) {
-			addMsg(data.error || 'Unknown Error');
-			return;
-		}
-		editor.load(data);
+	editor.onsaved(function () {
+		fetch('/restore?id=' + (localStorage.last_id || 0)).then(r => r.json()).then(function (data) {
+			if (!data.success) {
+				addMsg(data.error || 'Unknown Error');
+				return;
+			}
+			editor.load(data);
+		});
 	});
 }
 
