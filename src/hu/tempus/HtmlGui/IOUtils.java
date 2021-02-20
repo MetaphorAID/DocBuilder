@@ -103,7 +103,6 @@ public class IOUtils {
 				return;
 			}
 			try {
-				System.out.println("read: " + file.getAbsolutePath());
 				if (file.exists()) {
 					is = new FileInputStream(file);
 					fileSize = (int) file.length();
