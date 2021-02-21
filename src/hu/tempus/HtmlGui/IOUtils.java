@@ -35,6 +35,7 @@ public class IOUtils {
 		MIME_TYPES.put("js", "text/javascript");
 		MIME_TYPES.put("css", "text/css");
 		MIME_TYPES.put("MF", "text/plain"); // manifest
+		MIME_TYPES.put("pid", "text/plain"); // lock file with process id
 		ReadFile r = new ReadFile(new File("mime.types"));
 		if (!r.isNull()) {
 			try {
