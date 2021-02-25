@@ -1,0 +1,14 @@
+
+.par { margin:.25em .5em; text-align:left; border-bottom:2px dashed; }
+.par .s, .par .w, .par .cfg { border:1px solid; margin:1em 0; }
+.par .w, .par .cfg { display:inline-block; margin:.125em; padding:0 .25em; cursor:pointer; }
+.par .cfg { float:right; }
+
+.par .w.left { border-left-style:dotted; }
+.par .w.right { border-right-style:dotted; }
+.par .w.modified { border-color:#660; }
+.par .w.unchecked { background-color:#FBB; }
+
+.par .tkn, .par table th { text-align:center; }
+.par .tkn { font-weight:400; }
+.par .btn.selected { background-color:#9F9; }
