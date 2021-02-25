@@ -20,11 +20,18 @@ function trg(s, e, dom) {
 		i.dispatchEvent(new Event(e, { bubbles: true }));
 	}, dom);
 }
-function escAttr(t) {
+function encXml(t) {
 	return ('' + t).replace('&', '&amp;').replace("'", '&apos;').replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;');
 }
-function unescAttr(t) {
+function decXml(t) {
 	return ('' + t).replace('&apos;', "'").replace('&quot;', '"').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&');
+}
+function xmlToText(xml, decode) {
+	var t = xml.replace(/<[^>]+>/sg, ' ').trim();
+	return decode ? decXml(t) : t;
+}
+function selToText(dom, s, decode) {
+	return xmlToText(sel(s, dom).innerHTML, decode);
 }
 function addMsg(message, cls) {
 	var m = document.createElement('div');
@@ -352,6 +359,11 @@ Editor.prototype.renderPaginator = function (cid) {
 	p.innerHTML = html;
 	return p;
 }
+Editor.prototype.getVisible = function () {
+	var cids = [];
+	each('[data-cid]', function (i) { cids.push(i.dataset.cid); }, this.dom);
+	return cids;
+}
 
 var History = function (name, max, onchange) {
 	this.name = name;
@@ -401,9 +413,7 @@ for (var n in hist) {
 }
 
 var editor = new Editor(sel('#editor'), function (chunks, values) {
-	var cids = [];
-	each('[data-cid]', function (i) { cids.push(i.dataset.cid); }, editor.dom);
-	hist.undo.add({ id: editor.id, chunks: chunks, values: values, cids: cids });
+	hist.undo.add({ id: editor.id, chunks: chunks, values: values, cids: editor.getVisible() });
 	hist.redo.clear();
 	var tosave = [];
 	for (var cid in chunks) {
@@ -445,8 +455,7 @@ function save(chunks) {
 function undo(reverse) {
 	var data = hist[reverse ? 'redo' : 'undo'].get();
 	if (!data) return;
-	var cids = [];
-	each('[data-cid]', function (i) { cids.push(i.dataset.cid); }, editor.dom);
+	var cids = editor.getVisible();
 	editor.render([]);
 	function h() {
 		var current = {}, next = {};
