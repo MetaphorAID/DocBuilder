@@ -17,12 +17,22 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import java.util.zip.GZIPOutputStream;
 
 public class IOUtils {
@@ -59,12 +69,16 @@ public class IOUtils {
 		}
 	}
 
+	public static URL toURL(File file, boolean dir) {
+		return IOUtils.class.getClassLoader().getResource(file.getPath().replaceAll("\\\\", "/") + (dir ? "/" : ""));
+	}
+
 	public static boolean isDirectory(String fn) {
 		File file = new File(fn);
 		if (file.exists()) {
 			return file.isDirectory();
 		}
-		return IOUtils.class.getClassLoader().getResource(file.getPath().replaceAll("\\\\", "/") + "/") != null;
+		return toURL(file, true) != null;
 	}
 
 	public static boolean isFile(String fn) {
@@ -72,8 +86,7 @@ public class IOUtils {
 		if (file.exists()) {
 			return true;
 		}
-		return IOUtils.class.getClassLoader().getResource(file.getPath().replaceAll("\\\\", "/")) != null
-				&& IOUtils.class.getClassLoader().getResource(file.getPath().replaceAll("\\\\", "/") + "/") == null;
+		return toURL(file, false) != null && toURL(file, true) == null;
 	}
 
 	public static boolean delete(File file) {
@@ -85,6 +98,31 @@ public class IOUtils {
 			}
 		}
 		return file.delete();
+	}
+
+	public static List<File> getFiles(String dir, String match) throws Exception {
+		List<File> files = new ArrayList<>();
+		Path path;
+		File file = new File(dir);
+		if (file.exists()) {
+			path = file.toPath();
+		} else {
+			URL url = toURL(file, true);
+			FileSystem fs = FileSystems.newFileSystem(url.toURI(), Collections.emptyMap());
+			path = fs.getPath(dir);
+		}
+		Stream<Path> walk = Files.walk(path, 1);
+		for (Iterator<Path> it = walk.iterator(); it.hasNext();) {
+			String fn = it.next().toString();
+			if (fn.indexOf(dir) > 0)
+				fn = fn.substring(fn.indexOf(dir));
+			if (fn.equals(dir) || fn.startsWith(".") || !match.isEmpty() && !Pattern.compile(match).matcher(fn).find()) {
+				continue;
+			}
+			files.add(new File(fn));
+		}
+		walk.close();
+		return files;
 	}
 
 	public static class ReadFile extends InputStream {
@@ -109,7 +147,7 @@ public class IOUtils {
 					fileSize = (int) file.length();
 					modTime = file.lastModified();
 				} else {
-					URL url = IOUtils.class.getClassLoader().getResource(file.getPath().replaceAll("\\\\", "/"));
+					URL url = toURL(file, false);
 					if (url == null) {
 						return;
 					}
