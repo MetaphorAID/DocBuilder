@@ -180,10 +180,11 @@ Editor.TYPES = {
 Editor.getType = function (type) {
 	return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 }
-Editor.prototype.load = function (data, store_filler, onsuccess) {
+Editor.prototype.load = function (data, store_filler) {
 	if (!data.id) return;
 	this.id = data.id;
 	this.eol = false;
+	this.hidden = [];
 	this.chunks = [];
 	for (var c in data.chunks || []) {
 		c = data.chunks[c];
@@ -192,7 +193,8 @@ Editor.prototype.load = function (data, store_filler, onsuccess) {
 			var m = c.value.match(/(\r?\n|\r)/);
 			if (m) this.eol = m[1];
 		}
-		this.chunks.push(c);
+		if (c.name[0] == '.') this.hidden.push(c);
+		else this.chunks.push(c);
 	}
 	if (!this.eol) eol = '\n';
 
@@ -221,17 +223,15 @@ Editor.prototype.load = function (data, store_filler, onsuccess) {
 		sel('body').appendChild(e);
 	}
 
-	if (!this.chunks.length) return;
-
 	var self = this;
 	function onload() {
 		if (loading > 0) {
 			setTimeout(onload, 50);
 			return;
 		}
-		self.render([0]);
 		addMsg(_('Document Loaded'), 'success');
-		if (onsuccess) onsuccess();
+		trg(self.dom, 'load');
+		self.render([0]);
 	}
 	onload();
 
@@ -264,7 +264,7 @@ Editor.prototype.ischanged = function (onnotchanged) {
 		addConfirm(_('There are unsaved changes! Are you sure?'), oncontinue);
 	}
 }
-Editor.prototype.onchange = function (cids) {
+Editor.prototype.onchange = function (cids, hdata) {
 	var chunks = {}, values = {}, changed = false;
 	for (var i in cids) {
 		var cid = cids[i];
@@ -274,8 +274,19 @@ Editor.prototype.onchange = function (cids) {
 			var v = t.getValue(sel('[data-cid="' + cid + '"]', this.dom), c).replace(/(\r?\n|\r)/g, this.eol);
 			if (c.value != v) {
 				changed = true;
-				chunks[cid] = c;
-				values[cid] = v;
+				chunks['c' + cid] = c;
+				values['c' + cid] = v;
+			}
+		}
+	}
+	for (var hid in hdata) {
+		var h = this.hidden[hid];
+		if (h.id) {
+			var v = hdata.replace(/(\r?\n|\r)/g, this.eol);
+			if (h.value != v) {
+				changed = true;
+				chunks['h' + hid] = c;
+				values['h' + hid] = v;
 			}
 		}
 	}
@@ -390,7 +401,9 @@ for (var n in hist) {
 }
 
 var editor = new Editor(sel('#editor'), function (chunks, values) {
-	hist.undo.add({ id: editor.id, chunks: chunks, values: values });
+	var cids = [];
+	each('[data-cid]', function (i) { cids.push(i.dataset.cid); }, editor.dom);
+	hist.undo.add({ id: editor.id, chunks: chunks, values: values, cids: cids });
 	hist.redo.clear();
 	var tosave = [];
 	for (var cid in chunks) {
@@ -406,13 +419,14 @@ function open(id, onsuccess) {
 			addMsg(data.error || _('Unknown Error'));
 			return;
 		}
-		editor.load(data, false, function () {
+		evt(editor.dom, 'load', function () {
 			hist.recent.walk(function (data, i) {
 				if (data == editor.id) hist.recent.get(i);
 			})
 			hist.recent.add(editor.id);
 			if (onsuccess) onsuccess();
 		});
+		editor.load(data, false);
 	});
 }
 function save(chunks) {
@@ -431,17 +445,19 @@ function save(chunks) {
 function undo(reverse) {
 	var data = hist[reverse ? 'redo' : 'undo'].get();
 	if (!data) return;
+	var cids = [];
+	each('[data-cid]', function (i) { cids.push(i.dataset.cid); }, editor.dom);
 	editor.render([]);
 	function h() {
-		var current = {}, next = {}, cids = [];
+		var current = {}, next = {};
 		for (var cid in data.chunks) {
-			var c = editor.chunks[cid];
+			var f = cid[0] == 'h' ? 'hidden' : 'chunks';
+			var c = editor[f][cid.substr(1)];
 			if (c.value != data.values[cid]) {
 				current = false;
 			}
 			if (current !== false) current[cid] = c;
 			next[cid] = data.chunks[cid].value;
-			cids.push(cid);
 		}
 		if (current === false) {
 			hist[reverse ? 'redo' : 'undo'].add(data);
@@ -449,15 +465,16 @@ function undo(reverse) {
 			editor.render(cids);
 			return;
 		}
-		hist[reverse ? 'undo' : 'redo'].add({ id: data.id, chunks: current, values: next });
+		hist[reverse ? 'undo' : 'redo'].add({ id: data.id, chunks: current, values: next, cids: cids });
 		var tosave = [];
 		for (var cid in data.chunks) {
 			var d = data.chunks[cid];
-			editor.chunks[cid] = d;
+			var f = cid[0] == 'h' ? 'hidden' : 'chunks';
+			editor[f][cid.substr(1)] = d;
 			tosave.push(d);
 		}
 		save(tosave);
-		editor.render(cids);
+		editor.render(data.cids);
 	}
 	if (data.id != editor.id) {
 		open(data.id, h);
