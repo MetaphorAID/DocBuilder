@@ -72,7 +72,6 @@ public class DocBuilder {
 
 			try {
 				for (File tpl : IOUtils.getFiles(config.getValue("templates", "templates"), "\\.json$")) {
-					System.out.println(tpl.toString());
 					DocEditor.addTemplate(tpl);
 				}
 			} catch (Exception e) {
