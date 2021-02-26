@@ -46,7 +46,7 @@ public class DataChannels extends WebSocketServer {
 					CHANNELS.putAll(load);
 				}
 			} catch (Exception e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 		}
 	}
@@ -60,7 +60,7 @@ public class DataChannels extends WebSocketServer {
 				OutputStream os = new FileOutputStream(backupFile);
 				JsonHelper.serialize(os, (JsonStructure) JsonHelper.pojoToJson(CHANNELS));
 			} catch (Exception e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 		}
 	}
@@ -130,7 +130,7 @@ public class DataChannels extends WebSocketServer {
 				}
 			}
 		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 	}
 
@@ -174,7 +174,7 @@ public class DataChannels extends WebSocketServer {
 					String resp = new String(JsonHelper.serialize(data), "UTF-8");
 					conn.send(resp);
 				} catch (UnsupportedEncodingException e) {
-					e.printStackTrace(System.err);
+					Logger.error(e);
 				}
 				break;
 
@@ -192,7 +192,7 @@ public class DataChannels extends WebSocketServer {
 
 	@Override
 	public void onError(WebSocket conn, Exception e) {
-		e.printStackTrace(System.err);
+		Logger.error(e);
 	}
 
 	@Override

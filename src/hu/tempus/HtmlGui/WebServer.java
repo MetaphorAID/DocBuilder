@@ -62,18 +62,19 @@ public class WebServer {
 		System.setProperty("java.net.preferIPv4Stack", "true");
 
 		try (DatagramSocket s = new DatagramSocket()) {
-			s.connect(InetAddress.getByAddress(new byte[]{8, 8, 8, 8}), 0);
+			s.connect(InetAddress.getByAddress(new byte[] { 8, 8, 8, 8 }), 0);
 			mAddress = s.getLocalAddress();
 			mHostname = mAddress.getHostAddress();
 		} catch (Exception e) {
-			mAddress = InetAddress.getByAddress(new byte[]{127, 0, 0, 1});
+			mAddress = InetAddress.getByAddress(new byte[] { 127, 0, 0, 1 });
 			mHostname = "localhost";
 		}
 	}
 
 	public void init() throws Exception {
 
-		mServerHTTP = HttpServer.create(new InetSocketAddress(mPortHTTP), 0);;
+		mServerHTTP = HttpServer.create(new InetSocketAddress(mPortHTTP), 0);
+		;
 		mServerHTTP.createContext("/", mRequestHandler);
 		mServerHTTP.setExecutor(Executors.newCachedThreadPool()); // creates a default executor
 
@@ -133,8 +134,8 @@ public class WebServer {
 			mServerWSS.start();
 		}
 		Runtime.getRuntime().addShutdownHook(new OnShutdown());
-		if (mServerHTTP != null && GlobalConfig.Debug) {
-			System.out.println("Server started");
+		if (mServerHTTP != null) {
+			Logger.debug("Server started");
 		}
 
 		mRequestHandler.setServer(this).onStart();
@@ -163,9 +164,7 @@ public class WebServer {
 			} catch (InterruptedException e) {
 			}
 		}
-		if (GlobalConfig.Debug) {
-			System.out.println("Server stopped");
-		}
+		Logger.debug("Server stopped");
 	}
 
 	public void setBrowser(String browser) {
@@ -183,9 +182,7 @@ public class WebServer {
 			}
 			if (desktop != null) {
 				desktop.browse(new URI("http://localhost:" + mPortHTTP));
-				if (GlobalConfig.Debug) {
-					System.out.println("Browser launched");
-				}
+				Logger.debug("Browser launched");
 			}
 			return;
 		}

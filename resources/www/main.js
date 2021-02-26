@@ -122,6 +122,15 @@ window.addEventListener('DOMContentLoaded', function () {
 		navigator.sendBeacon('/del-session?id=' + _instanceId);
 	});
 });
+window.onerror = function (errorMsg, url, lineNum, colNum, error) {
+	console.log('here');
+	addMsg('Exception: ' + errorMsg);
+	fetch('/error', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(error && error.stack ? error.stack : (errorMsg + ' (' + url + ':' + lineNum + ')'))
+	});
+};
 
 function _(text) {
 	return window.Locale && Locale[text] || text;
@@ -185,6 +194,7 @@ Editor.TYPES = {
 	}
 };
 Editor.getType = function (type) {
+	throw new Exception('tralala');
 	return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 }
 Editor.prototype.load = function (data, store_filler) {

@@ -102,7 +102,7 @@ public class JsonHelper {
 			try {
 				json.add(f.getName(), pojoToJson(f.get(o)));
 			} catch (IllegalArgumentException | IllegalAccessException e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 		}
 		return json.build();
@@ -143,7 +143,7 @@ public class JsonHelper {
 		try (JsonWriter writer = Json.createWriter(os)) {
 			writer.write(json);
 		} catch (Exception e) {
-			System.err.println("Could not serialize json object: " + e.getMessage());
+			Logger.error("Could not serialize json object: " + e.getMessage());
 		}
 	}
 
@@ -156,7 +156,7 @@ public class JsonHelper {
 			serialize(os, json);
 			return os.toByteArray();
 		} catch (Exception e) {
-			System.err.println("Could not serialize json object: " + e.getMessage());
+			Logger.error("Could not serialize json object: " + e.getMessage());
 		}
 		return null;
 	}
@@ -168,7 +168,7 @@ public class JsonHelper {
 			}
 			return parse(new InputStreamReader(is, "UTF-8"));
 		} catch (UnsupportedEncodingException e) {
-			System.err.println("Could not parse json string: " + e.getMessage());
+			Logger.error("Could not parse json string: " + e.getMessage());
 		}
 		return null;
 	}

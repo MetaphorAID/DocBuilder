@@ -51,7 +51,7 @@ public class Config {
 
 		IOUtils.ReadFile fs = new IOUtils.ReadFile(new File(fileName));
 		if (fs.isNull()) {
-			System.err.println("Config file not found: " + fileName);
+			Logger.error("Config file not found: " + fileName);
 			return this;
 		}
 
@@ -137,7 +137,7 @@ public class Config {
 					JsonHelper.serialize(os, dump());
 				}
 			} catch (IOException e) {
-				System.err.println("Could not save config: " + file.getAbsolutePath());
+				Logger.error("Could not save config: " + file.getAbsolutePath());
 			}
 		}
 	}

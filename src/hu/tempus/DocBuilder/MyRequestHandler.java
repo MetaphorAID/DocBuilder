@@ -118,7 +118,7 @@ public class MyRequestHandler extends RequestHandler {
 		// }
 		// } catch (Exception e) {
 		// fn = null;
-		// e.printStackTrace(System.err);
+		// Logger.error(e);
 		// }
 
 		// }

@@ -6,17 +6,12 @@
 package hu.tempus.DocBuilder;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.PrintStream;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 import javax.swing.UIManager;
 
 import hu.tempus.HtmlGui.Config;
-import hu.tempus.HtmlGui.GlobalConfig;
 import hu.tempus.HtmlGui.IOUtils;
+import hu.tempus.HtmlGui.Logger;
 import hu.tempus.HtmlGui.TimedDialog;
 import hu.tempus.HtmlGui.WebServer;
 
@@ -30,7 +25,6 @@ public class DocBuilder {
 	 * @param args the command line arguments
 	 */
 	public static void main(String[] args) {
-		PrintStream ps;
 
 		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -40,7 +34,7 @@ public class DocBuilder {
 			File jarpath = new File(DocBuilder.class.getProtectionDomain().getCodeSource().getLocation().getPath());
 			String jardir = jarpath.getParent();
 
-			GlobalConfig.load(config);
+			IOUtils.USER_AGENT = "DocBuilder/1.0";
 
 			config.setValue("storepass", "mBeYgMRUiSqVaTiB");
 			config.setValue("keypass", "T3nyFF6RHsPoqunV");
@@ -55,18 +49,8 @@ public class DocBuilder {
 				System.exit(0);
 			}
 
-			String error = "";
-
-			File f = new File(jardir + "/DocBuilder.log");
-			if (f.exists() && f.length() > 0) {
-				error = IOUtils.read(new IOUtils.ReadFile(f), 50).trim();
-				error = error.replaceAll("\n", "\\\\n");
-				error = error.replaceAll("\r", "\\\\r");
-				error = error.replaceAll("\t", "\\\\t");
-			}
-			ps = new PrintStream(new FileOutputStream(f));
-			System.setErr(ps);
-			System.setOut(ps);
+			Logger.initialize(config.getValue("debug", "0").equals("1") ? Logger.DEBUG : Logger.ERROR,
+					jardir + "/DocBuilder.log");
 
 			// Add Templates
 
@@ -75,7 +59,7 @@ public class DocBuilder {
 					DocEditor.addTemplate(tpl);
 				}
 			} catch (Exception e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 
 			MyRequestHandler handler = new MyRequestHandler(config);

@@ -39,6 +39,8 @@ public class IOUtils {
 
 	private static final Map<String, String> MIME_TYPES = new HashMap<>();
 
+	public static String USER_AGENT = "HtmlGui/2.0";
+
 	static {
 		MIME_TYPES.put("types", "text/plain");
 		MIME_TYPES.put("json", "application/json");
@@ -64,7 +66,7 @@ public class IOUtils {
 					}
 				}
 			} catch (IOException e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 		}
 	}
@@ -162,7 +164,7 @@ public class IOUtils {
 					contentType = guessType(file);
 				}
 			} catch (IOException e) {
-				e.printStackTrace(System.err);
+				Logger.error(e);
 			}
 		}
 
@@ -324,7 +326,7 @@ public class IOUtils {
 
 	public static ReadFile fetchURL(URL url, byte[] content, Map<String, String> headers) throws IOException {
 		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-		conn.setRequestProperty("User-Agent", GlobalConfig.UserAgent);
+		conn.setRequestProperty("User-Agent", USER_AGENT);
 		if (headers != null) {
 			headers.forEach((k, v) -> {
 				conn.setRequestProperty(k, v);
@@ -374,7 +376,7 @@ public class IOUtils {
 				result.append(URLEncoder.encode(entry.getValue(), "UTF-8"));
 			}
 		} catch (UnsupportedEncodingException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 		return result.toString();
 	}
@@ -396,7 +398,7 @@ public class IOUtils {
 		// if (contentType == null) contentType =
 		// URLConnection.guessContentTypeFromStream(is);
 		if (contentType == null) {
-			System.err.println("unknown mime type: " + file.getName());
+			Logger.error("unknown mime type: " + file.getName());
 			contentType = "application/octet-stream";
 		}
 		return contentType;
@@ -416,7 +418,7 @@ public class IOUtils {
 			}
 			return hashtext;
 		} catch (NoSuchAlgorithmException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 			return "??";
 		}
 	}

@@ -62,7 +62,7 @@ public class RequestHandler implements HttpHandler {
 				return;
 			}
 		} catch (Exception e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 
 		// Static file handling
@@ -75,9 +75,7 @@ public class RequestHandler implements HttpHandler {
 		}
 
 		// Return 404
-		if (GlobalConfig.Debug) {
-			System.out.println("404 '" + req.path + "' Not Found");
-		}
+		Logger.debug("404 '" + req.path + "' Not Found");
 		req.sendError(404, "404 '" + req.path + "' Not Found");
 	}
 
@@ -117,7 +115,7 @@ public class RequestHandler implements HttpHandler {
 			try {
 				URL url = new URL(address);
 				URLConnection conn = url.openConnection();
-				conn.setRequestProperty("User-Agent", GlobalConfig.UserAgent);
+				conn.setRequestProperty("User-Agent", IOUtils.USER_AGENT);
 				conn.connect();
 
 				String type = conn.getContentType();
@@ -132,12 +130,18 @@ public class RequestHandler implements HttpHandler {
 				return true;
 
 			} catch (MalformedURLException e) {
-				System.err.println("Invalid url: " + address);
+				Logger.error("Invalid url: " + address);
 			} catch (IOException e) {
-				System.err.println("Could not fetch url: " + address);
+				Logger.error("Could not fetch url: " + address);
 			}
 
 			return req.sendError(500, "500 Exception");
+		}
+
+		if (req.path.equals("/error")) {
+			String error = IOUtils.read(req.request.getRequestBody());
+			Logger.error(error);
+			return req.sendData("0 OK");
 		}
 
 		return false;
@@ -157,9 +161,7 @@ public class RequestHandler implements HttpHandler {
 			if (path.endsWith("/")) {
 				path += "index.html";
 			}
-			if (GlobalConfig.Debug) {
-				System.out.println("Handling URL: " + path);
-			}
+			Logger.debug("Handling URL: " + path);
 
 			parameters = new HashMap<>();
 			String query = request.getRequestURI().getRawQuery();
@@ -173,7 +175,7 @@ public class RequestHandler implements HttpHandler {
 						parameters.put(pair[0], values);
 					}
 				} catch (UnsupportedEncodingException e) {
-					e.printStackTrace(System.err);
+					Logger.error(e);
 				}
 			}
 
@@ -206,8 +208,7 @@ public class RequestHandler implements HttpHandler {
 		}
 
 		public void addHeader(String key, String value) {
-			request.getResponseHeaders()
-					.add(key, value);
+			request.getResponseHeaders().add(key, value);
 		}
 
 		public boolean sendHtml(String html) throws IOException {
@@ -359,7 +360,7 @@ public class RequestHandler implements HttpHandler {
 					try {
 						mServer.startBrowser();
 					} catch (Exception e) {
-						e.printStackTrace(System.err);
+						Logger.error(e);
 					}
 				}
 			}

@@ -75,7 +75,7 @@ public class FileCache {
 			}
 			return IOUtils.read(is);
 		} catch (IOException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 		return null;
 	}
@@ -85,7 +85,7 @@ public class FileCache {
 				InputStream is = getStream(name);) {
 			return JsonHelper.parse(is);
 		} catch (IOException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 		return null;
 	}
@@ -98,7 +98,7 @@ public class FileCache {
 			ObjectInputStream in = new ObjectInputStream(is);
 			return in.readObject();
 		} catch (ClassNotFoundException | IOException e) {
-			e.printStackTrace(System.err);
+			Logger.error(e);
 		}
 		return null;
 	}
