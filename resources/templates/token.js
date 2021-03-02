@@ -321,7 +321,7 @@ document.addEventListener('change', function (e) {
 	// sentence stuff
 
 	if (t.matches('.edit.sent')) {
-		if (t.value == '') return;
+		if ((xs.getAttribute('sent') || '') == t.value) return;
 		xs.setAttribute('sent', t.value);
 		savePar([cid]);
 		return;

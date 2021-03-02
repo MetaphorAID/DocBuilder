@@ -46,7 +46,10 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 .error { color:#A00; background:#F88; }
 .success { color:#0A0; background:#8A8; }
 
-.tooltip, .confirm { position:absolute; z-index:2; border:1px solid; background:#FFF; padding:.25em .5em; margin:.25em 0; max-height:50vh; max-width:60em; }
+.tooltip, .confirm { 
+	position:absolute; z-index:2; border:1px solid; background:#FFF; padding:.25em .5em; margin:.25em 0; max-height:60vh; max-width:60em;
+	overflow:auto;
+}
 .confirm { z-index:3; top:30%; left:0; right:0; max-width:40em; margin:0 auto; box-shadow:0 0 1em .25em #000; text-align:center; }
 .tooltip.dropdown { padding:0 .25em; }
 .dropdown > * { display:block; text-decoration:none; color:inherit; padding:.25em 0; margin:0 .25em; }

@@ -105,7 +105,7 @@ function select(val, empty_opt, opts) {
 		var a = document.createElement('a');
 		a.href = '#';
 		a.className = 'no-value';
-		if (!sel('.selected',s)) a.className += ' selected';
+		if (!sel('.selected', s)) a.className += ' selected';
 		a.textContent = _(empty_opt);
 		s.insertBefore(a, s.children[0]);
 	}
@@ -125,15 +125,17 @@ document.addEventListener('click', function (e) {
 	if (t.matches('.select > a')) {
 		var s = t.parentNode;
 		if (s.classList.contains('open')) {
-			if (!s.classList.contains('multiple')) {
-				each('.selected', function (i) { i.classList.remove('selected'); }, s);
+			if (!t.classList.contains('no-value')) {
+				if (!s.classList.contains('multiple')) {
+					each('.selected', function (i) { i.classList.remove('selected'); }, s);
+				}
+				t.classList.toggle('selected');
 			}
-			t.classList.toggle('selected');
 			var v = [];
 			each('.selected', function (i) { if (i.dataset.value) v.push(i.dataset.value); }, s);
 			s.value = v.join(';');
+			if (s.classList.contains('multiple') && !t.classList.contains('no-value')) return;
 			trg(s, 'change');
-			if (s.classList.contains('multiple')) return;
 			s.classList.remove('open');
 		} else {
 			s.classList.add('open');
@@ -145,6 +147,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('close', function (e) {
 	var t = e.target;
 	if (t && t.matches('.tooltip')) {
+		each('.select.multiple.open', function (i) { trg(i, 'change'); }, t)
 		setTimeout(function () {
 			t.remove();
 			if (!sel('.tooltip.modal')) document.body.classList.remove('has-modal');
