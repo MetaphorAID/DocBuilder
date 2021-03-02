@@ -12,3 +12,5 @@
 .par .tkn, .par table th { text-align:center; }
 .par .tkn { font-weight:400; }
 .par .btn.selected { background-color:#9F9; }
+
+#footer .annot { font-style:italic; font-size:.875em; text-align:left; }

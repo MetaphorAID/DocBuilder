@@ -52,10 +52,20 @@ ANNOT_TYPE = {
 }
 
 var _active = {};
-var _annots = { items: {}, words: {}, changed: false };
+var _annots = { changed: false };
 
 Editor.TYPES.p = {
 	remove: function (input, chunk) {
+		if (_annots.xml) {
+			each('w,pc', function (i) {
+				var id = i.getAttribute('xml:id');
+				if (!_annots.ref[id]) return;
+				for (var j in _annots.ref[id]) {
+					j = sel('[data-aid="' + j + '"]');
+					if (j) j.remove();
+				}
+			}, _active[input.dataset.cid]);
+		}
 		delete _active[input.dataset.cid];
 	},
 	getValue: function (input, chunk) {
@@ -78,31 +88,52 @@ Editor.TYPES.p = {
 			ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
 		} else {
 			ep.className = 'par';
+			each('w,pc', function (i, ii) {
+				var id = i.getAttribute('xml:id');
+				if (!_annots.ref[id]) return;
+				for (var j in _annots.ref[id]) {
+					if (sel('[data-aid="' + j + '"]')) return;
+					var d = document.createElement('div');
+					d.dataset.aid = j;
+					d.className = 'annot';
+					d.innerHTML = _annots.list[j].getAttribute('entity') + ': ' + xmlToText(_annots.list[j].innerHTML);
+					sel('#footer').appendChild(d);
+				}
+			}, x);
 		}
 		return ep;
 	},
 }
 
-evt(editor.dom, 'load', function () {
-	var html = '<h4 class="ch_head"></h4>';
-	for (var i in editor.hidden) {
-		i = editor.hidden[i];
-		if (i.name == '.header') {
-			var x = parseXml(i.value);
+evt(editor.dom, 'change-hidden', function () {
+	for (var i in editor.render_hidden) {
+		var hid = editor.render_hidden[i];
+		var h = editor.hidden[hid];
+		if (h.name == '.header') {
+			var html = '<h4 class="ch_head"></h4>';
+			var x = parseXml(h.value);
 			html = '<h2>' + selToText(x, 'title') + '</h2>'
 				+ '<h3>' + selToText(x, 'author') + '</h3>' + html;
+			sel('#header').innerHTML = html;
 		}
-		if (i.name == '.annotations') {
-			var annots = parseXml(i.value);
-			_annots.items = {};
-			_annots.words = {};
-			_annots.changed = false;
-			each('annotation', function (i) {
-				//TODO: add annotation
-			}, annots);
+		if (h.name == '.annotations') {
+			_annots = { id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false }
+			each('annotation', function (i, ii) {
+				_annots.list.push(i);
+				each('w,pc', function (j) {
+					var t = j.getAttribute('target');
+					if (!_annots.ref[t]) _annots.ref[t] = {};
+					_annots.ref[t][ii] = (j.previousElementSibling ? 0 : 1) + (j.nextElementSibling ? 0 : 2);
+				}, i);
+			}, _annots.xml);
+			sel('#footer').innerHTML = '';
 		}
 	}
-	sel('#header').innerHTML = html;
+});
+
+evt(editor.dom, 'load', function () {
+	sel('#header').innerHTML = '<h4 class="ch_head"></h4>';
+	sel('#footer').innerHTML = '';
 });
 
 function getSelect(wid, cls, val, empty_opt, opts) {
@@ -130,7 +161,6 @@ function delNode(s) {
 }
 
 function parsePar(dom) {
-	//TODO: annotiation marker
 	var ep = document.createElement('div');
 	each('s,l', function (s, si) {
 		es = document.createElement('div');
@@ -160,13 +190,38 @@ function parsePar(dom) {
 }
 
 function savePar(cids) {
+	var hdata = {}, hids = [];
+	if (_annots.changed) {
+		hdata[_annots.id] = _annots.xml.documentElement.outerHTML;
+		hids.push(_annots.id);
+	}
+	_annots.changed = false;
 	var vis = editor.getVisible();
-	editor.onchange(cids);
+	editor.onchange(cids, hdata);
+	if (hids.length) editor.renderHidden(hids);
 	editor.render(vis);
 }
 
 function updAnnot(from, to) {
-	//TODO: update annotation reference
+	if (!_annots.xml) return;
+	var t1 = to[0].getAttribute('xml:id');
+	console.log(from);
+	console.log(to);
+	each('[target="' + from.join('"],[target="') + '"]', function (i) {
+		_annots.changed = true;
+		var a = i.closest('annotation');
+		if (!sel('[target="' + t1 + '"]', a) || t1 == i.getAttribute('target')) {
+			for (var t in to) {
+				t = to[t];
+				var d = _annots.xml.createElement(t.nodeName);
+				d.setAttribute('target', t.getAttribute('xml:id'));
+				d.textContent = sel('token', t).textContent;
+				a.insertBefore(d, i);
+			}
+		}
+		i.remove();
+	}, _annots.xml);
+	console.log(_annots);
 }
 
 document.addEventListener('click', function (e) {
@@ -196,8 +251,39 @@ document.addEventListener('click', function (e) {
 			if (t.classList.contains('pc')) {
 				html += getSelect(wid, 'edit pc', xw.getAttribute('join') || '?', 'Sticks To...', PC_JOIN);
 			}
-			html += getSelect(wid, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
-			//TODO: edit annotation
+			if (_annots.xml) {
+				html += getSelect(wid, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
+				// annotations containing the token
+				var has = false;
+				var lst = {};
+				var items = _annots.ref[xw.getAttribute('xml:id')];
+				for (var i in items || {}) {
+					if (items[i] == 0) continue;
+					has = true;
+					lst[i] = xmlToText(_annots.list[i].innerHTML);
+				}
+				if (has) html += getSelect(wid, 'delfrom annot', '', 'Delete From Annotation...', lst);
+				// annotations next to the token
+				has = false;
+				lst = {};
+				if (wid > 0) {
+					items = _annots.ref[xwl[parseInt(wid) - 1].getAttribute('xml:id')];
+					for (var i in items || {}) {
+						if ((items[i] & 2) == 0) continue;
+						has = true;
+						lst['L' + i] = xmlToText(_annots.list[i].innerHTML);
+					}
+				}
+				if (wid < xwl.length - 1) {
+					items = _annots.ref[xwl[parseInt(wid) + 1].getAttribute('xml:id')];
+					for (var i in items || {}) {
+						if ((items[i] & 1) == 0) continue;
+						has = true;
+						lst['F' + i] = xmlToText(_annots.list[i].innerHTML);
+					}
+				}
+				if (has) html += getSelect(wid, 'addto annot', '', 'Add To Annotation...', lst);
+			}
 			html += getLink(wid, 'edit token', 'Fix Token');
 			var tkn = selToText(xw, 'token', true);
 			if (tkn.length > 1) {
@@ -288,7 +374,6 @@ document.addEventListener('click', function (e) {
 	}
 	if (t.matches('.save.token')) {
 		var tkn = sel('token', xw);
-		var orig = tkn.getAttribute('original');
 		var val = sel('input', t.closest('.tooltip')).value;
 		if (tkn.textContent == val) return;
 		tkn.setAttribute('modified', "True");
@@ -357,7 +442,7 @@ document.addEventListener('change', function (e) {
 		if (id1.length > 1) {
 			if (id2.length > 1) {
 				u[0].setAttribute('xml:id', '');
-				u[0].setAttribute('xml:id', getUID(c, id[0]));
+				u[0].setAttribute('xml:id', getUID(x, id[0]));
 			} else {
 				u[0].setAttribute('xml:id', id2[0]);
 			}
@@ -378,7 +463,7 @@ document.addEventListener('change', function (e) {
 		var xe = x.documentElement;
 		var id = xs.getAttribute('xml:id').split('_')[0];
 		xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
-			, indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName + (id ? ' xml:id="' + getUID(c, id) + '"' : '') + '> $1');
+			, indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName + (id ? ' xml:id="' + getUID(x, id) + '"' : '') + '> $1');
 		savePar([cid]);
 		return;
 	}
@@ -435,12 +520,12 @@ document.addEventListener('change', function (e) {
 		if (id1.length > 1) {
 			if (id2.length > 1) {
 				u[0].setAttribute('xml:id', '');
-				u[0].setAttribute('xml:id', getUID(c, id[0]));
+				u[0].setAttribute('xml:id', getUID(x, id1[0]));
 			} else {
 				u[0].setAttribute('xml:id', id2[0]);
 			}
-			updAnnot([id1, id2], [u[0].getAttribute('xml:id')]);
 		}
+		updAnnot([id1.join('_'), id2.join('_')], [u[0]]);
 		savePar([cid]);
 		return;
 	}
@@ -457,13 +542,13 @@ document.addEventListener('change', function (e) {
 		var xw2 = parseXml(xw.outerHTML).documentElement;
 		sel('token', xw2).textContent = tkn.innerHTML.substr(t.value);
 		var id1 = xw.getAttribute('xml:id');
-		if (id1) xw2.setAttribute('xml:id', getUID(c, id1.split('_')[0]));
+		if (id1) xw2.setAttribute('xml:id', getUID(x, id1.split('_')[0]));
 		tkn.textContent = tkn.textContent.substr(0, t.value);
 		xs.insertBefore(xw2, xw.nextSibling);
 		if (xw.previousSibling && xw.previousSibling.nodeName == '#text') {
 			xs.insertBefore(x.createTextNode(xw.previousSibling.textContent), xw.nextSibling);
 		}
-		updAnnot([id1], [id1, xw2.getAttribute('xml:id')]);
+		updAnnot([id1], [xw, xw2]);
 		savePar([cid]);
 		return;
 	}
@@ -475,8 +560,8 @@ document.addEventListener('change', function (e) {
 		sel('token', xw2).setAttribute('modified', 'True');
 		var id = x.documentElement.getAttribute('xml:id');
 		if (id) {
-			xw2.setAttribute('xml:id', getUID(c, t.value + id));
-			updAnnot([xw.getAttribute('xml:id')], [xw2.getAttribute('xml:id')]);
+			xw2.setAttribute('xml:id', getUID(x, t.value + id));
+			updAnnot([xw.getAttribute('xml:id')], [xw2]);
 		}
 		xs.insertBefore(xw2, xw);
 		xw.remove();
@@ -487,8 +572,41 @@ document.addEventListener('change', function (e) {
 	// annotation stuff
 
 	if (t.matches('.add.annot')) {
-		//TODO: add annotation
+		if (t.value == '' || !_annots.xml) return;
+		var i = _annots.xml.createElement(xw.nodeName);
+		i.setAttribute('target', xw.getAttribute('xml:id'));
+		i.textContent = sel('token', xw).textContent;
+		var a = _annots.xml.createElement('annotation');
+		a.setAttribute('entity', t.value);
+		a.appendChild(i);
+		//TODO: sort?
+		_annots.xml.documentElement.appendChild(a);
+		_annots.changed = true;
+		savePar();
 		return;
 	}
+
+	if (t.matches('.addto.annot')) {
+		if (t.value == '' || !_annots.xml) return;
+		var an = _annots.list[t.value.substr(1)];
+		var i = _annots.xml.createElement(xw.nodeName);
+		i.setAttribute('target', xw.getAttribute('xml:id'));
+		i.textContent = sel('token', xw).textContent;
+		an.insertBefore(i, t.value[0] == 'F' ? an.children[0] : null);
+		_annots.changed = true;
+		savePar();
+		return;
+	}
+
+	if (t.matches('.delfrom.annot')) {
+		if (t.value == '' || !_annots.xml) return;
+		var an = _annots.list[t.value];
+		sel('[target="' + xw.getAttribute('xml:id') + '"]', an).remove();
+		if (!sel('[target]', an)) an.remove();
+		_annots.changed = true;
+		savePar();
+		return;
+	}
+
 });
 

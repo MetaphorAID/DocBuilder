@@ -47,7 +47,7 @@ function addConfirm(message, onconfirm) {
 	var m = document.createElement('div');
 	m.className = 'confirm';
 	m.innerHTML = message + '<a href="#" class="btn error yes">' + _('Yes') + '</a> <a href="#" class="btn cancel">' + _('Cancel') + '</a>';
-	m.addEventListener('click', function (e) {
+	evt(m, 'click', function (e) {
 		var t = e.target;
 		if (!t || !t.matches('.yes,.cancel')) return;
 		t.closest('.confirm').remove();
@@ -163,7 +163,6 @@ window.addEventListener('DOMContentLoaded', function () {
 	});
 });
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	console.log('here');
 	addMsg('Exception: ' + errorMsg);
 	fetch('/error', {
 		method: 'POST',
@@ -187,11 +186,11 @@ var Editor = function (dom, onchange) {
 
 	var self = this;
 	dom.classList.add('editor');
-	dom.addEventListener('change', function (e) {
+	evt(dom, 'change', function (e) {
 		var t = e.target;
 		if (t && t.matches('[data-cid]')) self.onchange([t.dataset.cid]);
 	});
-	dom.addEventListener('click', function (e) {
+	evt(dom, 'click', function (e) {
 		var t = e.target;
 		if (!t) return;
 		if (t.matches('[data-render]')) self.render([parseInt(t.dataset.render)]);
@@ -274,7 +273,7 @@ Editor.prototype.load = function (data, store_filler) {
 		++loading;
 		var e = document.createElement('script');
 		e.setAttribute('src', js);
-		e.addEventListener('load', function () {
+		evt(e, 'load', function () {
 			--loading;
 		});
 		sel('body').appendChild(e);
@@ -288,6 +287,8 @@ Editor.prototype.load = function (data, store_filler) {
 		}
 		addMsg(_('Document Loaded'), 'success');
 		trg(self.dom, 'load');
+		var hids = []; for (var i in self.hidden) { hids.push(i); }
+		self.renderHidden(hids);
 		self.render([0]);
 	}
 	onload();
@@ -336,13 +337,13 @@ Editor.prototype.onchange = function (cids, hdata) {
 			}
 		}
 	}
-	for (var hid in hdata) {
+	for (var hid in (hdata || {})) {
 		var h = this.hidden[hid];
 		if (h.id) {
-			var v = hdata.replace(/(\r?\n|\r)/g, this.eol);
+			var v = hdata[hid].replace(/(\r?\n|\r)/g, this.eol);
 			if (h.value != v) {
 				changed = true;
-				chunks['h' + hid] = c;
+				chunks['h' + hid] = h;
 				values['h' + hid] = v;
 			}
 		}
@@ -368,6 +369,11 @@ Editor.prototype.render = function (cids) {
 			self.dom.appendChild(a);
 		}
 	});
+}
+Editor.prototype.renderHidden = function (hids) {
+	this.render_hidden = hids;
+	trg(this.dom, 'change-hidden');
+	this.render_hidden = [];
 }
 Editor.prototype.renderChunk = function (cid) {
 	cid = parseInt(cid);
@@ -526,14 +532,16 @@ function undo(reverse) {
 			return;
 		}
 		hist[reverse ? 'undo' : 'redo'].add({ id: data.id, chunks: current, values: next, cids: cids });
-		var tosave = [];
+		var tosave = [], hids = [];
 		for (var cid in data.chunks) {
 			var d = data.chunks[cid];
 			var f = cid[0] == 'h' ? 'hidden' : 'chunks';
 			editor[f][cid.substr(1)] = d;
 			tosave.push(d);
+			if (f == 'hidden') hids.push(cid.substr(1));
 		}
 		save(tosave);
+		if (hids.length) editor.renderHidden(hids);
 		editor.render(data.cids);
 	}
 	if (data.id != editor.id) {
@@ -543,10 +551,10 @@ function undo(reverse) {
 	}
 }
 
-sel('.ed-open').addEventListener('click', function () {
+evt('.ed-open', 'click', function () {
 	editor.ischanged(function () { open(); });
 });
-sel('.ed-recent').addEventListener('click', function (e) {
+evt('.ed-recent', 'click', function (e) {
 	var t = ttip(e.target);
 	hist.recent.walk(function (data, id) {
 		var a = document.createElement('a');
@@ -558,13 +566,13 @@ sel('.ed-recent').addEventListener('click', function (e) {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-sel('.ed-save').addEventListener('click', function () {
+evt('.ed-save', 'click', function () {
 	save();
 });
-sel('.ed-undo').addEventListener('click', function () {
+evt('.ed-undo', 'click', function () {
 	undo();
 });
-sel('.ed-redo').addEventListener('click', function () {
+evt('.ed-redo', 'click', function () {
 	undo(true);
 });
 
