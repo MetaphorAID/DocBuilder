@@ -29,6 +29,16 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 }
 .btn.disabled { opacity:.5; }
 
+.select { padding:.25em .5em; position:relative; }
+.select:after { content:'\25BC'; position:absolute; top:0; right:0; display:inline-block; line-height:2em; }
+.select.open:after { content:'\25B2'; }
+.select a { text-decoration:none; color:inherit; }
+.select > * { display:none; padding-right:1em; }
+.select > .selected, .select.open > * { display:block; }
+.select.open > a.no-value { font-weight:700; }
+.select.open > a[data-value]:before { content:'- '; }
+.select.open > a[data-value].selected:after { content:'\2713'; position:absolute; right:0; }
+
 .center { text-align:center; }
 
 #message { position:absolute; z-index:2; bottom:0; left:0; right:0; text-align:center; }
@@ -39,8 +49,8 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 .tooltip, .confirm { position:absolute; z-index:2; border:1px solid; background:#FFF; padding:.25em .5em; margin:.25em 0; max-height:50vh; max-width:60em; }
 .confirm { z-index:3; top:30%; left:0; right:0; max-width:40em; margin:0 auto; box-shadow:0 0 1em .25em #000; text-align:center; }
 .tooltip.dropdown { padding:0 .25em; }
-.dropdown a { display:block; text-decoration:none; color:inherit; padding:.25em 0; margin:0 .25em; }
-.dropdown a:not(:last-of-type) { border-bottom:1px solid; }
+.dropdown > * { display:block; text-decoration:none; color:inherit; padding:.25em 0; margin:0 .25em; }
+.dropdown > *:not(:last-child) { border-bottom:1px solid; }
 .dropdown .input { padding:0; }
 .tooltip.modal { left:0; right:0; margin:0 auto; }
 .tooltip.modal > .close { position:absolute; top:0; right:0; margin-right:.25em; }

@@ -90,19 +90,56 @@ function clean_ttip(t) {
 	});
 	if (!sel('.tooltip.modal')) document.body.classList.remove('has-modal');
 }
+function select(val, empty_opt, opts) {
+	var s = document.createElement('div');
+	s.className = 'select';
+	for (var o in opts) {
+		var a = document.createElement('a');
+		a.href = '#';
+		a.dataset.value = o;
+		if (typeof (val) == 'object' ? val.indexOf(o) != -1 : val == o) a.className = 'selected';
+		a.textContent = _(opts[o]);
+		s.appendChild(a);
+	}
+	if (empty_opt) {
+		var a = document.createElement('a');
+		a.href = '#';
+		a.className = 'no-value';
+		if (!sel('.selected',s)) a.className += ' selected';
+		a.textContent = _(empty_opt);
+		s.insertBefore(a, s.children[0]);
+	}
+
+	return s;
+}
 function disable(s, enable, dom) {
 	sel(s, dom).classList.toggle('disabled', !enable);
 }
 document.addEventListener('click', function (e) {
 	var t = e.target;
 	if (!t) return;
-	if (t.matches('.disabled')) {
-		e.stopPropagation();
-		e.preventDefault();
-	}
+	if (t.matches('.disabled')) { e.preventDefault(); return; }
 	if (t.matches('a[href="#"]')) e.preventDefault();
 	if (t.matches('.tooltip .close')) trg(t.closest('.tooltip'), 'close');
 	if (t.matches('.dropdown .input')) return;
+	if (t.matches('.select > a')) {
+		var s = t.parentNode;
+		if (s.classList.contains('open')) {
+			if (!s.classList.contains('multiple')) {
+				each('.selected', function (i) { i.classList.remove('selected'); }, s);
+			}
+			t.classList.toggle('selected');
+			var v = [];
+			each('.selected', function (i) { if (i.dataset.value) v.push(i.dataset.value); }, s);
+			s.value = v.join(';');
+			trg(s, 'change');
+			if (s.classList.contains('multiple')) return;
+			s.classList.remove('open');
+		} else {
+			s.classList.add('open');
+			return;
+		}
+	}
 	clean_ttip(t.closest('.tooltip:not(.dropdown)'));
 });
 document.addEventListener('close', function (e) {
@@ -157,7 +194,8 @@ var Editor = function (dom, onchange) {
 		if (t.matches('[data-render]')) self.render([parseInt(t.dataset.render)]);
 		if (t.matches('.plus-one')) {
 			var cid = parseInt(t.dataset.next);
-			dom.insertBefore(self.renderChunk(cid), t);
+			var d = self.renderChunk(cid);
+			if (d) dom.insertBefore(d, t);
 			if (self.chunks.length > cid + 1) {
 				t.dataset.next = cid + 1;
 			} else {
@@ -194,7 +232,6 @@ Editor.TYPES = {
 	}
 };
 Editor.getType = function (type) {
-	throw new Exception('tralala');
 	return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 }
 Editor.prototype.load = function (data, store_filler) {

@@ -7,15 +7,17 @@ Locale['Does Not Stick'] = 'Nem ragad';
 Locale['Save'] = 'Elment';
 Locale['Select Ana.'] = 'Analízis választása';
 Locale['Fix Token'] = 'Token javítása';
-Locale['Join Token'] = 'Token összevon';
+Locale['Join Token...'] = 'Token összevon...';
 Locale['Split Token...'] = 'Token szétszed...';
 Locale['Type: Word'] = 'Típus: Szó';
 Locale['Type: Punct'] = 'Típus: Punkt.';
 
 Locale['Select Sentinence...'] = 'Mondattípus...';
-Locale['Move Sent.'] = 'Mondat mozgat';
-Locale['Join Sent.'] = 'Mondat összevon';
-Locale['Split Sent.'] = 'Mondat szétszed';
+Locale['Move Sentence...'] = 'Mondat mozgat...';
+Locale['Join Sentence...'] = 'Mondat összevon...';
+Locale['Split Sentence...'] = 'Mondat szétszed...';
+Locale['Before'] = 'Előtte';
+Locale['After'] = 'Utána';
 
 Locale['Invalid Action'] = 'Nem végrehajtható akció';
 
@@ -25,17 +27,32 @@ PC_JOIN = {
 	'no': 'Does Not Stick'
 }
 
-//TODO: sentinence types
 SENT_TYPE = {
-	'1': 'Sentinence 1',
-	'2': 'Sentinence 2',
-	'3': 'Sentinence 3',
-	'4': 'Sentinence 4',
-	'5': 'Sentinence 5'
+	'Bánat': 'Bánat',
+	'Düh': 'Düh',
+	'Elégedetlenség': 'Elégedetlenség',
+	'Félelem': 'Félelem, Rémület (tartalmazza a Szorongást)',
+	'Gúnyolódás': 'Gúnyolódás, Kifogásolás',
+	'Irigység': 'Irigység, Féltékenység',
+	'Undor': 'Undor, Megvetés',
+	'Kellemetlenség': 'Kellemetlenség',
+	'Együttérzés': 'Együttérzés, Szimpátia',
+	'Érdeklődés': 'Érdeklődés (Interest)',
+	'Nosztalgia': 'Nosztalgia',
+	'Szokatlanság': 'Szokatlanság, Meglepődés',
+	'Elégedettség': 'Elégedettség',
+	'Öröm': 'Öröm',
+	'Reménykedés': 'Reménykedés, Bizakodás, Vágyakozás'
+}
+
+ANNOT_TYPE = {
+	'Személynév': 'Személynév',
+	'Helynév': 'Helynév',
+	'Intézménynév': 'Intézménynév'
 }
 
 var _active = {};
-var _annots = false;
+var _annots = { items: {}, words: {}, changed: false };
 
 Editor.TYPES.p = {
 	remove: function (input, chunk) {
@@ -76,20 +93,23 @@ evt(editor.dom, 'load', function () {
 				+ '<h3>' + selToText(x, 'author') + '</h3>' + html;
 		}
 		if (i.name == '.annotations') {
-			_annots = parseXml(i.value);
+			var annots = parseXml(i.value);
+			_annots.items = {};
+			_annots.words = {};
+			_annots.changed = false;
+			each('annotation', function (i) {
+				//TODO: add annotation
+			}, annots);
 		}
 	}
 	sel('#header').innerHTML = html;
 });
 
-function getSelect(wid, cls, val, empty_val, empty_opt, opts) {
-	var html = '<select class="input ' + cls + '"' + (wid ? ' data-wid="' + wid + '"' : '') + '>';
-	if (val == empty_val) html += '<option>' + _(empty_opt) + '</option>';
-	for (var o in opts) {
-		html += '<option value="' + o + '"' + (val == o ? ' selected' : '') + '>' + _(opts[o]) + '</option>';
-	}
-	html += '</select>';
-	return html;
+function getSelect(wid, cls, val, empty_opt, opts) {
+	var s = select(val, empty_opt, opts);
+	s.className += ' ' + cls;
+	if (wid) s.dataset.wid = wid;
+	return s.outerHTML;
 }
 function getLink(wid, cls, txt, tpl) {
 	return '<a href="#" class="' + cls + '"' + (wid ? ' data-wid="' + wid + '"' : '') + '>' + (tpl ? tpl.replace('@', _(txt)) : _(txt)) + '</a>';
@@ -131,6 +151,7 @@ function parsePar(dom) {
 		}, s);
 		ew = document.createElement('span');
 		ew.className = 'cfg';
+		if (!s.getAttribute('sent')) ew.className += ' unchecked';
 		ew.innerHTML = "⚙";
 		es.appendChild(ew);
 		ep.appendChild(es);
@@ -168,15 +189,15 @@ document.addEventListener('click', function (e) {
 	// open tooltip
 	if (t.matches('.w, .cfg')) {
 		var html = '';
-		var a = {};
 		if (xw) { //token
 			if (sel('morph', xw)) {
 				html += getLink(wid, 'edit ana', 'Select Ana.');
 			}
 			if (t.classList.contains('pc')) {
-				html += getSelect(wid, 'edit pc', xw.getAttribute('join') || '?', '?', 'Sticks To...', PC_JOIN);
+				html += getSelect(wid, 'edit pc', xw.getAttribute('join') || '?', 'Sticks To...', PC_JOIN);
 			}
-			//TODO: create / edit annotation
+			html += getSelect(wid, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
+			//TODO: edit annotation
 			html += getLink(wid, 'edit token', 'Fix Token');
 			var tkn = selToText(xw, 'token', true);
 			if (tkn.length > 1) {
@@ -184,104 +205,24 @@ document.addEventListener('click', function (e) {
 				for (var i = 1; i < tkn.length; ++i) {
 					split[i] = encXml(tkn.substr(0, i)) + ' | ' + encXml(tkn.substr(i));
 				}
-				html += getSelect(wid, 'split token', '', '', 'Split Token...', split);
+				html += getSelect(wid, 'split token', '', 'Split Token...', split);
 			}
-			html += getSelect(wid, 'edit tokentype', xw.nodeName, '', '', { w: 'Type: Word', pc: 'Type: Punct' });
-			if (wid > 0) html += getLink(wid, 'join token left', 'Join Token', '@ ◀');
-			if (t.nextSibling.dataset.wid > 0) html += getLink(wid, 'join token right', 'Join Token', '@ ▶');
+			html += getSelect(wid, 'edit tokentype', xw.nodeName, '', { w: 'Type: Word', pc: 'Type: Punct' });
+			html += getSelect(wid, 'join token', '', 'Join Token...', { '0': 'Before', '1': 'After' });
 		} else {
-			//html += getSelect(wid, 'edit sent', xs.getAttribute('sent') || '', '', 'Select Sentinence...', SENT_TYPE);
+			html += getSelect(wid, 'edit sent multiple', (xs.getAttribute('sent') || '').split(';'), 'Select Sentinence...', SENT_TYPE);
 		}
-		if (xw && wid > 0) {
-			html += getLink(wid, 'split sent left', 'Split Sent.', '@ ◀');
+		if (xw) {
+			html += getSelect(wid, 'split sent', '', 'Split Sentence...', { '0': 'Before', '1': 'After' });
 		} else {
-			html += getLink(wid, 'join sent left', 'Join Sent.', '@ ▲');
-			if (sid == 0) html += getLink(wid, 'move sent left', 'Move Sent.', '@ ▲');
-		}
-		if (xw && wid < xwl.length - 1) {
-			html += getLink(wid, 'split sent right', 'Split Sent.', '@ ▶');
-		} else {
-			if (sid == xsl.length - 1) html += getLink(wid, 'move sent right', 'Move Sent.', '@ ▼');
-			html += getLink(wid, 'join sent right', 'Join Sent.', '@ ▼');
+			html += getSelect(wid, 'join sent', '', 'Join Sentence...', { '0': 'Before', '1': 'After' });
+			html += getSelect(wid, 'move sent', '', 'Move Sentence...', { '0': 'Before', '1': 'After' });
 		}
 		var t = ttip(t, e);
 		t.classList.add('dropdown');
 		t.innerHTML = html;
 		return;
 	}
-
-	// sentence stuff
-
-	if (t.matches('.join.sent')) {
-		var off = t.classList.contains('left') ? -1 : 1;
-		var u, cids;
-		if (xsl[sid + off]) {
-			u = off > 0 ? [xs, xsl[sid + off]] : [xsl[sid + off], xs];
-			cids = [cid];
-		} else {
-			if (!_active[cid + off]) {
-				c.parentNode.insertBefore(editor.renderChunk(cid + off), off > 0 ? c.nextSibling : c);
-			}
-			if (!_active[cid + off]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			u = off > 0 ? [xs, sel('s', _active[cid + off])] : [sel('s:last-of-type', _active[cid + off]), xs];
-			cids = off > 0 ? [cid, cid + off] : [cid + off, cid];
-		}
-		if (!u[0] || !u[1]) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
-		u[0].innerHTML = u[0].innerHTML.replace(/[ \r\n\t]+$/, '') + u[1].innerHTML;
-		var id2 = u[1].getAttribute('xml:id').split('_');
-		delNode(u[1]);
-		var id1 = u[0].getAttribute('xml:id').split('_');
-		if (id1.length > 1) {
-			if (id2.length > 1) {
-				u[0].setAttribute('xml:id', '');
-				u[0].setAttribute('xml:id', getUID(c, id[0]));
-			} else {
-				u[0].setAttribute('xml:id', id2[0]);
-			}
-		}
-		savePar(cids);
-		return;
-	}
-
-	if (t.matches('.split.sent')) {
-		var indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
-		xs.insertBefore(x.createElement('split'), xwl[parseInt(wid) + (t.classList.contains('left') ? 0 : 1)]);
-		var xe = x.documentElement;
-		var id = xs.getAttribute('xml:id').split('_')[0];
-		xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
-			, indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName + (id ? ' xml:id="' + getUID(c, id) + '"' : '') + '> $1');
-		savePar([cid]);
-		return;
-	}
-
-	if (t.matches('.move.sent')) {
-		var off = t.classList.contains('left') ? -1 : 1;
-		if (!_active[cid + off]) {
-			c.parentNode.insertBefore(editor.renderChunk(cid + off), off > 0 ? c.nextSibling : c);
-		}
-		if (!_active[cid + off]) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
-		var x2 = _active[cid + off].documentElement
-		if (off > 0) {
-			x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)</, '$1' + xs.outerHTML + '$1<');
-		} else {
-			var indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
-			x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)$/, indent + xs.outerHTML + '$1');
-		}
-		delNode(xs);
-		savePar(off > 0 ? [cid, cid + off] : [cid + off, cid]);
-		return;
-	}
-
-	// token stuff
 
 	if (t.matches('.edit.ana')) {
 		var html = '';
@@ -358,36 +299,6 @@ document.addEventListener('click', function (e) {
 		return;
 	}
 
-	if (t.matches('.join.token')) {
-		var off = t.classList.contains('left') ? -1 : 1;
-		var xw2 = xwl[parseInt(wid) + off];
-		if (!xw2) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
-		var u = off > 0 ? [xw, xw2] : [xw2, xw];
-		var xml = '<token modified="True">' + selToText(u[0], 'token') + selToText(u[1], 'token') + '</token>';
-		if (sel('morph', u[0]) || sel('morph', u[1])) xml += '<morph check="False"/>';
-		if (u[0].nodeName == 'pc' && u[1].nodeName == 'w') { // in this case keep the second element
-			u = [u[1], u[0]];
-		}
-		var id2 = u[1].getAttribute('xml:id').split('_');
-		delNode(u[1]);
-		u[0].innerHTML = xml;
-		var id1 = u[0].getAttribute('xml:id').split('_');
-		if (id1.length > 1) {
-			if (id2.length > 1) {
-				u[0].setAttribute('xml:id', '');
-				u[0].setAttribute('xml:id', getUID(c, id[0]));
-			} else {
-				u[0].setAttribute('xml:id', id2[0]);
-			}
-			updAnnot([id1,id2], u[0].getAttribute('xml:id'));
-		}
-		savePar([cid]);
-		return;
-	}
-
 });
 
 document.addEventListener('change', function (e) {
@@ -410,8 +321,88 @@ document.addEventListener('change', function (e) {
 	// sentence stuff
 
 	if (t.matches('.edit.sent')) {
+		if (t.value == '') return;
 		xs.setAttribute('sent', t.value);
 		savePar([cid]);
+		return;
+	}
+
+	if (t.matches('.join.sent')) {
+		if (t.value == '') return;
+		var off = t.value == '0' ? -1 : 1;
+		var u, cids;
+		if (xsl[sid + off]) {
+			u = off > 0 ? [xs, xsl[sid + off]] : [xsl[sid + off], xs];
+			cids = [cid];
+		} else {
+			if (!_active[cid + off]) {
+				var e = editor.renderChunk(cid + off);
+				if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
+			}
+			if (!_active[cid + off]) {
+				addMsg(_('Invalid Action'));
+				return;
+			}
+			u = off > 0 ? [xs, sel('s', _active[cid + off])] : [sel('s:last-of-type', _active[cid + off]), xs];
+			cids = off > 0 ? [cid, cid + off] : [cid + off, cid];
+		}
+		if (!u[0] || !u[1]) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+		u[0].innerHTML = u[0].innerHTML.replace(/[ \r\n\t]+$/, '') + u[1].innerHTML;
+		var id2 = u[1].getAttribute('xml:id').split('_');
+		delNode(u[1]);
+		var id1 = u[0].getAttribute('xml:id').split('_');
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				u[0].setAttribute('xml:id', '');
+				u[0].setAttribute('xml:id', getUID(c, id[0]));
+			} else {
+				u[0].setAttribute('xml:id', id2[0]);
+			}
+		}
+		savePar(cids);
+		return;
+	}
+
+	if (t.matches('.split.sent')) {
+		if (t.value == '') return;
+		var xw2 = xwl[parseInt(wid) + (t.value == '0' ? 0 : 1)];
+		if (!xw2 || xw2 == xwl[0]) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+		var indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
+		xs.insertBefore(x.createElement('split'), xw2);
+		var xe = x.documentElement;
+		var id = xs.getAttribute('xml:id').split('_')[0];
+		xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
+			, indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName + (id ? ' xml:id="' + getUID(c, id) + '"' : '') + '> $1');
+		savePar([cid]);
+		return;
+	}
+
+	if (t.matches('.move.sent')) {
+		if (t.value == '') return;
+		var off = t.value == '0' ? -1 : 1;
+		if (!_active[cid + off]) {
+			var e = editor.renderChunk(cid + off);
+			if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
+		}
+		if (!_active[cid + off] || (off > 0 && xsl.length > sid + 1) || (off < 0 && sid > 0)) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+		var x2 = _active[cid + off].documentElement
+		if (off > 0) {
+			x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)</, '$1' + xs.outerHTML + '$1<');
+		} else {
+			var indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
+			x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)$/, indent + xs.outerHTML + '$1');
+		}
+		delNode(xs);
+		savePar(off > 0 ? [cid, cid + off] : [cid + off, cid]);
 		return;
 	}
 
@@ -423,7 +414,39 @@ document.addEventListener('change', function (e) {
 		return;
 	}
 
+	if (t.matches('.join.token')) {
+		if (t.value == '') return;
+		var off = t.value == '0' ? -1 : 1;
+		var xw2 = xwl[parseInt(wid) + off];
+		if (!xw2) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+		var u = off > 0 ? [xw, xw2] : [xw2, xw];
+		var xml = '<token modified="True">' + selToText(u[0], 'token') + selToText(u[1], 'token') + '</token>';
+		if (sel('morph', u[0]) || sel('morph', u[1])) xml += '<morph check="False"/>';
+		if (u[0].nodeName == 'pc' && u[1].nodeName == 'w') { // in this case keep the second element
+			u = [u[1], u[0]];
+		}
+		var id2 = u[1].getAttribute('xml:id').split('_');
+		delNode(u[1]);
+		u[0].innerHTML = xml;
+		var id1 = u[0].getAttribute('xml:id').split('_');
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				u[0].setAttribute('xml:id', '');
+				u[0].setAttribute('xml:id', getUID(c, id[0]));
+			} else {
+				u[0].setAttribute('xml:id', id2[0]);
+			}
+			updAnnot([id1, id2], [u[0].getAttribute('xml:id')]);
+		}
+		savePar([cid]);
+		return;
+	}
+
 	if (t.matches('.split.token')) {
+		if (t.value == '') return;
 		var tkn = sel('token', xw);
 		tkn.setAttribute('modified', 'True');
 		var morph = sel('morph', xw);
@@ -433,25 +456,27 @@ document.addEventListener('change', function (e) {
 		}
 		var xw2 = parseXml(xw.outerHTML).documentElement;
 		sel('token', xw2).textContent = tkn.innerHTML.substr(t.value);
-		var id = xw.getAttribute('xml:id').split('_')[0];
-		if (id) xw2.setAttribute('xml:id', getUID(c, id));
+		var id1 = xw.getAttribute('xml:id');
+		if (id1) xw2.setAttribute('xml:id', getUID(c, id1.split('_')[0]));
 		tkn.textContent = tkn.textContent.substr(0, t.value);
 		xs.insertBefore(xw2, xw.nextSibling);
 		if (xw.previousSibling && xw.previousSibling.nodeName == '#text') {
 			xs.insertBefore(x.createTextNode(xw.previousSibling.textContent), xw.nextSibling);
 		}
+		updAnnot([id1], [id1, xw2.getAttribute('xml:id')]);
 		savePar([cid]);
 		return;
 	}
 
 	if (t.matches('.edit.tokentype')) {
+		if (t.value == '' || t.value == xw.nodeName) return;
 		var xw2 = x.createElement(t.value);
 		xw2.innerHTML = xw.innerHTML;
 		sel('token', xw2).setAttribute('modified', 'True');
 		var id = x.documentElement.getAttribute('xml:id');
 		if (id) {
 			xw2.setAttribute('xml:id', getUID(c, t.value + id));
-			updAnnot([xw.getAttribute('xml:id')], xw2.getAttribute('xml:id'));
+			updAnnot([xw.getAttribute('xml:id')], [xw2.getAttribute('xml:id')]);
 		}
 		xs.insertBefore(xw2, xw);
 		xw.remove();
@@ -459,6 +484,11 @@ document.addEventListener('change', function (e) {
 		return;
 	}
 
+	// annotation stuff
+
+	if (t.matches('.add.annot')) {
+		//TODO: add annotation
+		return;
+	}
 });
 
-//TODO: annotations

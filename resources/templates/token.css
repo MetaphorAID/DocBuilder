@@ -6,8 +6,8 @@
 
 .par .w.left { border-left-style:dotted; }
 .par .w.right { border-right-style:dotted; }
-.par .w.modified { border-color:#660; }
-.par .w.unchecked { background-color:#FBB; }
+.par .modified { border-color:#660; }
+.par .unchecked { background-color:#FBB; }
 
 .par .tkn, .par table th { text-align:center; }
 .par .tkn { font-weight:400; }
