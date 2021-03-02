@@ -88,18 +88,20 @@ Editor.TYPES.p = {
 			ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
 		} else {
 			ep.className = 'par';
-			each('w,pc', function (i, ii) {
-				var id = i.getAttribute('xml:id');
-				if (!_annots.ref[id]) return;
-				for (var j in _annots.ref[id]) {
-					if (sel('[data-aid="' + j + '"]')) return;
-					var d = document.createElement('div');
-					d.dataset.aid = j;
-					d.className = 'annot';
-					d.innerHTML = _annots.list[j].getAttribute('entity') + ': ' + xmlToText(_annots.list[j].innerHTML);
-					sel('#footer').appendChild(d);
-				}
-			}, x);
+			if (_annots.xml) {
+				each('w,pc', function (i) {
+					var id = i.getAttribute('xml:id');
+					if (!_annots.ref[id]) return;
+					for (var j in _annots.ref[id]) {
+						if (sel('[data-aid="' + j + '"]')) return;
+						var d = document.createElement('div');
+						d.dataset.aid = j;
+						d.className = 'annot';
+						d.innerHTML = _annots.list[j].getAttribute('entity') + ': ' + xmlToText(_annots.list[j].innerHTML);
+						sel('#footer').appendChild(d);
+					}
+				}, x);
+			}
 		}
 		return ep;
 	},
