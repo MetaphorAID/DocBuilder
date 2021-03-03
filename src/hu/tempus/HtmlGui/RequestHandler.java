@@ -115,8 +115,16 @@ public class RequestHandler implements HttpHandler {
 			try {
 				URL url = new URL(address);
 				URLConnection conn = url.openConnection();
-				conn.setRequestProperty("User-Agent", IOUtils.USER_AGENT);
-				conn.connect();
+				Headers h = req.request.getRequestHeaders();
+				conn.setRequestProperty("User-Agent", h.getFirst("User-Agent"));
+				if ("POST".equals(req.request.getRequestMethod())) {
+					conn.setRequestProperty("Content-Type", h.getFirst("Content-Type"));
+					conn.setRequestProperty("Content-Length", h.getFirst("Content-Length"));
+					conn.setDoOutput(true);
+					IOUtils.redirect(req.request.getRequestBody(), conn.getOutputStream());
+				} else {
+					conn.connect();
+				}
 
 				String type = conn.getContentType();
 				if (type != null) {
