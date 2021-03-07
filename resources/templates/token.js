@@ -567,7 +567,7 @@ document.addEventListener('change', function (e) {
 			return;
 		}
 		var u = off > 0 ? [xt, xt2] : [xt2, xt];
-		var xml = '<form modified="True">' + selToText(u[0], 'form') + selToText(u[1], 'form') + '</token>';
+		var xml = '<form modified="True">' + selToText(u[0], 'form') + selToText(u[1], 'form') + '</form>';
 		if (sel('morph', u[0]) || sel('morph', u[1])) xml += '<morph check="False"/>';
 		var id2 = u[1].getAttribute('xml:id').split('_');
 		delNode(u[1]);
