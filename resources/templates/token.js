@@ -456,6 +456,7 @@ document.addEventListener('click', function (e) {
 	if (t.matches('.selAna')) {
 		if (t.dataset.ana === 'default') {
 			var morph = sel('morph', xt);
+			each('ana[correct="True"]', function(i, idx) { if (idx)  i.setAttribute('correct', 'False'); });
 			morph.setAttribute('check', 'True');
 			savePar([cid]);
 		} else {
