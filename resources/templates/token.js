@@ -487,7 +487,7 @@ document.addEventListener('click', function (e) {
 				addMsg(_('Invalid Format'), null, input[0]);
 				return;
 			}
-			if (!vals[1].length || !vals[1].match(/^\S+\[\/\S+\](=\S+)?(\s+\+\s+\S*\[[^\]]+\](=\S+)?)*$/)) {
+			if (vals[1].length && !vals[1].match(/^\S+\[\/\S+\](=\S+)?(\s+\+\s+\S*\[[^\]]+\](=\S+)?)*$/)) {
 				addMsg(_('Invalid Format'), null, input[1]);
 				return;
 			}
