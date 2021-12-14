@@ -487,10 +487,10 @@ document.addEventListener('click', function (e) {
 				addMsg(_('Invalid Format'), null, input[0]);
 				return;
 			}
-			if (vals[1].length && !vals[1].match(/^\S+\[\/\S+\](=\S+)?(\s+\+\s+\S*\[[^\]]+\](=\S+)?)*$/)) {
-				addMsg(_('Invalid Format'), null, input[1]);
-				return;
-			}
+			// if (vals[1].length && !vals[1].match(/^\S+\[\/\S+\](=\S+)?(\s+\+\s+\S*\[[^\]]+\](=\S+)?)*$/)) {
+			// 	addMsg(_('Invalid Format'), null, input[1]);
+			// 	return;
+			// }
 			if (!vals[2].length || !vals[2].match(/^\[\/\S+\](\[[^\]]+\])*$/)) {
 				addMsg(_('Invalid Format'), null, input[2]);
 				return;
