@@ -491,10 +491,10 @@ document.addEventListener('click', function (e) {
 			// 	addMsg(_('Invalid Format'), null, input[1]);
 			// 	return;
 			// }
-			if (!vals[2].length || !vals[2].match(/^\[\/\S+\](\[[^\]]+\])*$/)) {
-				addMsg(_('Invalid Format'), null, input[2]);
-				return;
-			}
+			// if (!vals[2].length || !vals[2].match(/^\[\/\S+\](\[[^\]]+\])*$/)) {
+			// 	addMsg(_('Invalid Format'), null, input[2]);
+			// 	return;
+			// }
 			var tpl = sel('ana', x);
 			var ana = parseXml(tpl.outerHTML).documentElement;
 			ana.setAttribute('correct', 'True');
