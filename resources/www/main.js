@@ -442,7 +442,15 @@ var History = function (name, max, onchange) {
 	if (this.onchange_cb) this.onchange_cb(this);
 }
 History.prototype.onchange = function () {
-	localStorage[this.name] = JSON.stringify(this.data);
+	var save = Object.assign({}, this.data);
+	while (save.length) {
+		try {
+			localStorage[this.name] = JSON.stringify(save);
+			break;
+		} catch (e) {
+			save.pop();
+		}
+	}
 	if (this.onchange_cb) this.onchange_cb(this);
 }
 History.prototype.add = function (data) {
@@ -530,7 +538,7 @@ function undo(reverse) {
 		var current = {}, next = {};
 		for (var cid in data.chunks) {
 			var f = cid[0] == 'h' ? 'hidden' : 'chunks';
-			var c = editor[f][cid.substr(1)];
+			var c = editor[f][cid.substring(1)];
 			if (c.value != data.values[cid]) {
 				current = false;
 			}
@@ -548,9 +556,9 @@ function undo(reverse) {
 		for (var cid in data.chunks) {
 			var d = data.chunks[cid];
 			var f = cid[0] == 'h' ? 'hidden' : 'chunks';
-			editor[f][cid.substr(1)] = d;
+			editor[f][cid.substring(1)] = d;
 			tosave.push(d);
-			if (f == 'hidden') hids.push(cid.substr(1));
+			if (f == 'hidden') hids.push(cid.substring(1));
 		}
 		save(tosave);
 		if (hids.length) editor.renderHidden(hids);
