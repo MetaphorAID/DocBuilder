@@ -39,7 +39,6 @@ public class DocEditor {
 		}
 		mChunks = mTemplate.filter.getChunks(content);
 		FILES.put(this.getId(), this);
-		return;
 	}
 
 	public static void addTemplate(File file) {
@@ -47,8 +46,8 @@ public class DocEditor {
 		TEMPLATES.put(filter.getId(), filter);
 	}
 
-	public static DocEditor load(String fileId) throws IOException {
-		DocEditor editor = FILES.get(fileId);
+	public static DocEditor load(String fileId, Boolean reload) throws IOException {
+		DocEditor editor = reload ? null : FILES.get(fileId);
 		if (editor == null) {
 			editor = new DocEditor(new Template(fileId));
 		}

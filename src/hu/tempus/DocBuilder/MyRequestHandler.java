@@ -72,7 +72,7 @@ public class MyRequestHandler extends RequestHandler {
 						return req.sendData(resp);
 					}
 				} else {
-					editor = DocEditor.load(docId);
+					editor = DocEditor.load(docId, "1".equals(req.getParameter("reload")));
 				}
 				if (path[0].equals("save")) {
 					editor.setChunks((JsonArray) JsonHelper.parse(req.request.getRequestBody()));
