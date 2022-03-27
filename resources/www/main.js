@@ -335,6 +335,9 @@ Editor.prototype.ischanged = function (onnotchanged) {
 	}
 }
 Editor.prototype.onchange = function (cids, hdata) {
+	editor.restore = editor.getVisible();
+	var hids = Object.keys(hdata || {});
+	if (hids.length) editor.restoreHidden = hids;
 	var chunks = {}, values = {}, changed = false;
 	for (var i in cids) {
 		var cid = cids[i];
@@ -509,8 +512,8 @@ var editor = new Editor(sel('#editor'), function (chunks, values) {
 	save(tosave);
 });
 
-function open(id, onsuccess) {
-	fetch('/open?id=' + encodeURIComponent(id || '')).then(r => r.json()).then(function (data) {
+function open(id, onsuccess, reload) {
+	fetch('/open?id=' + encodeURIComponent(id || '') + '&reload=' +  (reload ? 1 : 0)).then(r => r.json()).then(function (data) {
 		if (!data.success) {
 			addMsg(data.error || _('Unknown Error'));
 			return;
@@ -523,6 +526,14 @@ function open(id, onsuccess) {
 			if (onsuccess) onsuccess();
 		});
 		editor.load(data, false);
+		if (editor.restore) {
+			editor.render(editor.restore);
+			editor.restore = false;
+		}
+		if (editor.restoreHidden) {
+			editor.renderHidden(editor.restoreHidden);
+			editor.restoreHidden = false;
+		}
 	});
 }
 function save(chunks) {
@@ -536,6 +547,19 @@ function save(chunks) {
 			return;
 		}
 		addMsg(_('Document Saved'), 'success');
+		if (editor.forceReload) {
+			open(editor.id, false, true);
+			editor.forceReload = false;
+		} else {
+			if (editor.restore) {
+				editor.render(editor.restore);
+				editor.restore = false;
+			}
+			if (editor.restoreHidden) {
+				editor.renderHidden(editor.restoreHidden);
+				editor.restoreHidden = false;
+			}
+		}
 	});
 }
 function undo(reverse) {

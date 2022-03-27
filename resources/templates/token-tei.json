@@ -1,7 +1,7 @@
 {
-	"name": "Token editor",
+	"name": "Token editor (tei)",
 	"extension": "xml",
-	"js": "token.js",
+	"js": "token.js,token-tei.js",
 	"css": "token.css",
 	"chunks": {
 		"<teiHeader>.*?(?:</teiHeader>)": ".header",
