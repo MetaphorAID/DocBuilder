@@ -513,7 +513,7 @@ var editor = new Editor(sel('#editor'), function (chunks, values) {
 });
 
 function open(id, onsuccess, reload) {
-	fetch('/open?id=' + encodeURIComponent(id || '') + '&reload=' +  (reload ? 1 : 0)).then(r => r.json()).then(function (data) {
+	fetch('/open?id=' + encodeURIComponent(id || '') + '&last=' + encodeURIComponent(hist.recent.get(0, 1) || '') + '&reload=' +  (reload ? 1 : 0)).then(r => r.json()).then(function (data) {
 		if (!data.success) {
 			addMsg(data.error || _('Unknown Error'));
 			return;

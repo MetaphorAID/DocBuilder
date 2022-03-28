@@ -66,7 +66,7 @@ public class MyRequestHandler extends RequestHandler {
 				String docId = req.getParameter("id", "");
 				DocEditor editor;
 				if (path[0].equals("open") && docId.isEmpty()) {
-					editor = DocEditor.open();
+					editor = DocEditor.open(req.getParameter("last", ""));
 					if (editor == null) {
 						resp.put("success", true);
 						return req.sendData(resp);

@@ -54,8 +54,8 @@ public class DocEditor {
 		return editor;
 	}
 
-	public static DocEditor open() throws IOException {
-		Template tpl = choose(null, "Create/Open a file", "Open");
+	public static DocEditor open(String lastFileId) throws IOException {
+		Template tpl = choose(lastFileId.isEmpty() ? null : new Template(lastFileId), "Create/Open a file", "Open");
 		if (tpl == null)
 			return null;
 		return new DocEditor(tpl);
