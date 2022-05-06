@@ -17,6 +17,8 @@
 				for (var c1 in c) _cols[c[c1]] = c1;
 				if (typeof (_cols.lemma) == 'undefined') { _cols.lemma = c.length; c.push('lemma'); }
 				if (typeof (_cols.xpostag) == 'undefined') { _cols.xpostag = c.length; c.push('xpostag'); }
+				if (typeof (_cols.verified) == 'undefined') { _cols.verified = c.length; c.push('verified'); }
+				_cols._length = c.length;
 				_cols._header = c.join('\t');
 			}
 			var pr = 0;
@@ -27,7 +29,7 @@
 			if (!ep.children.length) {
 				ep.innerHTML = chunk.value || '<em>' + _('EMPTY') + '</em>';
 			} else {
-				ep.classList.add('par','xtsv');
+				ep.classList.add('par', 'xtsv');
 			}
 			return ep;
 		},
@@ -54,14 +56,20 @@
 		return token[_cols['xpostag']] || '';
 	}
 
+	function getVerified(token) {
+		return parseInt(token[_cols['verified']]) || 0;
+	}
+
 	function resetToken(token, value) {
 		token[_cols['form']] = value;
 		token[_cols['anas']] = token[_cols['lemma']] = token[_cols['xpostag']] = '';
+		token[_cols['verified']] = 0;
 	}
 
 	function setAna(token, lemma, postag) {
 		token[_cols['lemma']] = lemma;
 		token[_cols['xpostag']] = postag;
+		token[_cols['verified']] = 1;
 	}
 
 	function stringifyTsv(tokens) {
@@ -76,7 +84,9 @@
 		text = text.split(editor.eol);
 		var x = [];
 		for (var t in text) {
-			x.push(text[t].split('\t'));
+			t = text[t].split('\t');
+			//if (t[0] != '') while (t.length < _cols._length) t.push('');
+			x.push(t);
 		}
 		return x;
 	}
@@ -110,7 +120,7 @@
 			ew.dataset.tid = wi;
 			if (!w[0] && w.length < 2) return;
 			var anas = getAnas(w);
-			if (anas.length && !getLemma(w)) {
+			if (!getVerified(w)) {
 				ew.className += ' unchecked';
 				if (anas.length == 1) ew.className += ' single';
 			}
