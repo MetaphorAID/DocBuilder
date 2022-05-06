@@ -28,6 +28,7 @@ public class DocEditor {
 
 	protected final Template mTemplate;
 	protected List<Chunk> mChunks;
+	protected Map<Integer, Chunk> mChunkRefs;
 
 	protected DocEditor(Template template) throws IOException {
 		mTemplate = template;
@@ -38,6 +39,12 @@ public class DocEditor {
 			content = IOUtils.read(new FileInputStream(mTemplate.file));
 		}
 		mChunks = mTemplate.filter.getChunks(content);
+		mChunkRefs = new HashMap<>();
+		for (Chunk chunk : mChunks) {
+			if (chunk.id == null)
+				continue;
+			mChunkRefs.put(chunk.id, chunk);
+		}
 		FILES.put(this.getId(), this);
 	}
 
@@ -78,25 +85,13 @@ public class DocEditor {
 	}
 
 	public void setChunks(JsonArray chunks) {
-		Iterator<Chunk> cit = mChunks.iterator();
 		Iterator<JsonValue> uit = chunks.iterator();
-		if (!cit.hasNext()) {
-			return;
-		}
-		Chunk c = cit.next();
 		while (uit.hasNext()) {
 			JsonObject u = (JsonObject) uit.next();
-			int uid = u.getInt("id", 0);
-			while (c.id == null || c.id < uid) {
-				if (!cit.hasNext()) {
-					return;
-				}
-				c = cit.next();
+			Chunk c = mChunkRefs.get(u.getInt("id", 0));
+			if (c != null) {
+				c.value = (u.getBoolean("append", false) ? c.value : "") + u.getString("value");
 			}
-			if (c.id > uid) {
-				continue;
-			}
-			c.value = (u.getBoolean("append", false) ? c.value : "") + u.getString("value");
 		}
 	}
 
