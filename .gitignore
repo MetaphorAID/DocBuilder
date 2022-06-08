@@ -1,0 +1,9 @@
+.vscode
+.settings
+.history
+.project
+.classpath
+target
+DocBuilder.jar
+DocBuilder.log
+DocBuilder.pid

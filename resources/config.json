@@ -1,0 +1,5 @@
+{
+	"port": 8000,
+	"root": "www",
+	"templates": "templates"
+}

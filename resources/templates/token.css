@@ -1,0 +1,28 @@
+
+.par { margin:.25em .5em; text-align:left; border-bottom:2px dashed; }
+.par h4 { text-align:center; margin-top:1rem; }
+.par .s, .par div.s .t, .par div.s .cfg { border:1px solid; margin:1em 0; }
+.par .t, .par .cfg { cursor:pointer; }
+.par div.s .t, .par div.s .cfg { display:inline-block; margin:.125em; padding:0 .25em; }
+.par div.s .cfg { float:right; }
+
+.par div.s .t.left { border-left-style:dotted; }
+.par div.s .t.right { border-right-style:dotted; }
+.par .modified { color:#00A;  }
+.par .unchecked { background-color:#FBB; }
+.par .unchecked.single { background-color:#AAF; }
+
+.par .tkn, .par table th { text-align:center; }
+.par .tkn { font-weight:400; }
+.par .btn.selected { background-color:#9F9; }
+
+.par .active { border-color:#00F; box-shadow:0 0 .5em .125em #00F; position:relative; z-index:1; }
+
+table.s { width:100%; }
+table.s td { padding:.5em 1em; border-color:#000; }
+table.s .cfg td { text-align:right; }
+table.s .t.left td { border-top-style:dotted; }
+table.s .t.right td { border-bottom-style:dotted; }
+
+
+#footer .annot { font-style:italic; font-size:.875em; text-align:left; }
