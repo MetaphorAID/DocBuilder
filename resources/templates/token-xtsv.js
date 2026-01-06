@@ -69,7 +69,7 @@
 	function setAna(token, lemma, postag) {
 		token[_cols['lemma']] = lemma;
 		token[_cols['xpostag']] = postag;
-		token[_cols['verified']] = 1;
+		token[_cols['verified']] = lemma ? 1 : 0;
 	}
 
 	function stringifyTsv(tokens) {
@@ -184,7 +184,7 @@
 		var token = tokens.shift();
 		var formData = new FormData();
 		formData.append('file', new Blob(['form\n' + getToken(token) + '\n'], { type: 'text/plain' }), 'input.txt');
-		fetch('/proxy?u=' + encodeURIComponent('http://juniper.nytud.hu/emtsv/morph'), {
+		fetch('/proxy?u=' + encodeURIComponent('https://juniper.nytud.hu/emtsv/morph'), {
 			method: 'POST',
 			body: formData
 		}).then(r => r.text()).then(function (data) {
