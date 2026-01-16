@@ -7,7 +7,6 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.URL;
 import java.security.KeyStore;
 import java.util.concurrent.Executors;
 
@@ -186,12 +185,13 @@ public class WebServer {
 			}
 			return;
 		}
-		Runtime.getRuntime().exec(mBrowser + " http://localhost:" + mPortHTTP);
+		String[] cmd = {mBrowser, "http://localhost:" + mPortHTTP};
+		Runtime.getRuntime().exec(cmd);
 	}
 
 	public void remoteStop() {
 		try {
-			BufferedInputStream tmp = new BufferedInputStream(new URL(getBaseUrl("http") + "/exit").openStream());
+			BufferedInputStream tmp = new BufferedInputStream(new URI(getBaseUrl("http") + "/exit").toURL().openStream());
 			tmp.close();
 			Thread.sleep(2000);
 		} catch (Exception e) {

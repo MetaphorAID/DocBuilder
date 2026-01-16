@@ -4,8 +4,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URLConnection;
 import java.net.URLDecoder;
 import java.text.SimpleDateFormat;
@@ -113,8 +113,7 @@ public class RequestHandler implements HttpHandler {
 			}
 
 			try {
-				URL url = new URL(address);
-				URLConnection conn = url.openConnection();
+				URLConnection conn = new URI(address).toURL().openConnection();
 				Headers h = req.request.getRequestHeaders();
 				conn.setRequestProperty("User-Agent", h.getFirst("User-Agent"));
 				if ("POST".equals(req.request.getRequestMethod())) {
@@ -137,7 +136,7 @@ public class RequestHandler implements HttpHandler {
 				IOUtils.redirect(conn.getInputStream(), req.request.getResponseBody());
 				return true;
 
-			} catch (MalformedURLException e) {
+			} catch (URISyntaxException e) {
 				Logger.error("Invalid url: " + address);
 			} catch (IOException e) {
 				Logger.error("Could not fetch url: " + address);

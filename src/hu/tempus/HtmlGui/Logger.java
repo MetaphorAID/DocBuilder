@@ -16,11 +16,11 @@ public class Logger {
 	protected static PrintStream[] mStream = new PrintStream[3];
 
 	public static void initialize(int level, String filename) throws Exception {
-		OutputStream out = new FileOutputStream(new File(filename), true);
-		mStream[0] = level >= 1 ? new LogStream("ERROR", out) : new PrintStream(new NullStream());
-		mStream[1] = level >= 2 ? new LogStream("INFO", out) : new PrintStream(new NullStream());
-		mStream[2] = level >= 3 ? new LogStream("DEBUG", out) : null;
-
+		try (OutputStream out = new FileOutputStream(new File(filename), true)) {
+			mStream[0] = level >= 1 ? new LogStream("ERROR", out) : new PrintStream(new NullStream());
+			mStream[1] = level >= 2 ? new LogStream("INFO", out) : new PrintStream(new NullStream());
+			mStream[2] = level >= 3 ? new LogStream("DEBUG", out) : null;
+		}
 		System.setErr(mStream[0]);
 		System.setOut(mStream[1]);
 	}

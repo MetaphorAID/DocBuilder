@@ -14,6 +14,8 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.RuntimeMXBean;
 import java.math.BigInteger;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
@@ -313,7 +315,7 @@ public class IOUtils {
 	}
 
 	public static ReadFile fetchURL(String url) throws IOException {
-		return fetchURL(new URL(url), null, null);
+		return fetchURL(url, null, null);
 	}
 
 	public static ReadFile fetchURL(String url, Map<String, String> params) throws IOException {
@@ -321,11 +323,17 @@ public class IOUtils {
 		if (params != null && !params.isEmpty()) {
 			headers.put("Content-Type", "application/x-www-form-urlencoded; charset=utf-8");
 		}
-		return fetchURL(new URL(url), buildQuery(params).getBytes("UTF-8"), headers);
+		return fetchURL(url, buildQuery(params).getBytes("UTF-8"), headers);
 	}
 
-	public static ReadFile fetchURL(URL url, byte[] content, Map<String, String> headers) throws IOException {
-		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+	public static ReadFile fetchURL(String url, byte[] content, Map<String, String> headers) throws IOException {
+		HttpURLConnection conn;
+		try {
+			conn = (HttpURLConnection) new URI(url).toURL().openConnection();
+		} catch (URISyntaxException e) {
+			throw new IOException(
+					"error fetching - " + url + ": invalid url syntax");
+		}
 		conn.setRequestProperty("User-Agent", USER_AGENT);
 		if (headers != null) {
 			headers.forEach((k, v) -> {
@@ -386,7 +394,6 @@ public class IOUtils {
 		if (ext.length > 1) {
 			return ext[ext.length - 1];
 		}
-		// TODO: guess by content
 		return "";
 	}
 
@@ -438,9 +445,11 @@ public class IOUtils {
 
 	public static void killByPid(long pid) throws IOException {
 		if (!System.getProperty("os.name").toLowerCase().contains("win")) {
-			Runtime.getRuntime().exec("kill -9 " + pid);
+			String[] cmd = { "kill", "-9", Long.toString(pid) };
+			Runtime.getRuntime().exec(cmd);
 		} else {
-			Runtime.getRuntime().exec("taskkill /F /PID " + pid);
+			String[] cmd = { "taskkill", "/F", "/PID", Long.toString(pid) };
+			Runtime.getRuntime().exec(cmd);
 		}
 	}
 
