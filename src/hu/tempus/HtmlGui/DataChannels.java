@@ -4,9 +4,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.StringReader;
-import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
@@ -16,12 +16,12 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import javax.json.JsonObject;
-import javax.json.JsonStructure;
-
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 public class DataChannels extends WebSocketServer {
 
@@ -40,8 +40,7 @@ public class DataChannels extends WebSocketServer {
 			try {
 				InputStream is = new FileInputStream(backupFile);
 				@SuppressWarnings("unchecked")
-				Map<String, Map<String, Object>> load = (Map<String, Map<String, Object>>) JsonHelper
-						.jsonToPojo(JsonHelper.parse(is));
+				Map<String, Map<String, Object>> load = new Gson().fromJson(new InputStreamReader(is), Map.class);
 				synchronized (CHANNELS) {
 					CHANNELS.putAll(load);
 				}
@@ -56,9 +55,8 @@ public class DataChannels extends WebSocketServer {
 			return;
 		}
 		synchronized (CHANNELS) {
-			try {
-				OutputStream os = new FileOutputStream(backupFile);
-				JsonHelper.serialize(os, (JsonStructure) JsonHelper.pojoToJson(CHANNELS));
+			try (OutputStream os = new FileOutputStream(backupFile)) {
+				os.write(new Gson().toJson(CHANNELS).getBytes("UTF-8"));
 			} catch (Exception e) {
 				Logger.error(e);
 			}
@@ -107,30 +105,26 @@ public class DataChannels extends WebSocketServer {
 	}
 
 	public static void broadcast(String channel, Map<String, Object> data) {
-		try {
-			String resp;
-			synchronized (data) {
-				resp = new String(JsonHelper.serialize(data), "UTF-8");
+		String resp;
+		synchronized (data) {
+			resp = new Gson().toJson(data);
+		}
+		synchronized (SUBSCRIBERS) {
+			Set<WebSocket> sub = SUBSCRIBERS.get(channel);
+			if (sub == null) {
+				return;
 			}
-			synchronized (SUBSCRIBERS) {
-				Set<WebSocket> sub = SUBSCRIBERS.get(channel);
-				if (sub == null) {
-					return;
-				}
-				Set<WebSocket> closed = new HashSet<>();
-				for (WebSocket s : sub) {
-					if (s.isOpen()) {
-						s.send(resp);
-					} else {
-						closed.add(s);
-					}
-				}
-				for (WebSocket s : closed) {
-					sub.remove(s);
+			Set<WebSocket> closed = new HashSet<>();
+			for (WebSocket s : sub) {
+				if (s.isOpen()) {
+					s.send(resp);
+				} else {
+					closed.add(s);
 				}
 			}
-		} catch (UnsupportedEncodingException e) {
-			Logger.error(e);
+			for (WebSocket s : closed) {
+				sub.remove(s);
+			}
 		}
 	}
 
@@ -154,7 +148,7 @@ public class DataChannels extends WebSocketServer {
 			case "set":
 				if (m.length > 1) {
 					synchronized (data) {
-						JsonObject items = (JsonObject) JsonHelper.parse(new StringReader(m[1]));
+						JsonObject items = new Gson().fromJson(new StringReader(m[1]), JsonObject.class);
 						items.entrySet().forEach((i) -> {
 							data.put(i.getKey(), i.getValue());
 						});
@@ -170,12 +164,7 @@ public class DataChannels extends WebSocketServer {
 				broadcast(channel, data);
 				break;
 			case "get":
-				try {
-					String resp = new String(JsonHelper.serialize(data), "UTF-8");
-					conn.send(resp);
-				} catch (UnsupportedEncodingException e) {
-					Logger.error(e);
-				}
+				conn.send(new Gson().toJson(data));
 				break;
 
 			default:

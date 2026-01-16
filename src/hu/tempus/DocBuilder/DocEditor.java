@@ -12,11 +12,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import javax.json.JsonArray;
-import javax.json.JsonObject;
-import javax.json.JsonValue;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 
 import hu.tempus.DocBuilder.DocFilter.Chunk;
 import hu.tempus.HtmlGui.IOUtils;
@@ -85,12 +86,12 @@ public class DocEditor {
 	}
 
 	public void setChunks(JsonArray chunks) {
-		Iterator<JsonValue> uit = chunks.iterator();
+		Iterator<JsonElement> uit = chunks.iterator();
 		while (uit.hasNext()) {
 			JsonObject u = (JsonObject) uit.next();
-			Chunk c = mChunkRefs.get(u.getInt("id", 0));
+			Chunk c = mChunkRefs.get(u.has("id") ? u.get("id").getAsInt() : 0);
 			if (c != null) {
-				c.value = (u.getBoolean("append", false) ? c.value : "") + u.getString("value");
+				c.value = (u.has("append") && u.get("append").getAsBoolean() ? c.value : "") + (u.has("value") ? u.get("value").getAsString() : "");
 			}
 		}
 	}

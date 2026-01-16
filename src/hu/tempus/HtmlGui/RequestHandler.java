@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
-import javax.json.JsonStructure;
+import com.google.gson.Gson;
 
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -247,8 +247,7 @@ public class RequestHandler implements HttpHandler {
 		}
 
 		public boolean sendData(Object data) throws IOException {
-			JsonStructure json = (JsonStructure) JsonHelper.pojoToJson(data);
-			byte[] content = JsonHelper.serialize(json);
+			byte[] content = new Gson().toJson(data).getBytes("UTF-8");
 			addHeader("Content-Type", "application/json;charset=utf-8");
 			request.sendResponseHeaders(200, content.length);
 			try (OutputStream os = request.getResponseBody()) {

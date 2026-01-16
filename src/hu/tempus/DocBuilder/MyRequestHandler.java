@@ -7,14 +7,15 @@ package hu.tempus.DocBuilder;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import javax.json.JsonArray;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 
 import hu.tempus.HtmlGui.Config;
 import hu.tempus.HtmlGui.IOUtils;
-import hu.tempus.HtmlGui.JsonHelper;
 import hu.tempus.HtmlGui.RequestHandler;
 
 /**
@@ -75,16 +76,16 @@ public class MyRequestHandler extends RequestHandler {
 					editor = DocEditor.load(docId, "1".equals(req.getParameter("reload")));
 				}
 				if (path[0].equals("save")) {
-					editor.setChunks((JsonArray) JsonHelper.parse(req.request.getRequestBody()));
+					editor.setChunks(new Gson().fromJson(new InputStreamReader(req.request.getRequestBody()), JsonArray.class));
 					editor.save("1".equals(req.getParameter("create")));
 					resp.put("success", true);
 					return req.sendData(resp);
 				}
 				resp.put("success", true);
 				resp.put("id", editor.getId());
-				resp.put("chunks", JsonHelper.pojoToJson(editor.getChunks()));
-				resp.put("js", JsonHelper.pojoToJson(editor.getJS()));
-				resp.put("css", JsonHelper.pojoToJson(editor.getCSS()));
+				resp.put("chunks",  editor.getChunks());
+				resp.put("js", editor.getJS());
+				resp.put("css", editor.getCSS());
 				return req.sendData(resp);
 			} catch (Exception e) {
 				resp.put("error", e.getMessage());

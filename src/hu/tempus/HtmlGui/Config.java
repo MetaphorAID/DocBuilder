@@ -3,15 +3,13 @@ package hu.tempus.HtmlGui;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonStructure;
-import javax.json.JsonValue;
-import javax.json.JsonValue.ValueType;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 
 public class Config {
 
@@ -37,11 +35,10 @@ public class Config {
 			return this;
 		}
 		values.entrySet().stream().forEach((f) -> {
-			if (f.getValue().getValueType() == JsonValue.ValueType.OBJECT) {
+			if (f.getValue().isJsonObject()) {
 				mSectionMap.put(f.getKey(), new Config(mRoot).read((JsonObject) f.getValue()));
 			} else {
-				mValueMap.put(f.getKey(),
-						f.getValue().getValueType() == ValueType.STRING ? values.getString(f.getKey()) : f.getValue().toString());
+				mValueMap.put(f.getKey(), f.getValue().getAsString());
 			}
 		});
 		return this;
@@ -55,7 +52,7 @@ public class Config {
 			return this;
 		}
 
-		read((JsonObject) JsonHelper.parse(fs));
+		read(new Gson().fromJson(new InputStreamReader(fs), JsonObject.class));
 
 		return this;
 	}
@@ -110,18 +107,18 @@ public class Config {
 		}
 	}
 
-	public JsonStructure dump() {
-		JsonObjectBuilder jsonX = Json.createObjectBuilder();
+	public JsonObject dump() {
+		JsonObject jsonX = new JsonObject();
 
 		mValueMap.forEach((key, value) -> {
-			jsonX.add(key, value);
+			jsonX.add(key, new JsonPrimitive(value));
 		});
 
 		mSectionMap.forEach((key, value) -> {
 			jsonX.add(key, value.dump());
 		});
 
-		return jsonX.build();
+		return jsonX;
 	}
 
 	private void changed() {
@@ -134,7 +131,7 @@ public class Config {
 		synchronized (this) {
 			try {
 				try (FileOutputStream os = new FileOutputStream(file, false)) {
-					JsonHelper.serialize(os, dump());
+					os.write(new Gson().toJson(dump()).getBytes("UTF-8"));
 				}
 			} catch (IOException e) {
 				Logger.error("Could not save config: " + file.getAbsolutePath());

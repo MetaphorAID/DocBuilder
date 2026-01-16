@@ -10,6 +10,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
@@ -17,7 +18,8 @@ import java.util.Date;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import javax.json.JsonStructure;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 
 /**
  *
@@ -80,10 +82,10 @@ public class FileCache {
 		return null;
 	}
 
-	public static JsonStructure getJson(String name) {
+	public static JsonElement getJson(String name) {
 		try (
 				InputStream is = getStream(name);) {
-			return JsonHelper.parse(is);
+			return new Gson().fromJson(new InputStreamReader(is), JsonElement.class);
 		} catch (IOException e) {
 			Logger.error(e);
 		}
@@ -109,8 +111,8 @@ public class FileCache {
 			os.write(((String) object).getBytes("UTF-8"));
 		} else if (object instanceof InputStream) {
 			IOUtils.redirect((InputStream) object, os);
-		} else if (object instanceof JsonStructure) {
-			JsonHelper.serialize(os, (JsonStructure) object);
+		} else if (object instanceof JsonElement) {
+			os.write(new Gson().toJson(object).getBytes("UTF-8"));
 		} else if (object instanceof IOUtils.ReadFile) {
 			IOUtils.redirect((IOUtils.ReadFile) object, os);
 		} else {

@@ -2,6 +2,7 @@ package hu.tempus.DocBuilder;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,13 +11,13 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.json.JsonObject;
-import javax.json.JsonString;
 import javax.swing.filechooser.FileFilter;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import hu.tempus.HtmlGui.IOUtils;
-import hu.tempus.HtmlGui.JsonHelper;
 
 public class DocFilter extends FileFilter {
 	protected final String mId;
@@ -28,21 +29,23 @@ public class DocFilter extends FileFilter {
 	protected final List<String> mCSS = new ArrayList<>();
 
 	public DocFilter(File file) {
-		JsonObject config = (JsonObject) JsonHelper.parse(new IOUtils.ReadFile(file));
+		JsonObject config = new Gson().fromJson(new InputStreamReader(new IOUtils.ReadFile(file)), JsonObject.class);
 		mId = file.getName().replace("\\.json$", "");
-		mExtension = config.getString("extension", "").split("[,;] *");
-		mFilter = new FileNameExtensionFilter(config.getString("name", file.getName().replace("\\.[^.]+$", "")),
-				mExtension);
-		String cf = config.getString("template", "");
+		mExtension = (config.has("extension") ? config.get("extension").getAsString() : "").split("[,;] *");
+		mFilter = new FileNameExtensionFilter(
+				config.has("name") ? config.get("name").getAsString() : file.getName().replace("\\.[^.]+$", ""), mExtension);
+		String cf = config.has("template") ? config.get("template").getAsString() : "";
 		mDefaultContent = cf.isEmpty() ? null : new File(cf);
 		mSplitter = new LinkedHashMap<>();
-		config.getJsonObject("chunks").forEach((name, value) -> mSplitter.put(name, ((JsonString) value).getString()));
-		for (String js : config.getString("js", "").split("[,;] *")) {
+		if (config.has("chunks")) {
+			config.get("chunks").getAsJsonObject().asMap().forEach((name, value) -> mSplitter.put(name, value.getAsString()));
+		}
+		for (String js : (config.has("js") ? config.get("js").getAsString() : "").split("[,;] *")) {
 			if (!js.isEmpty()) {
 				mJS.add(file.getParent() + "/" + js);
 			}
 		}
-		for (String css : config.getString("css", "").split("[,;] *")) {
+		for (String css : (config.has("css") ? config.get("css").getAsString() : "").split("[,;] *")) {
 			if (!css.isEmpty()) {
 				mCSS.add(file.getParent() + "/" + css);
 			}
