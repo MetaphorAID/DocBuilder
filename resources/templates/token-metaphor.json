@@ -1,0 +1,11 @@
+{
+	"name": "Metaphor editor (tei)",
+	"extension": "xml",
+	"js": "token.js,token-metaphor.js",
+	"css": "token.css",
+	"chunks": {
+		"<teiHeader>.*?(?:</teiHeader>)": ".header",
+		"<head(?:| [^>]*)>.*?(?:</head>)": ".head",
+		"<div(?:| [^>]*)>.*?(?:</div>)": "p"
+	}
+}

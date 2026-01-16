@@ -59,7 +59,7 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 .dropdown > * { display:block; text-decoration:none; color:inherit; padding:.25em 0; margin:0 .25em; }
 .dropdown > *:not(:last-child) { border-bottom:1px solid; }
 .dropdown .input { padding:0; }
-.tooltip.modal { left:0; right:0; margin:0 auto; padding:1.25em 2.5em; max-width:80vw; }
+.tooltip.modal { left:0; right:0; margin:0 auto; padding:1.25em 2.5em; max-width:100em; }
 .tooltip.modal table { margin-top:1em; width:100%; }
 .tooltip.modal > .close { position:absolute; top:0; right:0; margin-right:.25em; }
 body.has-modal:after { content:''; position:absolute; z-index:1; top:0; left:0; right:0; bottom:0; background:rgba(255,255,255,.5); }
