@@ -380,7 +380,6 @@
 				fetch('/proxy?u=' + encodeURIComponent(localStorage['metaphor_api']), {
 					method: 'POST',
 					headers: {
-						'Accept': 'application/xml',
 						'Content-Type': 'application/json; charset=utf-8',
 						'Authorization': 'Bearer ' + localStorage['metaphor_token']
 					},
