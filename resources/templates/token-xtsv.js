@@ -9,7 +9,7 @@
 	var _active = {};
 	var _cols = {};
 
-	Editor.TYPES.s = {
+	Editor.TYPES.x_s = {
 		remove: function (input, chunk) {
 			delete _active[input.dataset.cid];
 		},

@@ -5,8 +5,8 @@
 	"css": "token.css",
 	"template": "template-metaphor.xml",
 	"chunks": {
-		"<teiHeader>.*?(?:</teiHeader>)": ".header",
-		"<head(?:| [^>]*)>.*?(?:</head>)": ".head",
-		"<div(?:| [^>]*)>.*?(?:</div>)": "p"
+		"<teiHeader>.*?(?:</teiHeader>)": ".mm_header",
+		"<head(?:| [^>]*)>.*?(?:</head>)": ".mm_head",
+		"<div(?:| [^>]*)>.*?(?:</div>)": "mm_p"
 	}
 }

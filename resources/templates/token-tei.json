@@ -4,9 +4,9 @@
 	"js": "token.js,token-tei.js",
 	"css": "token.css",
 	"chunks": {
-		"<teiHeader>.*?(?:</teiHeader>)": ".header",
-		"<head(?:| [^>]*)>.*?(?:</head>)": ".head",
-		"<(lg|p)(?:| [^>]*)>.*?(?:</\\1>)": "p",
-		"<annotations(?:/>|>.*?(?:</annotations>))": ".annotations"
+		"<teiHeader>.*?(?:</teiHeader>)": ".t_header",
+		"<head(?:| [^>]*)>.*?(?:</head>)": ".t_head",
+		"<(lg|p)(?:| [^>]*)>.*?(?:</\\1>)": "t_p",
+		"<annotations(?:/>|>.*?(?:</annotations>))": ".t_annotations"
 	}
 }

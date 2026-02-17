@@ -42,7 +42,7 @@
 	var _active = {};
 	var _annots = { changed: false };
 
-	Editor.TYPES.p = {
+	Editor.TYPES.t_p = {
 		remove: function (input, chunk) {
 			if (_annots.xml) {
 				each('token', function (i) {
@@ -68,7 +68,7 @@
 				i = editor.hidden[i];
 				if ((i.id || 0) > (editor.chunks[cid].id || 0)) break;
 				if ((i.id || 0) < pr) continue;
-				if (i.name == '.head') h = i.value;
+				if (i.name == '.t_head') h = i.value;
 			}
 
 			var x = parseXml(chunk.value);
@@ -102,14 +102,14 @@
 		for (var i in editor.render_hidden) {
 			var hid = editor.render_hidden[i];
 			var h = editor.hidden[hid];
-			if (h.name == '.header') {
+			if (h.name == '.t_header') {
 				var html = '';
 				var x = parseXml(h.value);
 				html = '<h2>' + selToText(x, 'title') + '</h2>'
 					+ '<h3>' + selToText(x, 'author') + '</h3>' + html;
 				sel('#header').innerHTML = html;
 			}
-			if (h.name == '.annotations') {
+			if (h.name == '.t_annotations') {
 				_annots = { id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false }
 				each('annotation', function (i, ii) {
 					_annots.list.push(i);

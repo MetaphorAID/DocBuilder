@@ -47,7 +47,7 @@
 	var _active = {};
 	var _content = {};
 
-	Editor.TYPES.p = {
+	Editor.TYPES.mm_p = {
 		remove: function (input, chunk) {
 			delete _active[input.dataset.cid];
 		},
@@ -65,7 +65,7 @@
 				i = editor.hidden[i];
 				if ((i.id || 0) > (editor.chunks[cid].id || 0)) break;
 				if ((i.id || 0) < pr) continue;
-				if (i.name == '.head') h = i.value;
+				if (i.name == '.mm_head') h = i.value;
 			}
 
 			let x = parseXml(chunk.value);
@@ -85,7 +85,7 @@
 		for (let i in editor.render_hidden) {
 			let hid = editor.render_hidden[i];
 			let h = editor.hidden[hid];
-			if (h.name == '.header') {
+			if (h.name == '.mm_header') {
 				let html = '';
 				let x = parseXml(h.value);
 				html = '<table class="nb"><tr><td><img src="/assets/metaphor-aid.webp" class="logo" style="height:3em"/></td><td>'

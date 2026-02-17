@@ -4,7 +4,7 @@
 	"js": "token.js,token-xtsv.js",
 	"css": "token.css",
 	"chunks": {
-		"^[^\r\n]*": ".h",
-		"\r?\n(?:[^\r\n]+\r?\n)+": "s"
+		"^[^\r\n]*": ".x_h",
+		"\r?\n(?:[^\r\n]+\r?\n)+": "x_s"
 	}
 }
