@@ -87,10 +87,9 @@
 			if (h.name == '.mm_header') {
 				let html = '';
 				let x = parseXml(h.value);
-				html = '<table class="nb"><tr><td><img src="/assets/metaphor-aid.webp" class="logo" style="height:3em"/></td><td>'
+				html = '<img class="logo" src="/assets/metaphor-aid.webp" class="logo" style="height:3em"/>'
 					+ '<h2>' + selToText(x, 'title') + '</h2>'
 					+ '<h3>' + selToText(x, 'author') + '</h3>'
-					+ '</tr></table>'
 					+ html;
 				sel('#header').innerHTML = html;
 			}

@@ -18,6 +18,13 @@
 
 .par .active { border-color:#00F; box-shadow:0 0 .5em .125em #00F; position:relative; z-index:1; }
 
+@media (min-width:80em) {
+	.logo { position:absolute; top:.5em; right:calc(50% - 29.5em); }
+}
+@media (max-width:79.99em) {
+	.logo { margin-bottom:.5em; }
+}
+
 table.nb { width:100%; }
 table.nb td { border:0; vertical-align:middle; }
 
