@@ -1,4 +1,4 @@
-function sel(s, dom, def) {
+﻿function sel(s, dom, def) {
 	return (dom || document).querySelector(s) || def;
 }
 function find(s, dom) {
@@ -111,7 +111,7 @@ function select(val, empty_opt, opts, multiple) {
 		a.textContent = _(opts[o]);
 		s.appendChild(a);
 	}
-	if (empty_opt) {
+	if (typeof empty_opt !== 'undefined') {
 		var a = document.createElement('a');
 		a.href = '#';
 		a.className = 'no-value';
@@ -131,7 +131,11 @@ document.addEventListener('click', function (e) {
 	if (t.matches('.disabled')) { e.preventDefault(); return; }
 	if (t.matches('a[href="#"]')) e.preventDefault();
 	if (t.matches('.tooltip .close')) trg(t.closest('.tooltip'), 'close');
-	if (t.matches('.dropdown .input')) return;
+	if (t.matches('.dropdown .input') && !t.matches('.select')) return;
+	if (t.matches('.select') && !t.matches('a')) {
+		t.classList.toggle('open');
+		return;
+	}
 	if (t.matches('.select > a')) {
 		var s = t.parentNode;
 		if (s.classList.contains('open')) {

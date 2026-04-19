@@ -34,7 +34,9 @@
 			case 'metaphor':
 				return _(TOKEN.SEL_BOOL[el.textContent] || '&nbsp;');
 			case 'otherIndirect':
-				return INDIRECT[el.textContent] || '&nbsp;';
+			let val = el.textContent.trim();
+			if (val === 'None' || val === 'none') val = '0';
+			return INDIRECT[val] || '&nbsp;';
 			case 'meanings':
 				let c = sel('contextualIndex', el);
 				if (!c || 1 == c.textContent) return format('', sel('primary', el));
@@ -249,7 +251,11 @@
 						td = '<input type="checkbox" name="' + f + '" class="input" value="True"' + ('True' == format('', sel(f, xt)) ? ' checked' : '') + '>';
 						break;
 					case 'otherIndirect':
-						let s = select(format('', sel(f, xt)), '', INDIRECT);
+						let el = sel(f, xt);
+						let rawValue = el ? el.textContent.trim() : '';
+						let value = rawValue;
+						if (value === 'None' || value === 'none' || !INDIRECT[value]) value = '0';
+						let s = select(value, '', INDIRECT);
 						s.className += ' input';
 						s.dataset.name = f;
 						td = s.outerHTML;
@@ -558,3 +564,6 @@
 	});
 
 })();
+
+
+

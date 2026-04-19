@@ -32,7 +32,7 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 
 .btn.ed-exit { float:right; }
 
-.select { padding:.25em .5em; position:relative; }
+.select { padding:.25em .5em; position:relative; cursor:pointer; }
 .select.input { border:1px solid #888; height:auto; }
 .select:after { content:'\25BC'; position:absolute; top:0; right:.25em; display:inline-block; line-height:2em; }
 .select.open:after { content:'\25B2'; }
