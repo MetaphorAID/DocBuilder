@@ -415,12 +415,12 @@ Editor.prototype.render = function (cids) {
 		for (var i in cids) {
 			self.dom.appendChild(self.renderChunk(cids[i]));
 		}
-		if (self.chunks.length > cids[cids.length - 1]) {
+		if (self.chunks.length > cids[cids.length - 1] + 1) {
 			var a = document.createElement('a');
 			a.setAttribute('href', '#');
 			a.className = 'btn plus-one';
 			a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
-			a.innerHTML = '+1';
+			a.innerHTML = '+1 mutatása';
 			self.dom.appendChild(a);
 		}
 	});
