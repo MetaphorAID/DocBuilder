@@ -252,8 +252,7 @@
 						break;
 					case 'otherIndirect':
 						let el = sel(f, xt);
-						let rawValue = el ? el.textContent.trim() : '';
-						let value = rawValue;
+						let value = el ? el.textContent.trim() : '';
 						if (value === 'None' || value === 'none' || !INDIRECT[value]) value = '0';
 						let s = select(value, '', INDIRECT);
 						s.className += ' input';

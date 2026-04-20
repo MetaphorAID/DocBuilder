@@ -1,4 +1,4 @@
-﻿function sel(s, dom, def) {
+function sel(s, dom, def) {
 	return (dom || document).querySelector(s) || def;
 }
 function find(s, dom) {
@@ -420,7 +420,7 @@ Editor.prototype.render = function (cids) {
 			a.setAttribute('href', '#');
 			a.className = 'btn plus-one';
 			a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
-			a.innerHTML = '+1 mutatása';
+			a.innerHTML = _('Show +1 sentence');
 			self.dom.appendChild(a);
 		}
 	});
