@@ -1,6 +1,6 @@
 (function () {
 	var INDIRECT = {
-		'0': 'nincs',
+		'0': '-',
 		'1': 'metonímia',
 		'2': 'generalizáció',
 		'3': 'specifikáció'
