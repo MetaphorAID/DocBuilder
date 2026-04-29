@@ -227,6 +227,10 @@ function _(text) {
 	return window.Locale && Locale[text] || text;
 }
 
+function parseXml(xml) {
+	return (new DOMParser()).parseFromString(xml, 'text/xml');
+}
+
 each('.locale', function (i) {
 	i.innerHTML = _(i.innerHTML.trim());
 });
@@ -778,6 +782,18 @@ function retriveFileInIndexedDB(fileName) {
 	});
 }
 
+function newText() {
+	let tt = ttip(sel('header'), null, true);
+	tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
+		'<input type="text" name="filename" class="input" placeholder="' + _('File Name') + '" value="uj-metafora.xml">' +
+		'<input type="url" name="api" class="input" placeholder="API URL" value="' + (localStorage['metaphor_api'] || '') + '">' +
+		'<input type="password" name="token" class="input" placeholder="API Token" value="' + (localStorage['metaphor_token'] || '') + '">' +
+		'<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>' +
+		'<div class="center">' +
+		'<a href="#" class="btn new-submit">' + _('Submit') + '</a>' +
+		'</div>';
+}
+
 function buildFile(mChunks) {
 	let result = '';
 
@@ -888,6 +904,9 @@ function undo(reverse) {
 evt('.ed-open', 'click', function () {
 	editor.ischanged(function () { open(); });
 });
+evt('.ed-new', 'click', function () {
+	newText();
+});
 evt('.ed-recent', 'click', function (e) {
 	var t = ttip(e.target, e);
 	hist.recent.walk(function (data, id) {
@@ -920,6 +939,78 @@ document.addEventListener('click', function (e) {
 	if (t && t.matches('[data-open]')) {
 		editor.ischanged(function () {
 			open(hist.recent.get(t.dataset.open));
+		});
+	}
+	if (t && t.matches('.new-submit')) {
+		let tt = t.closest('.tooltip');
+		let filename = sel('[name="filename"]', tt).value.trim();
+		let api = sel('[name="api"]', tt).value.trim();
+		let token = sel('[name="token"]', tt).value.trim();
+		let content = sel('[name="content"]', tt).value.trim();
+		
+		if (!filename || !content || !api) {
+			addMsg(_('Please fill in all fields'), 'error', tt);
+			return;
+		}
+		if (!filename.toLowerCase().endsWith('.xml')) {
+			filename += '.xml';
+		}
+		
+		localStorage['metaphor_api'] = api;
+		localStorage['metaphor_token'] = token;
+		
+		fetch(api, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json; charset=utf-8',
+				'Authorization': 'Bearer ' + token
+			},
+			body: JSON.stringify({text: content})
+		}).then(r => r.ok ? r.text() : r.json()).then(function(data) {
+			if (typeof data == 'string') {
+				// Process the XML response and wrap it in TEI structure
+				let bodyXml = sel('body', parseXml(data));
+				let fullXml = '<TEI xml:lang="hu">\n' +
+					'\t<teiHeader>\n' +
+					'\t\t<fileDesc>\n' +
+					'\t\t\t<titleStmt>\n' +
+					'\t\t\t\t<title>' + filename.replace(/\.xml$/, '') + '</title>\n' +
+					'\t\t\t</titleStmt>\n' +
+					'\t\t\t<docAuthor></docAuthor>\n' +
+					'\t\t\t<publicationStmt>\n' +
+					'\t\t\t\t<publisher></publisher>\n' +
+					'\t\t\t</publicationStmt>\n' +
+					'\t\t</fileDesc>\n' +
+					'\t</teiHeader>\n' +
+					'\t<text>\n' +
+					bodyXml.outerHTML +
+					'\n\t</text>\n' +
+					'</TEI>';
+				
+				let template = {
+					name: "Metaphor editor (tei)",
+					extension: "xml",
+					js: ["./templates/token.js", "./templates/token-metaphor.js"],
+					css: ["./templates/token.css"],
+					template: "template-metaphor.xml",
+					chunks: {
+						"<teiHeader>.*?(?:</teiHeader>)": ".mm_header",
+						"<head(?:| [^>]*)>.*?(?:</head>)": ".mm_head",
+						"<div(?:| [^>]*)>.*?(?:</div>)": "mm_p"
+					}
+				};
+				
+				// Create new document with the processed content
+				let newData = prepareData(filename, fullXml, template);
+				storeFileInIndexedDB(filename, newData).then(() => {
+					trg(tt, 'close');
+					fileLoaded(newData);
+				});
+			} else {
+				addMsg(data.detail || 'unknown error', 'error', tt);
+			}
+		}).catch(err => {
+			addMsg('Network error: ' + err, 'error', tt);
 		});
 	}
 });
