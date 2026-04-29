@@ -37,7 +37,7 @@
 	Locale['Token Color Legend'] = 'Token szín jelmagyarázat';
 	Locale['Metaphor'] = 'Metafora';
 	Locale['Other Indirect Meaning'] = 'Egyéb indirekt jelentés';
-	Locale['Normal Token'] = 'Normál token';
+	Locale['Direct meaning'] = 'Közvetlen jelentés';
 
 	function format(name, el) {
 		if (!el) return '&nbsp;';
@@ -104,7 +104,7 @@
 					+ '<h4>' + _('Token Color Legend') + '</h4>'
 					+ '<div class="legend-item"><span class="legend-color metaphor-token"></span> ' + _('Metaphor') + '</div>'
 					+ '<div class="legend-item"><span class="legend-color indirect-token"></span> ' + _('Other Indirect Meaning') + '</div>'
-					+ '<div class="legend-item"><span class="legend-color normal-token"></span> ' + _('Normal Token') + '</div>'
+					+ '<div class="legend-item"><span class="legend-color direct-token"></span> ' + _('Direct meaning') + '</div>'
 					+ '</div>';
 				html = '<img class="logo" src="./templates/assets/metaphor-aid.webp" class="logo" style="height:3em"/>'
 					+ '<h2>' + selToText(x, 'title') + '</h2>'
@@ -171,13 +171,13 @@
 				let otherIndirect = otherIndirectEl ? otherIndirectEl.textContent.trim() : '';
 				if (otherIndirect === 'None' || otherIndirect === 'none') otherIndirect = '0';
 				
-				ew.classList.remove('metaphor-token', 'indirect-token', 'normal-token');
+				ew.classList.remove('metaphor-token', 'indirect-token', 'direct-token');
 				if (metaphor === 'True') {
 					ew.classList.add('metaphor-token');
 				} else if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') {
 					ew.classList.add('indirect-token');
 				} else {
-					ew.classList.add('normal-token');
+					ew.classList.add('direct-token');
 				}
 				es.appendChild(ew);
 			}, s);

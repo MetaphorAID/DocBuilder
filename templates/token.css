@@ -18,11 +18,11 @@
 
 .par .metaphor-token { background-color:#EF9A9A }
 .par .indirect-token { background-color:#90CAF9 }
-.par .normal-token { background-color:#FFFFFF }
+.par .direct-token { background-color:#FFFFFF }
 
 #header .legend-color.metaphor-token { background-color:#EF9A9A }
 #header .legend-color.indirect-token { background-color:#90CAF9 }
-#header .legend-color.normal-token { background-color:#FFFFFF }
+#header .legend-color.direct-token { background-color:#FFFFFF }
 
 .par .active { border-color:#00F; box-shadow:0 0 .5em .125em #00F; position:relative; z-index:1; }
 
