@@ -791,6 +791,7 @@ function newText() {
 		'<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>' +
 		'<div class="center">' +
 		'<a href="#" class="btn new-submit">' + _('Submit') + '</a>' +
+		'<a href="#" class="btn new-cancel">' + _('Cancel') + '</a>' +
 		'</div>';
 }
 
@@ -940,6 +941,10 @@ document.addEventListener('click', function (e) {
 		editor.ischanged(function () {
 			open(hist.recent.get(t.dataset.open));
 		});
+	}
+	if (t && t.matches('.new-cancel')) {
+		trg(t.closest('.tooltip'), 'close');
+		return;
 	}
 	if (t && t.matches('.new-submit')) {
 		let tt = t.closest('.tooltip');
