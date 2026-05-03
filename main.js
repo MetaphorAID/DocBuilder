@@ -407,23 +407,21 @@ Editor.prototype.onchange = function (cids, hdata) {
 }
 Editor.prototype.render = function (cids) {
 	var self = this;
-	self.ischanged(function () {
-		self.dom.innerHTML = '';
-		clean_ttip(this.dom);
-		if (!cids.length) return;
-		self.dom.appendChild(self.renderPaginator(cids[0]));
-		for (var i in cids) {
-			self.dom.appendChild(self.renderChunk(cids[i]));
-		}
-		if (self.chunks.length > cids[cids.length - 1] + 1) {
-			var a = document.createElement('a');
-			a.setAttribute('href', '#');
-			a.className = 'btn plus-one';
-			a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
-			a.innerHTML = _('Show +1 sentence');
-			self.dom.appendChild(a);
-		}
-	});
+	self.dom.innerHTML = '';
+	clean_ttip(this.dom);
+	if (!cids.length) return;
+	self.dom.appendChild(self.renderPaginator(cids[0]));
+	for (var i in cids) {
+		self.dom.appendChild(self.renderChunk(cids[i]));
+	}
+	if (self.chunks.length > cids[cids.length - 1] + 1) {
+		var a = document.createElement('a');
+		a.setAttribute('href', '#');
+		a.className = 'btn plus-one';
+		a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
+		a.innerHTML = _('Show +1 sentence');
+		self.dom.appendChild(a);
+	}
 }
 Editor.prototype.renderHidden = function (hids) {
 	this.render_hidden = hids;
