@@ -993,16 +993,17 @@ document.addEventListener('click', function (e) {
 			.then(templates => {
 				let templateInfo = templates.find(t => t.id === templateId);
 				if (templateInfo) {
-					loadTemplate('templates', templateInfo.path).then(template => {
-						if (action === 'open') {
-							editor.ischanged(function () {
-								open(undefined, undefined, template.path); // TODO here we pass filename
-							});
-						} else if (action === 'new') {
+					if (action === 'open') {
+						editor.ischanged(function () {
+							open(undefined, undefined, templateInfo.path); // TODO here we pass filename
+						});
+					} else if (action === 'new') {
+						loadTemplate('templates', templateInfo.path).then(template => {
 							// Call the template's new method if it exists
 							if (window.TOKEN && typeof window.TOKEN.new === 'function') {
 								window.TOKEN.new(template).then(content => {
 									if (content) {
+										// TODO retrieve filename from the form with content
 										let filename = 'uj-' + templateId + '-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.' + template.extension;
 										let newData = prepareData(filename, content, template);
 										storeFileInIndexedDB(filename, newData).then(() => {
@@ -1011,15 +1012,15 @@ document.addEventListener('click', function (e) {
 									}
 								});
 							} else {
-								// Fallback to old behavior for templates without new() method
-								newText(template);
+								// TODO error
+								addMsg(_('Error calling new in template:') + err, 'error');
 							}
-						}
-					}).catch(err => {
-						addMsg(_('Error loading template:') + err, 'error');
-					});
+						}).catch(err => {
+							addMsg(_('Error loading template:') + err, 'error');
+						});
+					}
+					trg(t.closest('.tooltip'), 'close');
 				}
-				trg(t.closest('.tooltip'), 'close');
 			});
 	}
 	if (t && t.matches('.new-submit')) {
