@@ -443,16 +443,29 @@
 					if (!r.ok) {
 						if (r.status === 404) {
 							return Promise.reject(_('Invalid or wrong API URL'));
+						} else if (r.status >= 500) {
+							return Promise.reject(_('API server error'));
 						}
-						return r.json().catch(() => Promise.reject(_('Invalid API response')));
+						return r.text().catch(() => _('Invalid API response')).then(text => {
+							try {
+								var data = JSON.parse(text);
+								return Promise.reject(_(data.detail || 'unknown error'));
+							} catch(e) {
+								return Promise.reject(_('Invalid or wrong API URL'));
+							}
+						});
 					}
 					return r.text();
 				}).then(function(data) { 
 					if (typeof data == 'string') {
-						let xml = sel('body', parseXml(data));
-						_content[cid] = xml.innerHTML;
-						editor.forceReload = true;
-						savePar([cid]);
+						try {
+							let xml = sel('body', parseXml(data));
+							_content[cid] = xml.innerHTML;
+							editor.forceReload = true;
+							savePar([cid]);
+						} catch(e) {
+							addMsg(_('API response format is incorrect'), false, sel('[name="content"]', t.closest('.tooltip')));
+						}
 					} else {
 						addMsg(_(data.detail || 'unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
 					}

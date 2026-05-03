@@ -16,6 +16,8 @@ Locale = {
 	'Invalid API response': 'Érvénytelen API válasz',
 	'Please provide content': 'Kérjük adjon meg szöveget',
 	'Please provide API URL': 'Kérjük adjon meg API URL-t',
+	'API server error': 'API szerver hiba',
+	'API response format is incorrect': 'Az API válasz formátuma helytelen',
 	'Database error:': 'Adatbázis hiba:',
 	'Error fetching file: ': 'Fájl betöltése sikertelen: ',
 	'Failed to load ': 'Nem sikerült betölteni ',
