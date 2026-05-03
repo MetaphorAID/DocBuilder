@@ -603,7 +603,7 @@ function selectTemplate(action) {
 	let html = '<h3 style="text-align: center;">' + _('Select Template') + '</h3>';
 	
 	// For 'new' action, only allow metaphor editor (backend only supports metaphor detection)
-	// TODO: uncomment when file creation with different templates is supported
+	// TODO: remove this when file creation with different templates is supported
 	if (action === 'new') {
 		templates = templates.filter(t => t.id === 'metaphor');
 	}
