@@ -424,15 +424,30 @@
 			localStorage['metaphor_api'] = sel('[name="api"]', t.closest('.tooltip')).value;
 			localStorage['metaphor_token'] = sel('[name="token"]', t.closest('.tooltip')).value;
 			let txt = sel('[name="content"]', t.closest('.tooltip')).value.trim();
-			if (txt.length && localStorage['metaphor_api']) {
-				fetch(localStorage['metaphor_api'], {
+			if (!txt.length) {
+				addMsg(_('Please provide content'), false, sel('[name="content"]', t.closest('.tooltip')));
+				return;
+			}
+			if (!localStorage['metaphor_api']) {
+				addMsg(_('Please provide API URL'), false, sel('[name="api"]', t.closest('.tooltip')));
+				return;
+			}
+			fetch(localStorage['metaphor_api'], {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json; charset=utf-8',
 						'Authorization': 'Bearer ' + localStorage['metaphor_token']
 					},
 					body: JSON.stringify({text:txt})
-				}).then(r => r.ok ? r.text() : r.json()).then(function(data) { 
+				}).then(r => {
+					if (!r.ok) {
+						if (r.status === 404) {
+							return Promise.reject(_('Invalid or wrong API URL'));
+						}
+						return r.json().catch(() => Promise.reject(_('Invalid API response')));
+					}
+					return r.text();
+				}).then(function(data) { 
 					if (typeof data == 'string') {
 						let xml = sel('body', parseXml(data));
 						_content[cid] = xml.innerHTML;
@@ -441,8 +456,9 @@
 					} else {
 						addMsg(_(data.detail || 'unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
 					}
+				}).catch(err => {
+					addMsg(err || _('unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
 				});
-			}
 		}
 	});
 
