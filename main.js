@@ -227,10 +227,6 @@ function _(text) {
 	return window.Locale && Locale[text] || text;
 }
 
-function parseXml(xml) {
-	return (new DOMParser()).parseFromString(xml, 'text/xml');
-}
-
 each('.locale', function (i) {
 	i.innerHTML = _(i.innerHTML.trim());
 });
@@ -689,6 +685,7 @@ function open(id, onsuccess, template) {
 				)
 			);
 	}
+
 	promise.then(storedData => {
 		fileLoaded(storedData, onsuccess);
 	})
@@ -820,6 +817,7 @@ function retriveFileInIndexedDB(fileName) {
 	});
 }
 
+// TODO  This should be in token-metaphor.js
 function newText(template) {
 	let tt = ttip(sel('header'), null, true);
 	tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
@@ -878,7 +876,7 @@ function save(chunks) {
 			} else {
 				addMsg(_('Document Saved'), 'success');
 				if (editor.forceReload) {
-					open(editor.id, false);
+					open(editor.id, false);  // TODO we need the template name here
 					editor.forceReload = false;
 				} else {
 					if (editor.restore) {
@@ -934,7 +932,7 @@ function undo(reverse) {
 		editor.render(data.cids);
 	}
 	if (data.id != editor.id) {
-		open(data.id, h);
+		open(data.id, h);  // TODO we need the template name here
 	} else {
 		h();
 	}
@@ -979,9 +977,10 @@ document.addEventListener('click', function (e) {
 	var t = e.target;
 	if (t && t.matches('[data-open]')) {
 		editor.ischanged(function () {
-			open(hist.recent.get(t.dataset.open));
+			open(hist.recent.get(t.dataset.open));  // TODO we need the template name here
 		});
 	}
+	// TODO This should be in token-metaphor.js
 	if (t && (t.matches('.new-cancel') || t.matches('.metaphor-new-cancel'))) {
 		trg(t.closest('.tooltip'), 'close');
 		return;
@@ -993,17 +992,18 @@ document.addEventListener('click', function (e) {
 			.then(templates => {
 				let templateInfo = templates.find(t => t.id === templateId);
 				if (templateInfo) {
-					if (action === 'open') {
-						editor.ischanged(function () {
-							open(undefined, undefined, templateInfo.path); // TODO here we pass filename
-						});
-					} else if (action === 'new') {
-						loadTemplate('templates', templateInfo.path).then(template => {
+					// TODO Should load the tempalte only when new -> As open() loads the template implicitly
+					loadTemplate('templates', templateInfo.path).then(template => {
+						if (action === 'open') {
+							editor.ischanged(function () {
+								open(undefined, undefined, templateInfo.path); // TODO here we pass filename
+							});
+						} else if (action === 'new') {
+							// TODO this not works!
 							// Call the template's new method if it exists
 							if (window.TOKEN && typeof window.TOKEN.new === 'function') {
-								window.TOKEN.new(template).then(content => {
+								window.TOKEN.new().then(content => {
 									if (content) {
-										// TODO retrieve filename from the form with content
 										let filename = 'uj-' + templateId + '-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.' + template.extension;
 										let newData = prepareData(filename, content, template);
 										storeFileInIndexedDB(filename, newData).then(() => {
@@ -1012,25 +1012,27 @@ document.addEventListener('click', function (e) {
 									}
 								});
 							} else {
-								// TODO error
-								addMsg(_('Error calling new in template:') + err, 'error');
+								// TODO This should yield error, but currently this runs istead of the if branch
+								// Fallback to old behavior for templates without new() method
+								newText(template);
 							}
-						}).catch(err => {
-							addMsg(_('Error loading template:') + err, 'error');
-						});
-					}
-					trg(t.closest('.tooltip'), 'close');
+						}
+					}).catch(err => {
+						addMsg(_('Error loading template:') + err, 'error');
+					});
 				}
+				trg(t.closest('.tooltip'), 'close');
 			});
 	}
 	if (t && t.matches('.new-submit')) {
+		// TODO this should be defined in token-metaphor.js
 		let tt = t.closest('.tooltip');
 		let filename = sel('[name="filename"]', tt).value.trim();
 		let api = sel('[name="api"]', tt).value.trim();
 		let token = sel('[name="token"]', tt).value.trim();
 		let content = sel('[name="content"]', tt).value.trim();
 		let template = t.dataset.template ? JSON.parse(t.dataset.template) : null;
-		
+
 		if (!filename || !content || !api) {
 			addMsg(_('Please fill in all fields'), 'error', tt);
 			return;
@@ -1038,10 +1040,10 @@ document.addEventListener('click', function (e) {
 		if (!filename.toLowerCase().endsWith('.xml')) {
 			filename += '.xml';
 		}
-		
+
 		localStorage['metaphor_api'] = api;
 		localStorage['metaphor_token'] = token;
-		
+
 		fetch(api, {
 			method: 'POST',
 			headers: {
@@ -1051,40 +1053,8 @@ document.addEventListener('click', function (e) {
 			body: JSON.stringify({text: content})
 		}).then(r => r.ok ? r.text() : r.json()).then(function(data) {
 			if (typeof data == 'string') {
-				// Process the XML response and wrap it in TEI structure
-				let bodyXml = sel('body', parseXml(data));
-				let fullXml = '<TEI xml:lang="hu">\n' +
-					'\t<teiHeader>\n' +
-					'\t\t<fileDesc>\n' +
-					'\t\t\t<titleStmt>\n' +
-					'\t\t\t\t<title>' + filename.replace(/\.xml$/, '') + '</title>\n' +
-					'\t\t\t</titleStmt>\n' +
-					'\t\t\t<docAuthor></docAuthor>\n' +
-					'\t\t\t<publicationStmt>\n' +
-					'\t\t\t\t<publisher></publisher>\n' +
-					'\t\t\t</publicationStmt>\n' +
-					'\t\t</fileDesc>\n' +
-					'\t</teiHeader>\n' +
-					'\t<text>\n' +
-					bodyXml.outerHTML +
-					'\n\t</text>\n' +
-					'</TEI>';
-				
-				let templateToUse = template || {
-					name: "Metaphor editor (tei)",
-					extension: "xml",
-					js: ["./templates/token.js", "./templates/token-metaphor.js"],
-					css: ["./templates/token.css"],
-					template: "template-metaphor.xml",
-					chunks: {
-						"<teiHeader>.*?(?:</teiHeader>)": ".mm_header",
-						"<head(?:| [^>]*)>.*?(?:</head>)": ".mm_head",
-						"<div(?:| [^>]*)>.*?(?:</div>)": "mm_p"
-					}
-				};
-				
 				// Create new document with the processed content
-				let newData = prepareData(filename, fullXml, templateToUse);
+				let newData = prepareData(filename, data, template);
 				storeFileInIndexedDB(filename, newData).then(() => {
 					trg(tt, 'close');
 					fileLoaded(newData);
@@ -1103,4 +1073,3 @@ document.addEventListener('click', function (e) {
 
 // 	$('body').removeClass('resizing');
 // });
-

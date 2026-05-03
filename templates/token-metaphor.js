@@ -27,6 +27,12 @@
 	Locale['Reasoning'] = 'Érvelés';
 	Locale['Content'] = 'Tartalom (szöveges)';
 	Locale['Set Paragraph...'] = 'Bekezdés felülírása';
+	Locale['New Text for Metaphor Detection'] = 'Új szöveg metafora detektáláshoz';
+	Locale['File Name'] = 'Fájlnév';
+	Locale['Content'] = 'Tartalom';
+	Locale['Submit'] = 'Beküldés';
+	Locale['Please fill in all fields'] = 'Kérjük, töltse ki az összes mezőt';
+	Locale['Network error'] = 'Hálózati hiba';
 
 	function format(name, el) {
 		if (!el) return '&nbsp;';
@@ -563,7 +569,7 @@
 	});
 
 	// Add new method for creating new metaphor documents
-	TOKEN.new = function(template) {
+	TOKEN.new = function() {
 		return new Promise((resolve, reject) => {
 			let tt = ttip(sel('header'), null, true);
 			tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
@@ -575,22 +581,22 @@
 				'<a href="#" class="btn metaphor-new-submit">' + _('Submit') + '</a>' +
 				'<a href="#" class="btn metaphor-new-cancel">' + _('Cancel') + '</a>' +
 				'</div>';
-			
+
 			// Handle the submit button
 			let submitBtn = sel('.metaphor-new-submit', tt);
 			let cancelBtn = sel('.metaphor-new-cancel', tt);
-			
+
 			cancelBtn.addEventListener('click', function() {
 				trg(tt, 'close');
 				resolve(null);
 			});
-			
+
 			submitBtn.addEventListener('click', function() {
 				let filename = sel('[name="filename"]', tt).value.trim();
 				let api = sel('[name="api"]', tt).value.trim();
 				let token = sel('[name="token"]', tt).value.trim();
 				let content = sel('[name="content"]', tt).value.trim();
-				
+
 				if (!filename || !content || !api) {
 					addMsg(_('Please fill in all fields'), 'error', tt);
 					return;
@@ -598,10 +604,10 @@
 				if (!filename.toLowerCase().endsWith('.xml')) {
 					filename += '.xml';
 				}
-				
+
 				localStorage['metaphor_api'] = api;
 				localStorage['metaphor_token'] = token;
-				
+
 				fetch(api, {
 					method: 'POST',
 					headers: {
@@ -611,27 +617,8 @@
 					body: JSON.stringify({text: content})
 				}).then(r => r.ok ? r.text() : r.json()).then(function(data) {
 					if (typeof data == 'string') {
-						// Process the XML response and wrap it in TEI structure
-						let bodyXml = sel('body', parseXml(data));
-						let fullXml = '<TEI xml:lang="hu">\n' +
-							'\t<teiHeader>\n' +
-							'\t\t<fileDesc>\n' +
-							'\t\t\t<titleStmt>\n' +
-							'\t\t\t\t<title>' + filename.replace(/\.xml$/, '') + '</title>\n' +
-							'\t\t\t</titleStmt>\n' +
-							'\t\t\t<docAuthor></docAuthor>\n' +
-							'\t\t\t<publicationStmt>\n' +
-							'\t\t\t\t<publisher></publisher>\n' +
-							'\t\t\t</publicationStmt>\n' +
-							'\t\t</fileDesc>\n' +
-							'\t</teiHeader>\n' +
-							'\t<text>\n' +
-							bodyXml.outerHTML +
-							'\n\t</text>\n' +
-							'</TEI>';
-						
 						trg(tt, 'close');
-						resolve(fullXml);
+						resolve([filename, data]);
 					} else {
 						addMsg(data.detail || 'unknown error', 'error', tt);
 					}
