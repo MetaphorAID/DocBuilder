@@ -15,6 +15,7 @@ Locale = {
 	'Do you want to exit?': 'Biztos ki akarsz lépni a programból?',
 	'Yes': 'Igen',
 	'Cancel': 'Mégse',
+	'Close': 'Bezárás',
 	'There are unsaved changes! Are you sure?': 'Vannak nem elmentett változtatások! Biztos folytatod?',
 	'Unknown Error': 'Ismeretlen hiba',
 	'Document Loaded': 'Dokumentum betöltve',
@@ -23,5 +24,6 @@ Locale = {
 	'Show +1 sentence': '+1 mondat mutatása',
 	'Table View': 'Táblázatos nézet',
 	'Normal View': 'Normál nézet',
+	'Select Template': 'Sablon kiválasztása',
 	'': ''
 }

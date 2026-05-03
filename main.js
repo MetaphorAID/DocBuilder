@@ -589,6 +589,34 @@ function loadTemplate(templateDir, url) {
 		});
 }
 
+function getAvailableTemplates() {
+	return [
+		{ id: 'metaphor', name: 'Metafora szerkesztő (tei)', path: 'template.json', dir: 'templates' },
+		{ id: 'tei', name: 'Token szerkesztő (tei)', path: 'token-tei.json', dir: 'templates/others' },
+		{ id: 'xtsv', name: 'Token szerkesztő (xtsv)', path: 'token-xtsv.json', dir: 'templates/others' }
+	];
+}
+
+function selectTemplate(action) {
+	let tt = ttip(sel('header'), null, true);
+	let templates = getAvailableTemplates();
+	let html = '<h3 style="text-align: center;">' + _('Select Template') + '</h3>';
+	
+	// For 'new' action, only allow metaphor editor (backend only supports metaphor detection)
+	// TODO: uncomment when file creation with different templates is supported
+	if (action === 'new') {
+		templates = templates.filter(t => t.id === 'metaphor');
+	}
+	
+	templates.forEach(template => {
+		html += '<a href="#" class="btn template-select" data-template="' + template.id + '" data-action="' + action + '">' + template.name + '</a><br>';
+	});
+	
+	html += '<div class="center"><a href="#" class="btn template-close">' + _('Close') + '</a></div>';
+	
+	tt.innerHTML = html;
+}
+
 function chooseFile(extension) {
 	return new Promise((resolve, reject) => {
 		// Create a hidden file input restricted to the template extension
@@ -636,19 +664,28 @@ function storeFileInIndexedDB(fileName, data) {
 	});
 }
 
-function open(id, onsuccess) {
+function open(id, onsuccess, template) {
 	let promise;
 	// Load file from FileInIndexedDB
 	if (id !== undefined) {
 		promise = retriveFileInIndexedDB(id);
 	} else {
 		// Open new file
-		promise = loadTemplate('templates', 'template.json')
-			.then(template => chooseFile(template.extension)
+		if (template) {
+			// Template is already loaded
+			promise = chooseFile(template.extension)
 				.then(file => readFileAsText(file)
 					.then(text => storeFileInIndexedDB(file.name, prepareData(file.name, text, template)))
-				)
-			);
+				);
+		} else {
+			// Load default template
+			promise = loadTemplate('templates', 'template.json')
+				.then(template => chooseFile(template.extension)
+					.then(file => readFileAsText(file)
+						.then(text => storeFileInIndexedDB(file.name, prepareData(file.name, text, template)))
+					)
+				);
+		}
 	}
 
 	promise.then(storedData => {
@@ -782,7 +819,7 @@ function retriveFileInIndexedDB(fileName) {
 	});
 }
 
-function newText() {
+function newText(template) {
 	let tt = ttip(sel('header'), null, true);
 	tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
 		'<input type="text" name="filename" class="input" placeholder="' + _('File Name') + '" value="uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.xml">' +
@@ -790,7 +827,7 @@ function newText() {
 		'<input type="password" name="token" class="input" placeholder="API Token" value="' + (localStorage['metaphor_token'] || '') + '">' +
 		'<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>' +
 		'<div class="center">' +
-		'<a href="#" class="btn new-submit">' + _('Submit') + '</a>' +
+		'<a href="#" class="btn new-submit" data-template="' + (template ? JSON.stringify(template).replace(/"/g, '&quot;') : '') + '">' + _('Submit') + '</a>' +
 		'<a href="#" class="btn new-cancel">' + _('Cancel') + '</a>' +
 		'</div>';
 }
@@ -903,10 +940,10 @@ function undo(reverse) {
 }
 
 evt('.ed-open', 'click', function () {
-	editor.ischanged(function () { open(); });
+	selectTemplate('open');
 });
 evt('.ed-new', 'click', function () {
-	newText();
+	selectTemplate('new');
 });
 evt('.ed-recent', 'click', function (e) {
 	var t = ttip(e.target, e);
@@ -942,7 +979,43 @@ document.addEventListener('click', function (e) {
 			open(hist.recent.get(t.dataset.open));
 		});
 	}
-	if (t && t.matches('.new-cancel')) {
+	if (t && t.matches('.template-close')) {
+		trg(t.closest('.tooltip'), 'close');
+		return;
+	}
+	if (t && t.matches('.template-select')) {
+		let templateId = t.dataset.template;
+		let action = t.dataset.action;
+		let templates = getAvailableTemplates();
+		let templateInfo = templates.find(t => t.id === templateId);
+		
+		if (templateInfo) {
+			loadTemplate(templateInfo.dir, templateInfo.path).then(template => {
+				if (action === 'open') {
+					editor.ischanged(function () { 
+						open(undefined, undefined, template);
+					});
+				} else if (action === 'new') {
+					// Call the template's new method if it exists
+					if (window.TOKEN && typeof window.TOKEN.new === 'function') {
+						window.TOKEN.new(template).then(content => {
+							if (content) {
+								let filename = 'uj-' + templateId + '-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.' + template.extension;
+								let newData = prepareData(filename, content, template);
+								storeFileInIndexedDB(filename, newData).then(() => {
+									fileLoaded(newData);
+								});
+							}
+						});
+					} else {
+						// Fallback to old behavior for templates without new() method
+						newText(template);
+					}
+				}
+			}).catch(err => {
+				addMsg(_('Error loading template:') + err, 'error');
+			});
+		}
 		trg(t.closest('.tooltip'), 'close');
 		return;
 	}
@@ -952,6 +1025,7 @@ document.addEventListener('click', function (e) {
 		let api = sel('[name="api"]', tt).value.trim();
 		let token = sel('[name="token"]', tt).value.trim();
 		let content = sel('[name="content"]', tt).value.trim();
+		let template = t.dataset.template ? JSON.parse(t.dataset.template) : null;
 		
 		if (!filename || !content || !api) {
 			addMsg(_('Please fill in all fields'), 'error', tt);
@@ -992,7 +1066,7 @@ document.addEventListener('click', function (e) {
 					'\n\t</text>\n' +
 					'</TEI>';
 				
-				let template = {
+				let templateToUse = template || {
 					name: "Metaphor editor (tei)",
 					extension: "xml",
 					js: ["./templates/token.js", "./templates/token-metaphor.js"],
@@ -1006,7 +1080,7 @@ document.addEventListener('click', function (e) {
 				};
 				
 				// Create new document with the processed content
-				let newData = prepareData(filename, fullXml, template);
+				let newData = prepareData(filename, fullXml, templateToUse);
 				storeFileInIndexedDB(filename, newData).then(() => {
 					trg(tt, 'close');
 					fileLoaded(newData);
