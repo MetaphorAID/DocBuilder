@@ -432,6 +432,11 @@
 				addMsg(_('Please provide API URL'), false, sel('[name="api"]', t.closest('.tooltip')));
 				return;
 			}
+			// Show loading state
+			let btn = t;
+			let originalText = btn.textContent;
+			btn.textContent = _('Processing...');
+			btn.classList.add('disabled');
 			fetch(localStorage['metaphor_api'], {
 					method: 'POST',
 					headers: {
@@ -469,8 +474,14 @@
 					} else {
 						addMsg(_(data.detail || 'unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
 					}
+					// Restore button state
+					btn.textContent = originalText;
+					btn.classList.remove('disabled');
 				}).catch(err => {
 					addMsg(err || _('unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
+					// Restore button state
+					btn.textContent = originalText;
+					btn.classList.remove('disabled');
 				});
 		}
 	});
