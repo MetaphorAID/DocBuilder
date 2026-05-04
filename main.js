@@ -665,7 +665,6 @@ function storeFileInIndexedDB(fileName, data) {
 	});
 }
 
-// TODO currently some calls to this function do not have template parameter
 function open(id, onsuccess, template) {
 	let promise;
 	// Load file from FileInIndexedDB
@@ -932,7 +931,7 @@ function undo(reverse) {
 		editor.render(data.cids);
 	}
 	if (data.id != editor.id) {
-		open(data.id, h);  // TODO we need the template name here
+		open(data.id, h);  // Template is not needed as an id is provided, the open fn retrieves the data from the IndexedDB
 	} else {
 		h();
 	}
@@ -999,22 +998,44 @@ document.addEventListener('click', function (e) {
 								open(undefined, undefined, templateInfo.path); // TODO here we pass filename
 							});
 						} else if (action === 'new') {
-							// TODO this not works!
-							// Call the template's new method if it exists
-							if (window.TOKEN && typeof window.TOKEN.new === 'function') {
-								window.TOKEN.new().then(content => {
-									if (content) {
-										let filename = 'uj-' + templateId + '-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.' + template.extension;
-										let newData = prepareData(filename, content, template);
-										storeFileInIndexedDB(filename, newData).then(() => {
-											fileLoaded(newData);
-										});
-									}
+							let scripts = (template.js || []).filter(js => !sel('script[src="' + js + '"]'));
+							function loadNextScript(index) {
+								if (index >= scripts.length) {
+									callTokenNew();
+									return;
+								}
+								let js = scripts[index];
+								let e = document.createElement('script');
+								e.setAttribute('src', js);
+								e.addEventListener('load', function () {
+									loadNextScript(index + 1);
 								});
+								e.addEventListener('error', function () {
+									addMsg(_('Error loading template:') + js, 'error');
+								});
+								sel('body').appendChild(e);
+							}
+							if (scripts.length > 0) {
+								loadNextScript(0);
 							} else {
-								// TODO This should yield error, but currently this runs istead of the if branch
-								// Fallback to old behavior for templates without new() method
-								newText(template);
+								callTokenNew();
+							}
+
+							function callTokenNew() {
+								let TokenClass = window.TOKEN || (typeof TOKEN !== 'undefined' && TOKEN);
+								if (TokenClass && typeof TokenClass.new === 'function') {
+									TokenClass.new().then(result => {
+										if (result) {
+											let [filename, data] = result;
+											let newData = prepareData(filename, data, template);
+											storeFileInIndexedDB(filename, newData).then(() => {
+												fileLoaded(newData);
+											});
+										}
+									});
+								} else {
+									addMsg(_('New document creation not supported for this template'), 'error');
+								}
 							}
 						}
 					}).catch(err => {
@@ -1023,48 +1044,6 @@ document.addEventListener('click', function (e) {
 				}
 				trg(t.closest('.tooltip'), 'close');
 			});
-	}
-	if (t && t.matches('.new-submit')) {
-		// TODO this should be defined in token-metaphor.js
-		let tt = t.closest('.tooltip');
-		let filename = sel('[name="filename"]', tt).value.trim();
-		let api = sel('[name="api"]', tt).value.trim();
-		let token = sel('[name="token"]', tt).value.trim();
-		let content = sel('[name="content"]', tt).value.trim();
-		let template = t.dataset.template ? JSON.parse(t.dataset.template) : null;
-
-		if (!filename || !content || !api) {
-			addMsg(_('Please fill in all fields'), 'error', tt);
-			return;
-		}
-		if (!filename.toLowerCase().endsWith('.xml')) {
-			filename += '.xml';
-		}
-
-		localStorage['metaphor_api'] = api;
-		localStorage['metaphor_token'] = token;
-
-		fetch(api, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json; charset=utf-8',
-				'Authorization': 'Bearer ' + token
-			},
-			body: JSON.stringify({text: content})
-		}).then(r => r.ok ? r.text() : r.json()).then(function(data) {
-			if (typeof data == 'string') {
-				// Create new document with the processed content
-				let newData = prepareData(filename, data, template);
-				storeFileInIndexedDB(filename, newData).then(() => {
-					trg(tt, 'close');
-					fileLoaded(newData);
-				});
-			} else {
-				addMsg(data.detail || 'unknown error', 'error', tt);
-			}
-		}).catch(err => {
-			addMsg('Network error: ' + err, 'error', tt);
-		});
 	}
 });
 

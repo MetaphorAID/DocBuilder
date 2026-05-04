@@ -33,6 +33,7 @@
 	Locale['Submit'] = 'Beküldés';
 	Locale['Please fill in all fields'] = 'Kérjük, töltse ki az összes mezőt';
 	Locale['Network error'] = 'Hálózati hiba';
+	Locale['New document creation not supported for this template'] = 'Új dokumentum létrehozása nem támogatott ennél a sablonnál';
 
 	function format(name, el) {
 		if (!el) return '&nbsp;';
