@@ -861,7 +861,7 @@ function save(chunks) {
 			} else {
 				addMsg(_('Document Saved'), 'success');
 				if (editor.forceReload) {
-					open(editor.id, false);  // TODO we need the template name here
+					open(editor.id, false);
 					editor.forceReload = false;
 				} else {
 					if (editor.restore) {
@@ -962,7 +962,7 @@ document.addEventListener('click', function (e) {
 	var t = e.target;
 	if (t && t.matches('[data-open]')) {
 		editor.ischanged(function () {
-			open(hist.recent.get(t.dataset.open));  // TODO we need the template name here
+			open(hist.recent.get(t.dataset.open));
 		});
 	}
 	// TODO This should be in token-metaphor.js
