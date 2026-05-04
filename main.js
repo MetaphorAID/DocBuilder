@@ -945,7 +945,8 @@ evt('.ed-recent', 'click', function (e) {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-evt('.ed-save', 'click', function () {
+evt('.ed-save', 'click', function (e) {
+	if (e.target.classList.contains('disabled')) return;
 	save();
 });
 evt('.ed-undo', 'click', function () {

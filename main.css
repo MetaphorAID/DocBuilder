@@ -28,7 +28,7 @@ textarea.input { height:auto; min-height:8em; resize:vertical; }
 	display:inline-block; cursor:pointer; padding:.25em .5em; margin:.25em .5em;
 	color:inherit; text-decoration:none; border:1px solid; line-height:1.25;
 }
-.btn.disabled { opacity:.5; }
+.btn.disabled { opacity:.5; cursor:default; }
 
 .btn.ed-exit { float:right; }
 
