@@ -697,6 +697,11 @@
 				localStorage['metaphor_api'] = api;
 				localStorage['metaphor_token'] = token;
 
+				// Show loading state
+				let originalText = submitBtn.textContent;
+				submitBtn.textContent = _('Processing...');
+				submitBtn.classList.add('disabled');
+
 				fetch(api, {
 					method: 'POST',
 					headers: {
