@@ -791,8 +791,7 @@ function setChunks(chunks, mChunks) {
 			j++;
 		} else if (i < chunks.length && (j >= mChunks.length || chunks[i].id < mChunks[j].id)) {
 			// If no matching mChunk, just add the chunk
-			// TODO is this correctly localised? -> Comment
-			throw new Error(`No matching mChunk found for chunk with id: ${chunks[i].id}`);
+			throw new Error(_(`No matching mChunk found for chunk with id: ${chunks[i].id}`));
 		} else {
 			// If no matching chunk, just add the mChunk leave mChunk as is (skip)
 			j++;
