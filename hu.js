@@ -17,7 +17,6 @@ Locale = {
 	'Error saving:': 'Hiba mentés közben: ',
 	'Exception:': 'Kivétel:',
 	'No file chosen': 'Nincs fájl kiválasztva',
-	'Invalid or expired credentials': 'Érvénytelen vagy lejárt hitelesítő adatok',  // TODO non-existent string
 	'No matching mChunk found for chunk with id: ': 'Nincs egyező mChunk azonosító: ',
 	'Document Loaded': 'Dokumentum betöltve',
 	'Document Saved': 'Dokumentum mentve',
