@@ -220,7 +220,7 @@ function listFilesInIndexedDB() {
 }
 
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	addMsg('Exception: ' + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
+	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
 
 function _(text) {
@@ -407,23 +407,21 @@ Editor.prototype.onchange = function (cids, hdata) {
 }
 Editor.prototype.render = function (cids) {
 	var self = this;
-	self.ischanged(function () {
-		self.dom.innerHTML = '';
-		clean_ttip(this.dom);
-		if (!cids.length) return;
-		self.dom.appendChild(self.renderPaginator(cids[0]));
-		for (var i in cids) {
-			self.dom.appendChild(self.renderChunk(cids[i]));
-		}
-		if (self.chunks.length > cids[cids.length - 1] + 1) {
-			var a = document.createElement('a');
-			a.setAttribute('href', '#');
-			a.className = 'btn plus-one';
-			a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
-			a.innerHTML = _('Show +1 sentence');
-			self.dom.appendChild(a);
-		}
-	});
+	self.dom.innerHTML = '';
+	clean_ttip(this.dom);
+	if (!cids.length) return;
+	self.dom.appendChild(self.renderPaginator(cids[0]));
+	for (var i in cids) {
+		self.dom.appendChild(self.renderChunk(cids[i]));
+	}
+	if (self.chunks.length > cids[cids.length - 1] + 1) {
+		var a = document.createElement('a');
+		a.setAttribute('href', '#');
+		a.className = 'btn plus-one';
+		a.dataset.next = parseInt(cids[cids.length - 1]) + 1;
+		a.innerHTML = _('Show +1 sentence');
+		self.dom.appendChild(a);
+	}
 }
 Editor.prototype.renderHidden = function (hids) {
 	this.render_hidden = hids;
@@ -552,12 +550,15 @@ var editor = new Editor(sel('#editor'), function (chunks, values) {
 	save(tosave);
 });
 
+// Initially disable save button since no file is open
+disable('.ed-save', !!editor.id);
+
 function loadJSONFromURL(url) {
 	return fetch(url)
 		.then(response => {
 			if (!response.ok) {
 				addMsg(_('Error fetching file: ' + url), 'error');
-				throw new Error('Failed to load ' + url);
+				throw new Error(_('Failed to load ') + url);
 			}
 			return response.json();
 		});
@@ -632,7 +633,7 @@ function chooseFile(extension) {
 			const file = input.files[0];
 			// Clean up
 			input.remove();
-			file ? resolve(file) : reject(new Error('No file chosen'));
+			file ? resolve(file) : reject(new Error(_('No file chosen')));
 		};
 
 		input.click();
@@ -702,6 +703,7 @@ function fileLoaded(data, onsuccess) {
 		if (onsuccess) onsuccess();
 	});
 	editor.load(data, false);
+	disable('.ed-save', !!editor.id);
 	if (editor.restore) {
 		editor.render(editor.restore);
 		editor.restore = false;
@@ -789,7 +791,7 @@ function setChunks(chunks, mChunks) {
 			j++;
 		} else if (i < chunks.length && (j >= mChunks.length || chunks[i].id < mChunks[j].id)) {
 			// If no matching mChunk, just add the chunk
-			throw new Error(`No matching mChunk found for chunk with id: ${chunks[i].id}`);
+			throw new Error(_(`No matching mChunk found for chunk with id: ${chunks[i].id}`));
 		} else {
 			// If no matching chunk, just add the mChunk leave mChunk as is (skip)
 			j++;
@@ -942,7 +944,8 @@ evt('.ed-recent', 'click', function (e) {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-evt('.ed-save', 'click', function () {
+evt('.ed-save', 'click', function (e) {
+	if (e.target.classList.contains('disabled')) return;
 	save();
 });
 evt('.ed-undo', 'click', function () {

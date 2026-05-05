@@ -16,6 +16,14 @@
 .par .tkn { font-weight:400; }
 .par .btn.selected { background-color:#9F9; }
 
+.par .metaphor-token { background-color:#EF9A9A }
+.par .indirect-token { background-color:#90CAF9 }
+.par .direct-token { background-color:#FFFFFF }
+
+#header .legend-color.metaphor-token { background-color:#EF9A9A }
+#header .legend-color.indirect-token { background-color:#90CAF9 }
+#header .legend-color.direct-token { background-color:#FFFFFF }
+
 .par .active { border-color:#00F; box-shadow:0 0 .5em .125em #00F; position:relative; z-index:1; }
 
 @media (min-width:80em) {
@@ -29,7 +37,10 @@ table.nb { width:100%; }
 table.nb td { border:0; vertical-align:middle; }
 
 table.s { width:100%; }
-table.s td { padding:.5em 1em; border-color:#000; }
+table.s th,
+table.s td { padding:.5em 1em; border-color:#000; text-align:center; vertical-align:middle; }
+table.s td:nth-child(5),
+table.s th:nth-child(5) { text-align:left; }
 table.s .cfg td { text-align:right; }
 table.s .t.left td { border-top-style:dotted; }
 table.s .t.right td { border-bottom-style:dotted; }

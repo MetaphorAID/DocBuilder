@@ -34,6 +34,21 @@
 	Locale['Please fill in all fields'] = 'Kérjük, töltse ki az összes mezőt';
 	Locale['Network error'] = 'Hálózati hiba';
 	Locale['New document creation not supported for this template'] = 'Új dokumentum létrehozása nem támogatott ennél a sablonnál';
+	Locale['Token Color Legend'] = 'Token szín jelmagyarázat';
+	Locale['Metaphor'] = 'Metafora';
+	Locale['Other Indirect Meaning'] = 'Egyéb indirekt jelentés';
+	Locale['Direct meaning'] = 'Közvetlen jelentés';
+	Locale['API response format is incorrect'] = 'Az API válasz formátuma helytelen';
+	Locale['API server error'] = 'API szerver hiba';
+	Locale['Processing...'] = 'Feldolgozás...';
+	Locale['Please provide API URL'] = 'Kérjük adjon meg API URL-t';
+	Locale['Please provide content'] = 'Kérjük adjon meg szöveget';
+	Locale['Invalid API response'] = 'Érvénytelen API válasz';
+	Locale['Invalid or wrong API URL'] = 'Érvénytelen vagy hibás API URL';
+	Locale['unknown error'] = 'ismeretlen hiba';
+	Locale['Invalid bearer token'] = 'Érvénytelen API token';
+	Locale['Request timeout'] = 'Kérés időtúllépése';
+	Locale['Network error:'] = 'Hálózati hiba:';
 
 	function format(name, el) {
 		if (!el) return '&nbsp;';
@@ -41,9 +56,9 @@
 			case 'metaphor':
 				return _(TOKEN.SEL_BOOL[el.textContent] || '&nbsp;');
 			case 'otherIndirect':
-			let val = el.textContent.trim();
-			if (val === 'None' || val === 'none') val = '0';
-			return INDIRECT[val] || '&nbsp;';
+				let val = el.textContent.trim();
+				if (val === 'None' || val === 'none') val = '0';
+				return INDIRECT[val] || '&nbsp;';
 			case 'meanings':
 				let c = sel('contextualIndex', el);
 				if (!c || 1 == c.textContent) return format('', sel('primary', el));
@@ -96,9 +111,16 @@
 			if (h.name == '.mm_header') {
 				let html = '';
 				let x = parseXml(h.value);
+				let legend = '<div class="legend">'
+					+ '<h4>' + _('Token Color Legend') + '</h4>'
+					+ '<div class="legend-item"><span class="legend-color metaphor-token"></span> ' + _('Metaphor') + '</div>'
+					+ '<div class="legend-item"><span class="legend-color indirect-token"></span> ' + _('Other Indirect Meaning') + '</div>'
+					+ '<div class="legend-item"><span class="legend-color direct-token"></span> ' + _('Direct meaning') + '</div>'
+					+ '</div>';
 				html = '<img class="logo" src="./templates/assets/metaphor-aid.webp" class="logo" style="height:3em"/>'
 					+ '<h2>' + selToText(x, 'title') + '</h2>'
 					+ '<h3>' + selToText(x, 'author') + '</h3>'
+					+ legend
 					+ html;
 				sel('#header').innerHTML = html;
 			}
@@ -152,6 +174,21 @@
 					}
 				} else {
 					ew.innerHTML = tkn.innerHTML || '&nbsp;';
+				}
+				// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
+				let metaphorEl = sel('metaphor', w);
+				let otherIndirectEl = sel('otherIndirect', w);
+				let metaphor = metaphorEl ? metaphorEl.textContent.trim() : '';
+				let otherIndirect = otherIndirectEl ? otherIndirectEl.textContent.trim() : '';
+				if (otherIndirect === 'None' || otherIndirect === 'none') otherIndirect = '0';
+
+				ew.classList.remove('metaphor-token', 'indirect-token', 'direct-token');
+				if (metaphor === 'True') {
+					ew.classList.add('metaphor-token');
+				} else if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') {
+					ew.classList.add('indirect-token');
+				} else {
+					ew.classList.add('direct-token');
 				}
 				es.appendChild(ew);
 			}, s);
@@ -398,25 +435,65 @@
 			localStorage['metaphor_api'] = sel('[name="api"]', t.closest('.tooltip')).value;
 			localStorage['metaphor_token'] = sel('[name="token"]', t.closest('.tooltip')).value;
 			let txt = sel('[name="content"]', t.closest('.tooltip')).value.trim();
-			if (txt.length && localStorage['metaphor_api']) {
-				fetch(localStorage['metaphor_api'], {
+			if (!txt.length) {
+				addMsg(_('Please provide content'), false, sel('[name="content"]', t.closest('.tooltip')));
+				return;
+			}
+			if (!localStorage['metaphor_api']) {
+				addMsg(_('Please provide API URL'), false, sel('[name="api"]', t.closest('.tooltip')));
+				return;
+			}
+			// Show loading state
+			let btn = t;
+			let originalText = btn.textContent;
+			btn.textContent = _('Processing...');
+			btn.classList.add('disabled');
+			fetch(localStorage['metaphor_api'], {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json; charset=utf-8',
 						'Authorization': 'Bearer ' + localStorage['metaphor_token']
 					},
 					body: JSON.stringify({text:txt})
-				}).then(r => r.ok ? r.text() : r.json()).then(function(data) { 
-					if (typeof data == 'string') {
-						let xml = sel('body', parseXml(data));
-						_content[cid] = xml.innerHTML;
-						editor.forceReload = true;
-						savePar([cid]);
-					} else {
-						addMsg(data.detail || 'unknown error', false, sel('[name="content"]', t.closest('.tooltip')));
+				}).then(r => {
+					if (!r.ok) {
+						if (r.status === 404) {
+							return Promise.reject(_('Invalid or wrong API URL'));
+						} else if (r.status >= 500) {
+							return Promise.reject(_('API server error'));
+						}
+						return r.text().catch(() => _('Invalid API response')).then(text => {
+							try {
+								var data = JSON.parse(text);
+								return Promise.reject(_(data.detail || 'unknown error'));
+							} catch(e) {
+								return Promise.reject(_('Invalid or wrong API URL'));
+							}
+						});
 					}
+					return r.text();
+				}).then(function(data) { 
+					if (typeof data == 'string') {
+						try {
+							let xml = sel('body', parseXml(data));
+							_content[cid] = xml.innerHTML;
+							editor.forceReload = true;
+							savePar([cid]);
+						} catch(e) {
+							addMsg(_('API response format is incorrect'), false, sel('[name="content"]', t.closest('.tooltip')));
+						}
+					} else {
+						addMsg(_(data.detail || 'unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
+					}
+					// Restore button state
+					btn.textContent = originalText;
+					btn.classList.remove('disabled');
+				}).catch(err => {
+					addMsg(err || _('unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
+					// Restore button state
+					btn.textContent = originalText;
+					btn.classList.remove('disabled');
 				});
-			}
 		}
 	});
 
@@ -597,6 +674,11 @@
 				'<a href="#" class="btn metaphor-new-cancel">' + _('Cancel') + '</a>' +
 				'</div>';
 
+			// Set minimum height for the modal to fit content
+			tt.style.minHeight = '400px';
+			tt.style.display = 'flex';
+			tt.style.flexDirection = 'column';
+
 			// Handle the submit button
 			let submitBtn = sel('.metaphor-new-submit', tt);
 			let cancelBtn = sel('.metaphor-new-cancel', tt);
@@ -623,6 +705,11 @@
 				localStorage['metaphor_api'] = api;
 				localStorage['metaphor_token'] = token;
 
+				// Show loading state
+				let originalText = submitBtn.textContent;
+				submitBtn.textContent = _('Processing...');
+				submitBtn.classList.add('disabled');
+
 				fetch(api, {
 					method: 'POST',
 					headers: {
@@ -630,15 +717,40 @@
 						'Authorization': 'Bearer ' + token
 					},
 					body: JSON.stringify({text: content})
-				}).then(r => r.ok ? r.text() : r.json()).then(function(data) {
+				}).then(r => {
+					// Check for authentication errors first
+					if (r.status === 401) {
+						return Promise.reject(new Error(_('Invalid bearer token')));
+					}
+					if (!r.ok) {
+						return r.json().then(err => {
+							return Promise.reject(new Error(err.detail || err.message || _('API server error')));
+						}).catch(e => {
+							// If JSON parsing fails, return status error
+							return Promise.reject(new Error(_('API server error')));
+						});
+					}
+					return r.text();
+				}).then(function(data) {
 					if (typeof data == 'string') {
 						trg(tt, 'close');
 						resolve([filename, normalizeDocumentTitle(data, filename)]);
 					} else {
-						addMsg(data.detail || 'unknown error', 'error', tt);
+						addMsg(data.detail || _('unknown error'), 'error', tt);
+						submitBtn.textContent = originalText;
+						submitBtn.classList.remove('disabled');
 					}
 				}).catch(err => {
-					addMsg('Network error: ' + err, 'error', tt);
+					// Catch network errors and invalid bearer token errors
+					let errorMsg = err.message;
+					if (err.name === 'TypeError') {
+						// Network error (could be CORS, connection refused, etc.)
+						errorMsg = _('Network error:') + ' ' + err.message;
+					}
+					addMsg(errorMsg, 'error', tt);
+					// Reset button state
+					submitBtn.textContent = originalText;
+					submitBtn.classList.remove('disabled');
 				});
 			});
 		});
