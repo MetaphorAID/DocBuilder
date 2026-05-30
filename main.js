@@ -214,59 +214,131 @@ document.addEventListener('close', e => {
 	}
 });
 
-const DB_NAME = "AnnotationInterfaceIndexedDB";   // The name of our IndexedDB database
-const STORE_NAME = "annotationFiles";             // The name of the object store (like a table)
+class AnnotationDB {
+	constructor(
+		dbName = 'AnnotationInterfaceIndexedDB',
+		storeName = 'annotationFiles',
+		version = 1
+	) {
+		this.dbName = dbName;
+		this.storeName = storeName;
+		this.version = version;
+		this.db = null;
+	}
 
-let db;  // Will hold the database connection
+	async init() {
+		if (this.db) {
+			return this.db;
+		}
 
-window.addEventListener('DOMContentLoaded', function () {
-	// Initialise the database
-	// Request to open (or create) the database
-	const request = indexedDB.open(DB_NAME, 1);
+		return new Promise((resolve, reject) => {
+			const request = indexedDB.open(this.dbName, this.version);
 
-	// Called if the DB doesn't exist yet or version changes
-	request.onupgradeneeded = (e) => {
-		db = e.target.result;
-		// Create an object store (like a table) with "name" as the key
-		db.createObjectStore(STORE_NAME, {
-			keyPath: 'name'
+			request.onupgradeneeded = e => {
+				const db = e.target.result;
+
+				if (!db.objectStoreNames.contains(this.storeName)) {
+					db.createObjectStore(this.storeName, {
+						keyPath: 'name'
+					});
+				}
+			};
+
+			request.onsuccess = e => {
+				this.db = e.target.result;
+				resolve(this.db);
+			};
+
+			request.onerror = e => reject(e.target.error);
 		});
-	};
+	}
 
-	// Called when the DB is ready to use
-	request.onsuccess = (e) => {
-		db = e.target.result;
+	async transaction(mode = 'readonly') {
+		await this.init();
 
-		// Init recent files from DB
-		listFilesInIndexedDB()
-			.then(keys => {
-				hist.recent.clear();  // Clear history
-				keys.forEach(key => {
-					hist.recent.add(key);
-				});
-			})
-			.catch(err => addMsg(_('Database error:' + err), 'error'));
-	};
+		return this.db
+			.transaction(this.storeName, mode)
+			.objectStore(this.storeName);
+	}
 
-	// Called if there's an error opening the DB
-	request.onerror = (e) => addMsg(_('Database error:' + e.target.error), 'error');
-});
+	async retrieveFileInIndexedDB(fileName) {
+		const store = await this.transaction('readonly');
 
-function listFilesInIndexedDB() {
-	return new Promise((resolve, reject) => {
-		// Create a read-only transaction
-		const tx = db.transaction(STORE_NAME, 'readonly');
-		// Get the object store
-		const store = tx.objectStore(STORE_NAME);
+		return new Promise((resolve, reject) => {
+			const request = store.get(fileName);
 
-		// Get the specific key
-		const getRequest = store.getAllKeys();
+			request.onsuccess = () =>
+				resolve(request.result?.data ?? null);
 
-		// Pass when transaction is complete
-		getRequest.onsuccess = () => resolve(getRequest.result);
-		getRequest.onerror = (e) => reject(e);
-	});
+			request.onerror = e => reject(e.target.error);
+		});
+	}
+
+	async storeFileInIndexedDB(fileName, data) {
+		const store = await this.transaction('readwrite');
+
+		return new Promise((resolve, reject) => {
+			const request = store.put({
+				name: fileName,
+				data
+			});
+
+			request.onsuccess = () => resolve(data);
+			request.onerror = e => reject(e.target.error);
+		});
+	}
+
+	async getAllKeys() {
+		const store = await this.transaction('readonly');
+
+		return new Promise((resolve, reject) => {
+			const request = store.getAllKeys();
+
+			request.onsuccess = () =>
+				resolve(request.result);
+
+			request.onerror = e => reject(e.target.error);
+		});
+	}
+
+	async delete(fileName) {
+		const store = await this.transaction('readwrite');
+
+		return new Promise((resolve, reject) => {
+			const request = store.delete(fileName);
+
+			request.onsuccess = () => resolve();
+			request.onerror = e => reject(e.target.error);
+		});
+	}
+
+	async clear() {
+		const store = await this.transaction('readwrite');
+
+		return new Promise((resolve, reject) => {
+			const request = store.clear();
+
+			request.onsuccess = () => resolve();
+			request.onerror = e => reject(e.target.error);
+		});
+	}
 }
+
+const fileDB = new AnnotationDB();
+
+window.addEventListener('DOMContentLoaded', async () => {
+	try {
+		await fileDB.init();
+		const keys = await fileDB.getAllKeys();
+
+		hist.recent.clear();
+		keys.forEach(key => {
+			hist.recent.add(key);
+		});
+	} catch (err) {
+		addMsg(_('Database error: ') + err, 'error');
+	}
+});
 
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
@@ -776,31 +848,11 @@ function readFileAsText(file) {
 	});
 }
 
-function storeFileInIndexedDB(fileName, data) {
-	return new Promise((resolve, reject) => {
-		// Create a transaction with read/write access
-		const tx = db.transaction(STORE_NAME, 'readwrite');
-		// Get the object store we’ll write to
-		const store = tx.objectStore(STORE_NAME);
-
-		// Save the chunks as an object: { name, data }
-		store.put({
-			name: fileName,
-			data
-		});
-
-		// Pass when transaction is complete
-		tx.oncomplete = () => resolve(data);
-
-		tx.onerror = (e) => reject(e);
-	});
-}
-
 function open(id, onsuccess, template) {
 	let promise;
 	// Load file from FileInIndexedDB
 	if (id !== undefined) {
-		promise = retriveFileInIndexedDB(id);
+		promise = fileDB.retrieveFileInIndexedDB(id);
 	} else {
 		// Open new file
 		const templatePromise = typeof template === 'string'
@@ -810,7 +862,7 @@ function open(id, onsuccess, template) {
 		promise = templatePromise
 			.then(template => chooseFile(template.extension)
 				.then(file => readFileAsText(file)
-					.then(text => storeFileInIndexedDB(file.name, prepareData(file.name, text, template)))
+					.then(text => fileDB.storeFileInIndexedDB(file.name, prepareData(file.name, text, template)))
 				)
 			);
 	}
@@ -949,22 +1001,6 @@ function setChunks(chunks, mChunks) {
 	return mChunks;
 }
 
-function retriveFileInIndexedDB(fileName) {
-	return new Promise((resolve, reject) => {
-		// Create a read-only transaction
-		const tx = db.transaction(STORE_NAME, 'readonly');
-		// Get the object store
-		const store = tx.objectStore(STORE_NAME);
-
-		// Get the specific key
-		const getRequest = store.get(fileName);
-
-		// Pass when transaction is complete
-		getRequest.onsuccess = () => resolve(getRequest.result?.data ?? null);
-		getRequest.onerror = (e) => reject(e);
-	});
-}
-
 function buildFile(mChunks) {
 	let result = '';
 
@@ -995,12 +1031,12 @@ function saveFile(fileName, data) {
 
 function save(chunks) {
 	// If chunks is undefined, use editor.chunks, otherwise use provided chunks
-	retriveFileInIndexedDB(editor.id || 0)
+	fileDB.retrieveFileInIndexedDB(editor.id || 0)
 		.then(data => {
 			// Set chunks using setChunks, and store the updated result in IndexedDB
 			data.chunks = setChunks(chunks || editor.chunks, data.chunks);
 			// Store the data in IndexedDB with the correct fileName (data.id)
-			return storeFileInIndexedDB(data.id, data); // Return the promise from storeFileInIndexedDB
+			return fileDB.storeFileInIndexedDB(data.id, data); // Return the promise from storeFileInIndexedDB
 		})
 		.then((data) => {
 			// If chunks is undefined, 'Save as...'
@@ -1143,7 +1179,7 @@ function callTokenNew(template) {
 			if (result) {
 				let [filename, data] = result;
 				let newData = prepareData(filename, data, template);
-				storeFileInIndexedDB(filename, newData).then(() => {
+				fileDB.storeFileInIndexedDB(filename, newData).then(() => {
 					fileLoaded(newData);
 				});
 			}
