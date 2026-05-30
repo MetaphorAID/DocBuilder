@@ -862,7 +862,8 @@ function open(id, onsuccess, template) {
 		promise = templatePromise
 			.then(template => chooseFile(template.extension)
 				.then(file => readFileAsText(file)
-					.then(text => fileDB.storeFileInIndexedDB(file.name, prepareData(file.name, text, template)))
+					.then(text => fileDB.storeFileInIndexedDB(file.name,
+						ChunkProcessor.createDocument(file.name, text, template)))
 				)
 			);
 	}
@@ -896,119 +897,120 @@ function fileLoaded(data, onsuccess) {
 	}
 }
 
-function prepareData(fileName, text, template) {
-	const mChunks = getChunks(text, template.chunks);
-	return {
-		id: fileName,
-		chunks: mChunks,
-		js: template.js,
-		css: template.css
-	};
-}
+class ChunkProcessor {
+	static parse(content, splitter) {
+		const matches = [];
 
-function getChunks(content, splitter) {
-	const matches = [];
+		// Collect all matches
+		Object.entries(splitter).forEach(([patternStr, key]) => {
+			const regex = new RegExp(patternStr, 'gs');  // g = global, s = dotall
 
-	// Collect all matches
-	Object.entries(splitter).forEach(([patternStr, key]) => {
-		const regex = new RegExp(patternStr, 'gs'); // g = global, s = dotall
-		let match;
-		while ((match = regex.exec(content)) !== null) {
-			matches.push({
-				start: match.index,
-				end: regex.lastIndex,
-				chunk: {
-					'id': null,
-					'name': key,
-					'value': match[0]
-				}
-			});
-		}
-	});
-
-	// Sort matches
-	matches.sort((a, b) => {
-		if (a.start === b.start) {
-			return b.end - a.end; // Longer match first
-		}
-		return a.start - b.start;
-	});
-
-	const chunks = [];
-	let pos = 0;
-	let id = 0;
-
-	for (const m of matches) {
-		const c = m.chunk;
-		const start = m.start;
-		const end = m.end;
-
-		if (pos > start) {
-			// Overlapping, just add this chunk
-			chunks.push(c);
-			continue;
-		}
-
-		if (pos < start) {
-			// Add intermediate chunk
-			chunks.push({
-				'id': ++id,
-				'name': '',
-				'value': content.substring(pos, start)
-			});
-		}
-
-		c.id = ++id;
-		chunks.push(c);
-		pos = end;
-	}
-
-	// Add any remaining content at the end
-	if (pos < content.length) {
-		chunks.push({
-			'id': ++id,
-			'name': '',
-			'value': content.substring(pos)
-		});
-	}
-
-	return chunks;
-}
-
-function setChunks(chunks, mChunks) {
-	let i = 0;
-	let j = 0;
-
-	while (i < chunks.length || j < mChunks.length) {
-		if (i < chunks.length && j < mChunks.length && chunks[i].id === mChunks[j].id) {
-			// If both chunks and mChunks have the same id, merge them
-			if (chunks[i].append) {
-				mChunks[j].value = mChunks[j].value + (chunks[i].value || '');
-			} else {
-				mChunks[j].value = chunks[i].value || '';
+			let match;
+			while ((match = regex.exec(content)) !== null) {
+				matches.push({
+					start: match.index,
+					end: regex.lastIndex,
+					chunk: {
+						id: null,
+						name: key,
+						value: match[0]
+					}
+				});
 			}
-			i++;
-			j++;
-		} else if (i < chunks.length && (j >= mChunks.length || chunks[i].id < mChunks[j].id)) {
-			// If no matching mChunk, just add the chunk
-			throw new Error(_(`No matching mChunk found for chunk with id: ${chunks[i].id}`));
-		} else {
-			// If no matching chunk, just add the mChunk leave mChunk as is (skip)
-			j++;
+		});
+
+		// Sort matches
+		matches.sort((a, b) => {
+			if (a.start === b.start) {
+				return b.end - a.end;  // Longer match first
+			}
+			return a.start - b.start;
+		});
+
+		const chunks = [];
+		let pos = 0;
+		let id = 0;
+
+		for (const match of matches) {
+			const {start, end, chunk} = match;
+
+			if (pos > start) {
+				// Overlapping, just add this chunk
+				chunks.push(chunk);
+				continue;
+			}
+
+			if (pos < start) {
+				// Add intermediate chunk
+				chunks.push({
+					id: ++id,
+					name: '',
+					value: content.substring(pos, start)
+				});
+			}
+
+			chunk.id = ++id;
+			chunks.push(chunk);
+			pos = end;
 		}
+
+		if (pos < content.length) {
+			chunks.push({
+				id: ++id,
+				name: '',
+				value: content.substring(pos)
+			});
+		}
+
+		return chunks;
 	}
 
-	return mChunks;
-}
+	static merge(changes, chunks) {
+		let i = 0;
+		let j = 0;
 
-function buildFile(mChunks) {
-	let result = '';
+		while (i < changes.length || j < chunks.length) {
+			if (i < changes.length && j < chunks.length && changes[i].id === chunks[j].id) {
+				// If both changes and chunks have the same id, merge them
+				if (changes[i].append) {
+					chunks[j].value += changes[i].value || '';
+				} else {
+					chunks[j].value = changes[i].value || '';
+				}
 
-	for (const chunk of mChunks) {
-		if (chunk.id == null) continue;
-		result += chunk.value;
+				i++;
+				j++;
+			} else if (i < changes.length && (j >= chunks.length || changes[i].id < chunks[j].id)) {
+				// If no matching mChunk, just add the chunk
+				throw new Error(_(`No matching chunk found for chunk with id: ${changes[i].id}`));
+			} else {
+				// If no matching chunk, just add the chunk leave chunk as is (skip)
+				j++;
+			}
+		}
+
+		return chunks;
 	}
-	return new Blob([result]);
+
+	static build(chunks) {
+		return chunks
+			.filter(chunk => chunk.id !== null)
+			.map(chunk => chunk.value)
+			.join('');
+	}
+
+	static createDocument(fileName, text, template) {
+		return {
+			id: fileName,
+			chunks: this.parse(text, template.chunks),
+			js: template.js,
+			css: template.css
+		};
+	}
+
+	static createBlob(chunks) {
+		return new Blob([this.build(chunks)]);
+	}
 }
 
 function saveFile(fileName, data) {
@@ -1033,15 +1035,15 @@ function save(chunks) {
 	// If chunks is undefined, use editor.chunks, otherwise use provided chunks
 	fileDB.retrieveFileInIndexedDB(editor.id || 0)
 		.then(data => {
-			// Set chunks using setChunks, and store the updated result in IndexedDB
-			data.chunks = setChunks(chunks || editor.chunks, data.chunks);
+			// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
+			data.chunks = ChunkProcessor.merge(chunks || editor.chunks, data.chunks);
 			// Store the data in IndexedDB with the correct fileName (data.id)
 			return fileDB.storeFileInIndexedDB(data.id, data); // Return the promise from storeFileInIndexedDB
 		})
 		.then((data) => {
 			// If chunks is undefined, 'Save as...'
 			if (!chunks) {
-				const text = buildFile(data.chunks);
+				const text = ChunkProcessor.createBlob(data.chunks);
 				saveFile(editor.id, text);
 			} else {
 				addMsg(_('Document Saved'), 'success');
@@ -1173,12 +1175,12 @@ function loadNextScript(scripts, index = 0) {
 }
 
 function callTokenNew(template) {
-	let TokenClass = window.TOKEN || (typeof TOKEN !== 'undefined' && TOKEN);
+	const TokenClass = window.TOKEN || (typeof TOKEN !== 'undefined' && TOKEN);
 	if (TokenClass && typeof TokenClass.new === 'function') {
 		TokenClass.new().then(result => {
 			if (result) {
-				let [filename, data] = result;
-				let newData = prepareData(filename, data, template);
+				const [filename, data] = result;
+				const newData = ChunkProcessor.createDocument(filename, data, template);
 				fileDB.storeFileInIndexedDB(filename, newData).then(() => {
 					fileLoaded(newData);
 				});
