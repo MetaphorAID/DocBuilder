@@ -140,8 +140,7 @@ function select(val, empty_opt, opts, multiple) {
 		const a = document.createElement('a');
 		a.href = '#';
 		a.dataset.value = o;
-		// TODO val == o can comapre between string and numbers. Is it intentionaL?
-		if (typeof (val) === 'object' ? (val.indexOf(o) !== -1) : (val == o)) a.className = 'selected';
+		if (typeof (val) === 'object' ? (val.indexOf(o) !== -1) : (val === o)) a.className = 'selected';
 		a.textContent = _(opts[o]);
 		s.appendChild(a);
 	}
@@ -281,310 +280,375 @@ each('.locale', function (i) {
 	i.innerHTML = _(i.innerHTML.trim());
 });
 
-const Editor = function (dom, onchange) {
-	this.dom = dom;
-	this.onchange_cb = onchange;
-	this.chunks = [];
+class Editor {
+	static TYPES = {
+		_default_: {
+			remove(input, chunk) {
+			},
 
-	let self = this;
-	dom.classList.add('editor');
-	evt(dom, 'change', e => {
-		const t = e.target;
-		if (t && t.matches('[data-cid]')) self.onchange([t.dataset.cid]);
-	});
-	evt(dom, 'click', e => {
-		const t = e.target;
-		if (!t) return;
-		if (t.matches('[data-render]')) self.render([Number(t.dataset.render)]);
-		if (t.matches('.plus-one')) {
-			const cid = Number(t.dataset.next);
-			const d = self.renderChunk(cid);
-			if (d) dom.insertBefore(d, t);
-			if (self.chunks.length > cid + 1) {
-				t.dataset.next = String(cid + 1);
-			} else {
-				t.remove();
-			}
-		}
-	});
-	window.addEventListener('beforeunload', e => {
-		if (self.ischanged()) {
-			e.preventDefault();
-			e.returnValue = _('There are unsaved changes! Are you sure?');
-			return e.returnValue;
-		}
-	});
-}
-Editor.TYPES = {
-	_default_: {
-		remove: function (input, chunk) {
-		},
-		getValue: function (input, chunk) {
-			return input.value;
-		},
-		render: function (chunk, cid) {
-			if (!chunk.id || !chunk.name) {
-				const e = document.createElement('pre');
-				e.innerHTML = chunk.value;
+			getValue(input, chunk) {
+				return input.value;
+			},
+
+			render(chunk, cid) {
+				if (!chunk.id || !chunk.name) {
+					const e = document.createElement('pre');
+					e.innerHTML = chunk.value;
+					return e;
+				}
+				const e = document.createElement('textarea');
+				e.className = 'input';
+				e.value = chunk.value;
 				return e;
 			}
-			const e = document.createElement('textarea');
-			e.className = 'input';
-			e.value = chunk.value;
-			return e;
 		}
-	}
-};
-Editor.getType = function (type) {
-	return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
-}
-Editor.prototype.load = function (data, store_filler) {
-	if (!data.id) return;
-	this.id = data.id;
-	this.eol = false;
-	this.hidden = [];
-	this.chunks = [];
-	for (let chunk of data.chunks || []) {
-		if (!store_filler && !chunk.name) continue;
-		if (!this.eol) {
-			const m = chunk.value.match(/(\r?\n|\r)/);
-			if (m) this.eol = m[1];
-		}
-		if (chunk.name[0] === '.') this.hidden.push(chunk);
-		else this.chunks.push(chunk);
-	}
-	if (!this.eol) this.eol = '\n';
+	};
 
-	this.dom.innerHTML = '';
-	clean_ttip(this.dom);
-
-	for (const css of data.css || []) {
-		if (sel(`link[href="${css}"]`)) continue;
-		const e = document.createElement('link');
-		e.setAttribute('rel', 'stylesheet');
-		e.setAttribute('href', css);
-		sel('head').appendChild(e);
+	static getType(type) {
+		return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 	}
 
-	let loading = 0;
-	for (const js of data.js || []) {
-		if (sel(`script[src="${js}"]`)) continue;
-		++loading;
-		const e = document.createElement('script');
-		e.setAttribute('src', js);
-		evt(e, 'load', () => {
-			--loading;
+	constructor(dom, onchange) {
+		this.dom = dom;
+		this.onchange_cb = onchange;
+		this.chunks = [];
+		this.restore = false;
+		this.restoreHidden = false;
+
+		dom.classList.add('editor');
+
+		// Initially disable save button since no file is open
+		disable('.ed-save', !!this.id);
+
+		evt(dom, 'change', e => {
+			const t = e.target;
+			if (t && t.matches('[data-cid]')) this.onchange([t.dataset.cid]);
 		});
-		sel('body').appendChild(e);
+
+		evt(dom, 'click', e => {
+			const t = e.target;
+			if (!t) return;
+
+			if (t.matches('[data-render]')) this.render([Number(t.dataset.render)]);
+
+			if (t.matches('.plus-one')) {
+				const cid = Number(t.dataset.next);
+				const d = this.renderChunk(cid);
+
+				if (d) dom.insertBefore(d, t);
+
+				if (this.chunks.length > cid + 1) {
+					t.dataset.next = String(cid + 1);
+				} else {
+					t.remove();
+				}
+			}
+		});
+
+		window.addEventListener('beforeunload', e => {
+			if (this.ischanged()) {
+				e.preventDefault();
+				e.returnValue = _('There are unsaved changes! Are you sure?');
+				return e.returnValue;
+			}
+		});
 	}
 
-	const self = this;
+	load(data, store_filler) {
+		if (!data.id) return;
 
-	function onload() {
-		if (loading > 0) {
-			setTimeout(onload, 50);
-			return;
+		this.id = data.id;
+		this.eol = false;
+		this.hidden = [];
+		this.chunks = [];
+
+		for (const chunk of data.chunks || []) {
+			if (!store_filler && !chunk.name) continue;
+
+			if (!this.eol) {
+				const m = chunk.value.match(/(\r?\n|\r)/);
+
+				if (m) this.eol = m[1];
+			}
+
+			if (chunk.name[0] === '.') this.hidden.push(chunk);
+			else this.chunks.push(chunk);
 		}
-		addMsg(_('Document Loaded'), 'success');
-		trg(self.dom, 'load');
-		const hids = Object.keys(self.hidden);
-		self.renderHidden(hids);
-		self.render([0]);
-	}
 
-	onload();
+		if (!this.eol) this.eol = '\n';
 
-}
-Editor.prototype.ischanged = function (onnotchanged) {
-	let changed = false;
-	let self = this;
-	each('[data-cid]', function (i) {
-		const c = self.chunks[i.dataset.cid];
-		const t = Editor.getType(c.name);
-		if (c.id && t.getValue && c.value != t.getValue(i, c).replace(/(\r?\n|\r)/g, self.eol)) {
-			changed = true;
+		this.dom.innerHTML = '';
+		clean_ttip(this.dom);
+
+		for (const css of data.css || []) {
+			if (sel(`link[href="${css}"]`)) continue;
+
+			const e = document.createElement('link');
+			e.setAttribute('rel', 'stylesheet');
+			e.setAttribute('href', css);
+			sel('head').appendChild(e);
 		}
-	}, self.dom);
-	if (!onnotchanged) {
-		return changed;
+
+		let loading = 0;
+		for (const js of data.js || []) {
+			if (sel(`script[src="${js}"]`)) continue;
+
+			++loading;
+			const e = document.createElement('script');
+			e.setAttribute('src', js);
+			evt(e, 'load', () => {
+				--loading;
+			});
+			sel('body').appendChild(e);
+		}
+
+		const onload = () => {
+			if (loading > 0) {
+				setTimeout(onload, 50);
+				return;
+			}
+
+			addMsg(_('Document Loaded'), 'success');
+
+			trg(this.dom, 'load');
+			const hids = Object.keys(this.hidden);
+			this.renderHidden(hids);
+			this.render([0]);
+		};
+
+		onload();
 	}
 
-	function oncontinue() {
+	ischanged(onnotchanged) {
+		let changed = false;
+
 		each('[data-cid]', i => {
-			const c = self.chunks[i.dataset.cid];
+			const c = this.chunks[i.dataset.cid];
 			const t = Editor.getType(c.name);
-			if (t.remove) t.remove(i, c);
-		}, self.dom);
-		onnotchanged();
+
+			if (c.id && t.getValue && c.value !== t.getValue(i, c).replace(/(\r?\n|\r)/g, this.eol)) {
+				changed = true;
+			}
+		}, this.dom);
+
+		if (!onnotchanged) {
+			return changed;
+		}
+
+		const oncontinue = () => {
+			each('[data-cid]', i => {
+				const c = this.chunks[i.dataset.cid];
+				const t = Editor.getType(c.name);
+
+				if (t.remove) t.remove(i, c);
+			}, this.dom);
+
+			onnotchanged();
+		};
+
+		if (!changed) {
+			oncontinue();
+		} else {
+			addConfirm(_('There are unsaved changes! Are you sure?'), oncontinue);
+		}
 	}
 
-	if (!changed) {
-		oncontinue();
-	} else {
-		addConfirm(_('There are unsaved changes! Are you sure?'), oncontinue);
+	onchange(cids, hdata) {
+		editor.restore = editor.getVisible();
+
+		const hids = Object.keys(hdata || {});
+		if (hids.length) editor.restoreHidden = hids;
+
+		const chunks = {};
+		const values = {};
+		let changed = false;
+		for (const cid of cids) {
+			const c = this.chunks[cid];
+			const t = Editor.getType(c.name);
+
+			if (c.id && t.getValue) {
+				const v = t.getValue(sel(`[data-cid="${cid}"]`, this.dom), c).replace(/(\r?\n|\r)/g, this.eol);
+
+				if (c.value !== v) {
+					changed = true;
+					chunks[`c${cid}`] = c;
+					values[`c${cid}`] = v;
+				}
+			}
+		}
+
+		for (const hid in (hdata || {})) {
+			const h = this.hidden[hid];
+
+			if (h.id) {
+				const v = hdata[hid].replace(/(\r?\n|\r)/g, this.eol);
+
+				if (h.value !== v) {
+					changed = true;
+					chunks[`h${hid}`] = h;
+					values[`h${hid}`] = v;
+				}
+			}
+		}
+
+		if (changed) this.onchange_cb(chunks, values);
 	}
-}
-Editor.prototype.onchange = function (cids, hdata) {
-	editor.restore = editor.getVisible();
-	const hids = Object.keys(hdata || {});
-	if (hids.length) editor.restoreHidden = hids;
-	const chunks = {};
-	const values = {};
-	let changed = false;
-	for (const cid of cids) {
+
+	render(cids) {
+		this.dom.innerHTML = '';
+
+		clean_ttip(this.dom);
+
+		if (!cids.length) return;
+
+		this.dom.appendChild(this.renderPaginator(cids[0]));
+
+		for (const cid of cids) {
+			this.dom.appendChild(this.renderChunk(cid));
+		}
+
+		if (this.chunks.length > cids[cids.length - 1] + 1) {
+			const a = document.createElement('a');
+
+			a.href = '#';
+			a.className = 'btn plus-one';
+			a.dataset.next = String(Number(cids[cids.length - 1]) + 1);
+			a.innerHTML = _('Show +1 sentence');
+			this.dom.appendChild(a);
+		}
+	}
+
+	renderHidden(hids) {
+		this.render_hidden = hids;
+		trg(this.dom, 'change-hidden');
+		this.render_hidden = [];
+	}
+
+	renderChunk(cid) {
+		cid = Number(cid);
 		const c = this.chunks[cid];
-		const t = Editor.getType(c.name);
-		if (c.id && t.getValue) {
-			const v = t.getValue(sel(`[data-cid="${cid}"]`, this.dom), c).replace(/(\r?\n|\r)/g, this.eol);
-			if (c.value != v) {
-				changed = true;
-				chunks[`c${cid}`] = c;
-				values[`c${cid}`] = v;
-			}
+		if (!c) return null;
+
+		const e = Editor.getType(c.name).render(c, cid);
+		if (e) e.dataset.cid = cid;
+
+		return e;
+	}
+
+	renderPaginator(cid) {
+		cid = Number(cid);
+		const cur = cid + 1;
+		const max = (this.chunks || []).length;
+		if (max < 1) return;
+
+		let html = '';
+		if (cur > 2) {
+			html += '<li><a href="#" class="btn" data-render="0">(1) &lt;&lt;</a></li>';
 		}
-	}
-	for (const hid in (hdata || {})) {
-		const h = this.hidden[hid];
-		if (h.id) {
-			const v = hdata[hid].replace(/(\r?\n|\r)/g, this.eol);
-			if (h.value != v) {
-				changed = true;
-				chunks[`h${hid}`] = h;
-				values[`h${hid}`] = v;
-			}
+		if (cur > 1) {
+			html += `<li><a href="#" class="btn" data-render="${cid - 1}">&lt;</a></li>`;
 		}
+		if (cur > 4) {
+			html += '<li class="disabled"><a>...</a></li>';
+		}
+
+		const s = Math.min(max, cur + 3);
+		for (let p = Math.max(1, cur - 3); p <= s; ++p) {
+			html += `<li class="${p === cur ? 'active' : ''}"><a href="#" class="btn" data-render="${p - 1}">${p}</a></li>`;
+		}
+		if (max > cur + 3) {
+			html += '<li class="disabled"><a>...</a></li>';
+		}
+		if (max > cur) {
+			html += `<li><a href="#" class="btn" data-render="${cid + 1}">&gt;</a></li>`;
+		}
+		if (max > cur + 1) {
+			html += `<li><a href="#" class="btn" data-render="${max - 1}">&gt;&gt; (${max})</a></li>`;
+		}
+
+		const p = document.createElement('ul');
+		p.className = 'pagination';
+		p.innerHTML = html;
+
+		return p;
 	}
-	if (changed) this.onchange_cb(chunks, values);
-}
-Editor.prototype.render = function (cids) {
-	const self = this;
-	self.dom.innerHTML = '';
-	clean_ttip(this.dom);
-	if (!cids.length) return;
-	self.dom.appendChild(self.renderPaginator(cids[0]));
-	for (const cid in cids) {
-		self.dom.appendChild(self.renderChunk(cid));
+
+	getVisible() {
+		const cids = [];
+		each('[data-cid]', i => {
+			cids.push(i.dataset.cid);
+		}, this.dom);
+
+		return cids;
 	}
-	if (self.chunks.length > cids[cids.length - 1] + 1) {
-		const a = document.createElement('a');
-		a.setAttribute('href', '#');
-		a.className = 'btn plus-one';
-		a.dataset.next = String(Number(cids[cids.length - 1]) + 1);
-		a.innerHTML = _('Show +1 sentence');
-		self.dom.appendChild(a);
-	}
-}
-Editor.prototype.renderHidden = function (hids) {
-	this.render_hidden = hids;
-	trg(this.dom, 'change-hidden');
-	this.render_hidden = [];
-}
-Editor.prototype.renderChunk = function (cid) {
-	cid = Number(cid);
-	const c = this.chunks[cid];
-	if (!c) return null;
-	const e = Editor.getType(c.name).render(c, cid);
-	if (e) e.dataset.cid = cid;
-	return e;
-}
-Editor.prototype.renderPaginator = function (cid) {
-	cid = Number(cid);
-	const cur = cid + 1;
-	const max = (this.chunks || []).length
-	if (max < 1) return;
-	let html = '';
-	if (cur > 2) {
-		html += '<li><a href="#" class="btn" data-render="0">(1) &lt;&lt;</a></li>';
-	}
-	if (cur > 1) {
-		html += `<li><a href="#" class="btn" data-render="${cid - 1}">&lt;</a></li>`;
-	}
-	if (cur > 4) {
-		html += '<li class="disabled"><a>...</a></li>';
-	}
-	const s = Math.min(max, cur + 3);
-	for (let p = Math.max(1, cur - 3); p <= s; ++p) {
-		// TODO Do we need loose equality in p == cur?
-		html += `<li class="${p == cur ? 'active' : ''}"><a href="#" class="btn" data-render="${p - 1}">${p}</a></li>`;
-	}
-	if (max > cur + 3) {
-		html += '<li class="disabled"><a>...</a></li>';
-	}
-	if (max > cur) {
-		html += `<li><a href="#" class="btn" data-render="${cid + 1}">&gt;</a></li>`;
-	}
-	if (max > cur + 1) {
-		html += `<li><a href="#" class="btn" data-render="${max - 1}">&gt;&gt; (${max})</a></li>`;
-	}
-	const p = document.createElement('ul');
-	p.className = 'pagination';
-	p.innerHTML = html;
-	return p;
-}
-Editor.prototype.getVisible = function () {
-	const cids = [];
-	each('[data-cid]', i => {
-		cids.push(i.dataset.cid);
-	}, this.dom);
-	return cids;
 }
 
-const History = function (name, max, onchange) {
-	this.name = name;
-	this.max = max;
-	this.data = JSON.parse(localStorage[name] || '[]');
-	this.bu_stamp = Date.now();
-	this.onchange_cb = onchange;
-	if (this.onchange_cb) this.onchange_cb(this);
-}
-History.BACKUP_INTERVAL = 30000;
-History.MAX_NUMBER = 10;
-History.prototype.backup = function () {
-	this.bu_stamp = Date.now();
-	const d = JSON.parse(JSON.stringify(this.data));
-	while (save.length) {
-		try {
-			localStorage[this.name] = JSON.stringify(d);
-			break;
-		} catch (e) {
-			console.error('Could not save data into localStorage');
-			d.pop();
+class History {
+	static BACKUP_INTERVAL = 30000;
+	static MAX_NUMBER = 10;
+
+	constructor(name, max, onchange) {
+		this.name = name;
+		this.max = max;
+		this.data = JSON.parse(localStorage[name] || '[]');
+		this.bu_stamp = Date.now();
+		this.onchange_cb = onchange;
+		this.onchange_cb?.(this);
+	}
+
+	backup() {
+		this.bu_stamp = Date.now();
+		const d = structuredClone(this.data);
+		while (d.length) {
+			try {
+				localStorage[this.name] = JSON.stringify(d);
+				break;
+			} catch (e) {
+				console.error('Could not save data into localStorage');
+				d.pop();
+			}
 		}
 	}
-}
-History.prototype.onchange = function () {
-	const self = this;
-	clearTimeout(this.timer);
-	this.timer = setTimeout(() => {
-		self.backup()
-	}, Math.max(200, (this.bu_stamp || 0) + History.BACKUP_INTERVAL - Date.now()));
-	if (this.onchange_cb) this.onchange_cb(this);
-}
-History.prototype.add = function (data) {
-	while (this.data.length >= this.max) {
-		this.data.pop();
+
+	onchange() {
+		clearTimeout(this.timer);
+		this.timer = setTimeout(() => {
+				this.backup();
+			},
+			Math.max(200, (this.bu_stamp || 0) + History.BACKUP_INTERVAL - Date.now()));
+		this.onchange_cb?.(this);
 	}
-	this.data.unshift(JSON.parse(JSON.stringify(data)));
-	this.onchange();
-}
-History.prototype.get = function (num, peek) {
-	const index = num || 0;
-	const data = this.data[num || 0];
-	if (data && !peek) {
-		this.data.splice(index, 1);
+
+	add(data) {
+		while (this.data.length >= this.max) {
+			this.data.pop();
+		}
+		this.data.unshift(structuredClone(data));
 		this.onchange();
 	}
-	return data;
-}
-History.prototype.isEmpty = function () {
-	return this.data.length === 0;
-}
-History.prototype.walk = function (callback) {
-	for (const [i, item] of this.data.entries()) callback(item, i);
-}
-History.prototype.clear = function () {
-	this.data = [];
-	this.onchange();
+
+	get(num, peek) {
+		const index = num || 0;
+		const data = this.data[index];
+		if (data && !peek) {
+			this.data.splice(index, 1);
+			this.onchange();
+		}
+		return data;
+	}
+
+	isEmpty() {
+		return this.data.length === 0;
+	}
+
+	walk(callback) {
+		for (const [i, item] of this.data.entries()) callback(item, i);
+	}
+
+	clear() {
+		this.data = [];
+		this.onchange();
+	}
 }
 
 // Project specific stuff
@@ -615,9 +679,6 @@ const editor = new Editor(sel('#editor'), function (chunks, values) {
 	}
 	save(tosave);
 });
-
-// Initially disable save button since no file is open
-disable('.ed-save', !!editor.id);
 
 function loadJSONFromURL(url) {
 	return fetch(url)
