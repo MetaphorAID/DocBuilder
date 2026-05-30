@@ -127,7 +127,7 @@ function clean_ttip(t) {
 	each('.tooltip:not(.modal)', i => {
 		if (i === t) return;
 		const t2 = find('.tooltip', i);
-		for (const j of t2) if (t2[j] === t) return;
+		for (const tooltip of t2) if (tooltip === t) return;
 		trg(i, 'close');
 	});
 }
@@ -1026,7 +1026,7 @@ function save(chunks) {
 		})
 		.catch(err => {
 			console.error('Error saving:', err);
-			addMsg(_('Error saving:' + err), 'error');
+			addMsg(_(`Error saving: ${err}`), 'error');
 		});
 }
 
