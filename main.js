@@ -1289,9 +1289,3 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		addMsg(_('Error loading template: ') + err, 'error');
 	}
 });
-
-// $(window).on('load resize', function () {
-// 	$('body').addClass('resizing');
-
-// 	$('body').removeClass('resizing');
-// });
