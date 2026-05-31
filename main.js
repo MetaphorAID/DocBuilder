@@ -160,6 +160,14 @@ function disable(s, enable, dom) {
 	sel(s, dom).classList.toggle('disabled', !enable);
 }
 
+function _(text) {
+	return window.Locale && Locale[text] || text;
+}
+
+each('.locale', function (i) {
+	i.innerHTML = _(i.innerHTML.trim());
+});
+
 document.addEventListener('click', function (e) {
 	const t = e.target;
 	if (!t) return;
@@ -261,7 +269,7 @@ class AnnotationDB {
 			.objectStore(this.storeName);
 	}
 
-	async retrieveFileInIndexedDB(fileName) {
+	async retrieveFile(fileName) {
 		const store = await this.transaction('readonly');
 
 		return new Promise((resolve, reject) => {
@@ -274,7 +282,7 @@ class AnnotationDB {
 		});
 	}
 
-	async storeFileInIndexedDB(fileName, data) {
+	async storeFile(fileName, data) {
 		const store = await this.transaction('readwrite');
 
 		return new Promise((resolve, reject) => {
@@ -343,14 +351,6 @@ window.addEventListener('DOMContentLoaded', async () => {
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
-
-function _(text) {
-	return window.Locale && Locale[text] || text;
-}
-
-each('.locale', function (i) {
-	i.innerHTML = _(i.innerHTML.trim());
-});
 
 class Editor {
 	static TYPES = {
@@ -653,6 +653,20 @@ class Editor {
 
 		return cids;
 	}
+
+	restoreView() {
+		if (this.restore) {
+			this.render(this.restore);
+			this.restore = false;
+		}
+
+		if (this.restoreHidden) {
+			this.renderHidden(
+				this.restoreHidden
+			);
+			this.restoreHidden = false;
+		}
+	}
 }
 
 class History {
@@ -818,84 +832,109 @@ function selectTemplate(action, event) {
 		});
 }
 
-function chooseFile(extension) {
-	return new Promise((resolve, reject) => {
+class DocumentManager {
+	constructor(db, editor) {
+		this.db = db;
+		this.editor = editor;
+	}
+
+	async chooseFile(extension) {
 		// Create a hidden file input restricted to the template extension
-		const input = document.createElement('input');
-		input.type = 'file';
-		input.accept = '.' + extension;
-		input.multiple = false;
-		input.style.display = 'none';
-		document.body.appendChild(input);
+		return new Promise((resolve, reject) => {
+			const input = document.createElement('input');
 
-		input.onchange = () => {
-			const file = input.files[0];
-			// Clean up
-			input.remove();
-			file ? resolve(file) : reject(new Error(_('No file chosen')));
-		};
+			input.type = 'file';
+			input.accept = `.${extension}`;
+			input.multiple = false;
+			input.style.display = 'none';
 
-		input.click();
-	});
-}
+			document.body.appendChild(input);
 
-function readFileAsText(file) {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = (e) => resolve(e.target.result);
-		reader.onerror = reject;
-		reader.readAsText(file, 'UTF-8');
-	});
-}
+			input.onchange = () => {
+				const file = input.files[0];
+				// Clean up
+				input.remove();
 
-function open(id, onsuccess, template) {
-	let promise;
-	// Load file from FileInIndexedDB
-	if (id !== undefined) {
-		promise = fileDB.retrieveFileInIndexedDB(id);
-	} else {
-		// Open new file
-		const templatePromise = typeof template === 'string'
-			? loadTemplate('templates', template)
-			: Promise.resolve(template);
+				if (file) {
+					resolve(file);
+				} else {
+					reject(new Error(_('No file chosen')));
+				}
+			};
 
-		promise = templatePromise
-			.then(template => chooseFile(template.extension)
-				.then(file => readFileAsText(file)
-					.then(text => fileDB.storeFileInIndexedDB(file.name,
-						ChunkProcessor.createDocument(file.name, text, template)))
-				)
-			);
-	}
-
-	promise.then(storedData => {
-		fileLoaded(storedData, onsuccess);
-	})
-		.catch(err => {
-			console.error('Error during file open process:', err);
-			addMsg(_('Error during file open process:' + err), 'error');
+			input.click();
 		});
+	}
+
+	async readFile(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+
+			reader.onload = e => resolve(e.target.result);
+			reader.onerror = reject;
+
+			reader.readAsText(file, 'UTF-8');
+		});
+	}
+
+	download(data) {
+		const blob = ChunkProcessor.createBlob(data.chunks);
+
+		// Create a temporary object URL to download
+		const url = URL.createObjectURL(blob);
+
+		// Create a temporary <a> element to trigger the download
+
+		const a = document.createElement('a');
+
+		a.href = url;
+		a.download = this.editor.id;  // Original file name
+		a.click();                    // Simulate click to download
+
+		// Clean up the temporary URL
+		URL.revokeObjectURL(url);
+		// Clean up the temporary <a> element
+		a.remove();
+
+		addMsg(_('Document Saved'), 'success');
+	}
+
+	async open(id, template) {
+		if (id !== undefined) {
+			const doc = await this.db.retrieveFileInIndexedDB(id);
+			if (!doc) throw new Error(`Document not found: ${id}`);  // TODO localise
+
+			return doc;
+		}
+
+		// Import file
+		const file = await this.chooseFile(template.extension);
+		const text = await this.readFile(file);
+		const document = ChunkProcessor.createDocument(file.name, text, template);
+
+		await this.db.storeFile(file.name, document);
+
+		return document;
+	}
+
+	async save(changes) {
+		// TODO localise
+		if (!data) throw new Error(`Document not found: ${this.editor.id}`);
+
+		// If chunks is undefined, use editor.chunks, otherwise use provided chunks
+		const data = await this.db.retrieveFile(this.editor.id || 0);
+
+		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
+		data.chunks = ChunkProcessor.merge(changes || this.editor.chunks, data.chunks);
+
+		// Store the data in IndexedDB with the correct fileName (data.id)
+		await this.db.storeFile(data.id, data);
+
+		return data;
+	}
 }
 
-function fileLoaded(data, onsuccess) {
-	evt(editor.dom, 'load', function () {
-		hist.recent.walk(function (data, i) {
-			if (data === editor.id) hist.recent.get(i);
-		});
-		hist.recent.add(editor.id);
-		if (onsuccess) onsuccess();
-	});
-	editor.load(data, false);
-	disable('.ed-save', !!editor.id);
-	if (editor.restore) {
-		editor.render(editor.restore);
-		editor.restore = false;
-	}
-	if (editor.restoreHidden) {
-		editor.renderHidden(editor.restoreHidden);
-		editor.restoreHidden = false;
-	}
-}
+const documents = new DocumentManager(fileDB, editor);
 
 class ChunkProcessor {
 	static parse(content, splitter) {
@@ -969,6 +1008,7 @@ class ChunkProcessor {
 		let i = 0;
 		let j = 0;
 
+		// Changes and chunks must be sorted by chunk.id
 		while (i < changes.length || j < chunks.length) {
 			if (i < changes.length && j < chunks.length && changes[i].id === chunks[j].id) {
 				// If both changes and chunks have the same id, merge them
@@ -1013,59 +1053,65 @@ class ChunkProcessor {
 	}
 }
 
-function saveFile(fileName, data) {
-	// Create a temporary object URL to download
-	const url = URL.createObjectURL(data);
-
-	// Create a temporary <a> element to trigger the download
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = fileName;  // Original file name
-	a.click();              // Simulate click to download
-
-	// Clean up the temporary URL
-	URL.revokeObjectURL(url);
-	// Clean up the temporary <a> element
-	a.remove();
-
-	addMsg(_('Document Saved'), 'success');
+function showDocument(data, onsuccess) {
+	evt(editor.dom, 'load', function () {
+		hist.recent.walk(function (data, i) {
+			if (data === editor.id) hist.recent.get(i);
+		});
+		hist.recent.add(editor.id);
+		if (onsuccess) onsuccess();
+	});
+	editor.load(data, false);
+	disable('.ed-save', !!editor.id);
+	if (editor.restore) {
+		editor.render(editor.restore);
+		editor.restore = false;
+	}
+	if (editor.restoreHidden) {
+		editor.renderHidden(editor.restoreHidden);
+		editor.restoreHidden = false;
+	}
 }
 
-function save(chunks) {
-	// If chunks is undefined, use editor.chunks, otherwise use provided chunks
-	fileDB.retrieveFileInIndexedDB(editor.id || 0)
-		.then(data => {
-			// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
-			data.chunks = ChunkProcessor.merge(chunks || editor.chunks, data.chunks);
-			// Store the data in IndexedDB with the correct fileName (data.id)
-			return fileDB.storeFileInIndexedDB(data.id, data); // Return the promise from storeFileInIndexedDB
-		})
-		.then((data) => {
-			// If chunks is undefined, 'Save as...'
-			if (!chunks) {
-				const text = ChunkProcessor.createBlob(data.chunks);
-				saveFile(editor.id, text);
-			} else {
-				addMsg(_('Document Saved'), 'success');
-				if (editor.forceReload) {
-					open(editor.id, false);
-					editor.forceReload = false;
-				} else {
-					if (editor.restore) {
-						editor.render(editor.restore);
-						editor.restore = false;
-					}
-					if (editor.restoreHidden) {
-						editor.renderHidden(editor.restoreHidden);
-						editor.restoreHidden = false;
-					}
-				}
-			}
-		})
-		.catch(err => {
-			console.error('Error saving:', err);
-			addMsg(_(`Error saving: ${err}`), 'error');
-		});
+async function open(id, onsuccess, template) {
+	let loadedTemplate;
+	if (id === undefined) {
+		// Open new file
+		loadedTemplate = typeof template === 'string' ?
+			await loadTemplate('templates', template) : template;
+	}
+
+	try {
+		const data = await documents.open(id, loadedTemplate);
+		showDocument(data, onsuccess);
+
+	} catch (err) {
+		console.error('Error during file open process:', err);
+		addMsg(_('Error during file open process:' + err), 'error');
+	}
+}
+
+async function save(chunks) {
+	try {
+		const data = await documents.save(chunks);
+
+		if (!chunks) {
+			documents.download(data);
+			return;
+		}
+
+		addMsg(_('Document Saved'), 'success');
+
+		if (editor.forceReload) {
+			await open(editor.id, false);
+			editor.forceReload = false;
+
+		} else {
+			editor.restoreView();
+		}
+	} catch (err) {
+		addMsg(_('Error saving: ') + err, 'error');
+	}
 }
 
 function undo(reverse) {
@@ -1181,9 +1227,8 @@ function callTokenNew(template) {
 			if (result) {
 				const [filename, data] = result;
 				const newData = ChunkProcessor.createDocument(filename, data, template);
-				fileDB.storeFileInIndexedDB(filename, newData).then(() => {
-					fileLoaded(newData);
-				});
+				// TODO this should be cleaner
+				documents.db.storeFile(filename, newData).then(() => showDocument(newData));
 			}
 		});
 	} else {
