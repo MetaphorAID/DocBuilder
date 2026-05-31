@@ -70,7 +70,6 @@ function selToText(dom, s, decode) {
 	return xmlToText(sel(s, dom, {}).innerHTML, decode);
 }
 
-// TODO Utils.js --^
 function addMsg(message, cls, target) {
 	const m = document.createElement('div');
 	m.className = `${cls || 'error'} msg`;
@@ -85,105 +84,123 @@ function addMsg(message, cls, target) {
 	}, 5000);
 }
 
-function delMsg() {
-	sel('#message').innerHTML = '';
-}
-
 function addConfirm(message, onconfirm) {
 	const m = document.createElement('div');
 	m.className = 'confirm';
-	m.innerHTML =
-		message +
+	m.innerHTML = message +
 		`<a href="#" class="btn error yes">${_('Yes')}</a> ` +
 		`<a href="#" class="btn cancel">${_('Cancel')}</a>`;
-	evt(m, 'click', e => {
-		const t = e.target;
-		if (!t || !t.matches('.yes,.cancel')) return;
-		t.closest('.confirm').remove();
-		if (t.matches('.yes')) onconfirm();
+	evtDelegated(m, '.yes,.cancel', 'click', e => {
+		e.preventDefault();
+		this.closest('.confirm').remove();
+		// If Yes was clicked, execute callback
+		if (this.matches('.yes')) onconfirm();
 	});
 	sel('body').appendChild(m);
 }
 
-function ttip(dom, event, modal) {
-	const t = document.createElement('div');
-	t.className = `tooltip${modal ? ' modal' : ''}`;
-	dom.parentNode.insertBefore(t, dom.nextSibling);
-	clean_ttip(t);
+function ttip(dom, event, modal = false) {
+	const tooltip = document.createElement('div');
+	tooltip.className = `tooltip${modal ? ' modal' : ''}`;
 
-	const c = t.offsetParent || document.body;
-	const o = event ? [event.offsetY, event.offsetX] : [0, 0];
-	let tt = event ? event.target : dom;
-	while (tt) {
-		o[0] += tt.offsetTop;
-		o[1] += tt.offsetLeft;
-		if (tt.offsetParent === c) break;
-		tt = tt.parentNode;
-	}
+	// Insert after trigger element
+	dom.insertAdjacentElement('afterend', tooltip);
 
-	if (event ? (event.pageY - window.scrollY > window.innerHeight / 2) : (o[0] > c.clientHeight / 2)) {
-		t.style.bottom = `${c.clientHeight - o[0] + 5}px`;
+	// Close other non-modal tooltips
+	clean_ttip(tooltip);
+
+	const container = tooltip.offsetParent || document.body;
+
+	// Calculate position relative to container
+	const trigger = event ? event.target : dom;
+
+	const triggerRect = trigger.getBoundingClientRect();
+	const containerRect = container.getBoundingClientRect();
+
+	const x = triggerRect.left - containerRect.left;
+	const y = triggerRect.top - containerRect.top;
+
+	// Determine whether tooltip should appear above or below
+	const showAbove = event ? event.clientY > window.innerHeight / 2 : y > container.clientHeight / 2;
+
+	if (showAbove) {
+		tooltip.style.bottom = `${container.clientHeight - y + 5}px`;
 	} else {
-		t.style.top = `${o[0] + (event ? 10 : dom.offsetHeight)}px`;
+		tooltip.style.top = `${y + (event ? 10 : dom.offsetHeight)}px`;
 	}
+
+	// Horizontal positioning
 	if (!modal) {
-		if (o[1] < c.clientWidth / 2) {
-			t.style.left = `${o[1]}px`;
+		const showLeft = x < container.clientWidth / 2;
+
+		if (showLeft) {
+			tooltip.style.left = `${x}px`;
 		} else {
-			t.style.right = `${c.clientWidth - o[1] - (event ? 0 : dom.offsetWidth)}px`;
+			tooltip.style.right = `${container.clientWidth - x - (event ? 0 : dom.offsetWidth)}px`;
 		}
 	} else {
-		t.innerHTML = '<a href="#" class="btn close">✕</a>';
+		tooltip.innerHTML = '<a href="#" class="btn close">✕</a>';
 	}
-	return t;
+
+	return tooltip;
 }
 
-function clean_ttip(t) {
-	each('.tooltip:not(.modal)', i => {
-		if (i === t) return;
-		const t2 = find('.tooltip', i);
-		for (const tooltip of t2) if (tooltip === t) return;
-		trg(i, 'close');
+function clean_ttip(currentTooltip) {
+	document.querySelectorAll('.tooltip:not(.modal)').forEach(tooltip => {
+		// Skip the tooltip being created
+		if (tooltip === currentTooltip) return;
+
+		// Skip ancestors containing it
+		if (tooltip.contains(currentTooltip)) return;
+
+		trg(tooltip, 'close');
 	});
 }
 
-function select(val, empty_opt, opts, multiple) {
-	const s = document.createElement('div');
-	s.className = `select${multiple ? ' multiple' : ''}`;
-	s.dataset.value = multiple ? JSON.stringify(val) : val;
-	for (const o in opts) {
-		const a = document.createElement('a');
-		a.href = '#';
-		a.dataset.value = o;
-		if (typeof (val) === 'object' ? (val.indexOf(o) !== -1) : (val === o)) a.className = 'selected';
-		a.textContent = _(opts[o]);
-		s.appendChild(a);
-	}
-	if (typeof empty_opt !== 'undefined') {
-		const a = document.createElement('a');
-		a.href = '#';
-		a.className = 'no-value';
-		if (!sel('.selected', s)) a.className += ' selected';
-		a.textContent = _(empty_opt);
-		s.insertBefore(a, s.children[0]);
+function select(value, emptyOption, options, multiple = false) {
+	// Create select container
+	const select = document.createElement('div');
+	select.className = `select${multiple ? ' multiple' : ''}`;
+	select.dataset.value = multiple ? JSON.stringify(value) : value;
+
+	// Create options in container and set selected ones
+	const selectedValues = Array.isArray(value) ? value : [value];
+	for (const [key, label] of Object.entries(options)) {
+		const option = document.createElement('a');
+		option.href = '#';
+		option.dataset.value = key;
+		option.textContent = _(label);
+
+		if (selectedValues.includes(key)) option.classList.add('selected');
+
+		select.appendChild(option);
 	}
 
-	return s;
+	// Create empty option if allowed and select it if nothing is selected
+	if (emptyOption !== undefined) {
+		const option = document.createElement('a');
+		option.href = '#';
+		option.className = 'no-value';
+		option.textContent = _(emptyOption);
+
+		if (!select.querySelector('.selected')) option.classList.add('selected');
+
+		select.prepend(option);
+	}
+
+	return select;
 }
 
 function disable(s, enable, dom) {
-	sel(s, dom).classList.toggle('disabled', !enable);
+	const el = sel(s, dom);
+	if (el) el.classList.toggle('disabled', !enable);
 }
 
 function _(text) {
 	return window.Locale && Locale[text] || text;
 }
 
-each('.locale', function (i) {
-	i.innerHTML = _(i.innerHTML.trim());
-});
-
-document.addEventListener('click', function (e) {
+document.addEventListener('click', e => {
 	const t = e.target;
 	if (!t) return;
 	if (t.matches('.disabled')) {
@@ -236,6 +253,32 @@ document.addEventListener('close', e => {
 		}, 50);
 	}
 });
+
+window.addEventListener('DOMContentLoaded', () => {
+	each('.locale', el => {
+		el.innerHTML = _(el.innerHTML.trim());
+	});
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+	try {
+		Object.values(hist).forEach(updateHistoryButton);
+
+		await fileDB.init();
+		const keys = await fileDB.getAllKeys();
+
+		hist.recent.clear();
+		keys.forEach(key => {
+			hist.recent.add(key);
+		});
+	} catch (err) {
+		addMsg(_('Database error: ') + err, 'error');
+	}
+});
+
+window.onerror = function (errorMsg, url, lineNum, colNum, error) {
+	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
+};
 
 class AnnotationDB {
 	constructor(
@@ -346,26 +389,6 @@ class AnnotationDB {
 		});
 	}
 }
-
-const fileDB = new AnnotationDB();
-
-window.addEventListener('DOMContentLoaded', async () => {
-	try {
-		await fileDB.init();
-		const keys = await fileDB.getAllKeys();
-
-		hist.recent.clear();
-		keys.forEach(key => {
-			hist.recent.add(key);
-		});
-	} catch (err) {
-		addMsg(_('Database error: ') + err, 'error');
-	}
-});
-
-window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
-};
 
 class Editor {
 	static TYPES = {
@@ -752,35 +775,6 @@ class History {
 	}
 }
 
-// Project specific stuff
-
-const hist = {
-	recent: null,
-	undo: null,
-	redo: null
-};
-for (const n in hist) {
-	hist[n] = new History(`ed_${n}`, History.MAX_NUMBER, h => {
-		disable(`.${h.name.replace('_', '-')}`, !h.isEmpty());
-	});
-}
-
-const editor = new Editor(sel('#editor'), function (chunks, values) {
-	hist.undo.add({
-		id: editor.id,
-		chunks: chunks,
-		values: values,
-		cids: editor.getVisible()
-	});
-	hist.redo.clear();
-	const tosave = [];
-	for (const cid in chunks) {
-		chunks[cid].value = values[cid];
-		tosave.push(chunks[cid]);
-	}
-	save(tosave).catch(err => addMsg(err.message, 'error'));
-});
-
 class TemplateManager {
 	constructor(templateDir = 'templates') {
 		this.templateDir = templateDir;
@@ -1066,12 +1060,42 @@ class ChunkProcessor {
 	}
 }
 
+function updateHistoryButton(history) {
+	const map = {
+		ed_recent: '.ed-recent',
+		ed_undo: '.ed-undo',
+		ed_redo: '.ed-redo'
+	};
+	disable(map[history.name], !history.isEmpty());
+}
+
+const hist = {
+	recent: new History('ed_recent', History.MAX_NUMBER, updateHistoryButton),
+	undo: new History('ed_undo', History.MAX_NUMBER, updateHistoryButton),
+	redo: new History('ed_redo', History.MAX_NUMBER, updateHistoryButton)
+};
+const editor = new Editor(sel('#editor'), (chunks, values) => {
+	hist.undo.add({
+		id: editor.id,
+		chunks: chunks,
+		values: values,
+		cids: editor.getVisible()
+	});
+	hist.redo.clear();
+	const tosave = [];
+	for (const cid in chunks) {
+		chunks[cid].value = values[cid];
+		tosave.push(chunks[cid]);
+	}
+	save(tosave).catch(err => addMsg(err.message, 'error'));
+});
+const fileDB = new AnnotationDB();
 const templates = new TemplateManager();
 const templatePicker = new TemplatePicker(templates);
 const documents = new DocumentManager(fileDB, editor);
 
 function showDocument(data, onsuccess) {
-	evt(editor.dom, 'load', function () {
+	evt(editor.dom, 'load', () => {
 		hist.recent.walk(function (data, i) {
 			if (data === editor.id) hist.recent.get(i);
 		});
@@ -1182,15 +1206,15 @@ function undo(reverse) {
 	}
 }
 
-evt('.ed-open', 'click', function (e) {
+evt('.ed-open', 'click', e => {
 	templatePicker.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
-evt('.ed-new', 'click', function (e) {
+evt('.ed-new', 'click', e => {
 	templatePicker.show('new', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
-evt('.ed-recent', 'click', function (e) {
+evt('.ed-recent', 'click', e => {
 	const t = ttip(e.target, e);
 	hist.recent.walk(function (data, id) {
 		const a = document.createElement('a');
@@ -1202,17 +1226,17 @@ evt('.ed-recent', 'click', function (e) {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-evt('.ed-save', 'click', function (e) {
+evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	save().catch(err => addMsg(err.message, 'error'));
 });
-evt('.ed-undo', 'click', function () {
+evt('.ed-undo', 'click', () => {
 	undo();
 });
-evt('.ed-redo', 'click', function () {
+evt('.ed-redo', 'click', () => {
 	undo(true);
 });
-evt('.ed-exit', 'click', function () {
+evt('.ed-exit', 'click', () => {
 	if (confirm(_('Do you want to exit?'))) {
 		window.location.href = 'about:blank';
 	}
