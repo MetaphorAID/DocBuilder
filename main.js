@@ -844,9 +844,6 @@ class TemplatePicker {
 	}
 }
 
-const templates = new TemplateManager();
-const templatePicker = new TemplatePicker(templates);
-
 class DocumentManager {
 	constructor(db, editor) {
 		this.db = db;
@@ -947,8 +944,6 @@ class DocumentManager {
 		return data;
 	}
 }
-
-const documents = new DocumentManager(fileDB, editor);
 
 class ChunkProcessor {
 	static parse(content, splitter) {
@@ -1066,6 +1061,10 @@ class ChunkProcessor {
 		return new Blob([this.build(chunks)]);
 	}
 }
+
+const templates = new TemplateManager();
+const templatePicker = new TemplatePicker(templates);
+const documents = new DocumentManager(fileDB, editor);
 
 function showDocument(data, onsuccess) {
 	evt(editor.dom, 'load', function () {
