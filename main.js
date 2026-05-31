@@ -1,22 +1,26 @@
-function sel(s, dom, def) {
-	return (dom || document).querySelector(s) || def;
+/**
+ * @param {string} selector
+ * @param {ParentNode} [dom=document]
+ * @param {*} [def=null]
+ */
+function sel(selector, dom = document, def = null) {
+	return dom.querySelector(selector) || def;
 }
 
-function find(s, dom) {
-	return (dom || document).querySelectorAll(s);
+function find(selector, dom = document) {
+	return dom.querySelectorAll(selector);
 }
 
-function each(s, fn, dom) {
-	const arr = typeof s === 'string' ? find(s, dom) : (
-		s instanceof HTMLElement ? [s] : s
-	)
+function each(target, fn, dom) {
+	const arr = typeof target === 'string' ? find(target, dom) : (
+		target instanceof HTMLElement ? [target] : target);
 	for (let i = 0; i < arr.length; ++i) if (fn(arr[i], i) === false) break;
 }
 
-function evt(s, t, fn, dom) {
-	each(s, i => {
-		t.split(' ').forEach(e => {
-			i.addEventListener(e, fn);
+function evt(target, types, fn, dom) {
+	each(target, el => {
+		types.split(' ').forEach(type => {
+			el.addEventListener(type, fn);
 		});
 	}, dom);
 }
@@ -31,9 +35,9 @@ function evtDelegated(parent, selector, type, fn) {
 	});
 }
 
-function trg(s, e, dom) {
-	each(s, i => {
-		i.dispatchEvent(new Event(e, {bubbles: true}));
+function trg(target, eventName, dom) {
+	each(target, el => {
+		el.dispatchEvent(new Event(eventName, {bubbles: true}));
 	}, dom);
 }
 
@@ -66,6 +70,7 @@ function selToText(dom, s, decode) {
 	return xmlToText(sel(s, dom, {}).innerHTML, decode);
 }
 
+// TODO Utils.js --^
 function addMsg(message, cls, target) {
 	const m = document.createElement('div');
 	m.className = `${cls || 'error'} msg`;
@@ -836,11 +841,10 @@ class TemplatePicker {
 
 				tt.appendChild(a);
 			}
-
+			return tt;
 		} catch (err) {
 			addMsg(_('Error loading templates: ') + err, 'error');
 		}
-		return tt;
 	}
 }
 
@@ -1031,7 +1035,7 @@ class ChunkProcessor {
 				j++;
 			} else if (i < changes.length && (j >= chunks.length || changes[i].id < chunks[j].id)) {
 				// If no matching mChunk, just add the chunk
-				throw new Error(_(`No matching chunk found for chunk with id: ${changes[i].id}`));
+				throw new Error(_('No matching chunk found for chunk with id: ') + changes[i].id);
 			} else {
 				// If no matching chunk, just add the chunk leave chunk as is (skip)
 				j++;
@@ -1100,7 +1104,7 @@ async function open(id, onsuccess, template) {
 
 	} catch (err) {
 		console.error('Error during file open process:', err);
-		addMsg(_('Error during file open process:' + err), 'error');
+		addMsg(_('Error during file open process:') + err, 'error');
 	}
 }
 
