@@ -443,7 +443,7 @@ class Editor {
 				if (m) this.eol = m[1];
 			}
 
-			if (chunk.name[0] === '.') this.hidden.push(chunk);
+			if (chunk.name?.startsWith('.')) this.hidden.push(chunk);
 			else this.chunks.push(chunk);
 		}
 
@@ -526,10 +526,10 @@ class Editor {
 	}
 
 	onchange(cids, hdata) {
-		editor.restore = editor.getVisible();
+		this.restore = this.getVisible();
 
 		const hids = Object.keys(hdata || {});
-		if (hids.length) editor.restoreHidden = hids;
+		if (hids.length) this.restoreHidden = hids;
 
 		const chunks = {};
 		const values = {};
@@ -850,6 +850,7 @@ class DocumentManager {
 
 			document.body.appendChild(input);
 
+			// TODO test cancel button click
 			input.onchange = () => {
 				const file = input.files[0];
 				// Clean up
@@ -901,7 +902,7 @@ class DocumentManager {
 
 	async open(id, template) {
 		if (id !== undefined) {
-			const doc = await this.db.retrieveFileInIndexedDB(id);
+			const doc = await this.db.retrieveFile(id);
 			if (!doc) throw new Error(`Document not found: ${id}`);  // TODO localise
 
 			return doc;
@@ -918,11 +919,9 @@ class DocumentManager {
 	}
 
 	async save(changes) {
-		// TODO localise
-		if (!data) throw new Error(`Document not found: ${this.editor.id}`);
-
 		// If chunks is undefined, use editor.chunks, otherwise use provided chunks
 		const data = await this.db.retrieveFile(this.editor.id || 0);
+		if (!data) throw new Error(`Document not found: ${this.editor.id}`);  // TODO localise
 
 		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
 		data.chunks = ChunkProcessor.merge(changes || this.editor.chunks, data.chunks);
@@ -974,7 +973,7 @@ class ChunkProcessor {
 			const {start, end, chunk} = match;
 
 			if (pos > start) {
-				// Overlapping, just add this chunk
+				// Overlapping, just add this chunk TODO pos should be updated? -> Check!
 				chunks.push(chunk);
 				continue;
 			}
