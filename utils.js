@@ -1,0 +1,201 @@
+/**
+ * @param {string} selector
+ * @param {ParentNode} [dom=document]
+ * @param {*} [def=null]
+ */
+function sel(selector, dom = document, def = null) {
+	return dom.querySelector(selector) || def;
+}
+
+function find(selector, dom = document) {
+	return dom.querySelectorAll(selector);
+}
+
+function each(target, fn, dom) {
+	const arr = typeof target === 'string' ? find(target, dom) : (
+		target instanceof HTMLElement ? [target] : target);
+	for (let i = 0; i < arr.length; ++i) if (fn(arr[i], i) === false) break;
+}
+
+function evt(target, types, fn, dom) {
+	each(target, el => {
+		types.split(' ').forEach(type => {
+			el.addEventListener(type, fn);
+		});
+	}, dom);
+}
+
+function evtDelegated(parent, selector, type, fn) {
+	parent.addEventListener(type, e => {
+		const target = e.target.closest(selector);
+
+		if (target) {
+			fn.call(target, e);
+		}
+	});
+}
+
+function trg(target, eventName, dom) {
+	each(target, el => {
+		el.dispatchEvent(new Event(eventName, {bubbles: true}));
+	}, dom);
+}
+
+function encXml(t) {
+	return String(t)
+		.replace('&', '&amp;')
+		.replace("'", '&apos;')
+		.replace('"', '&quot;')
+		.replace('<', '&lt;')
+		.replace('>', '&gt;');
+}
+
+function decXml(t) {
+	return String(t)
+		.replace('&apos;', "'")
+		.replace('&quot;', '"')
+		.replace('&lt;', '<')
+		.replace('&gt;', '>')
+		.replace('&amp;', '&');
+}
+
+function xmlToText(xml, decode) {
+	const t = (xml || '')
+		.replace(/<[^>]+>/gs, ' ')
+		.trim();
+	return decode ? decXml(t) : t.replace("'", '&apos;').replace('"', '&quot;');
+}
+
+function selToText(dom, s, decode) {
+	return xmlToText(sel(s, dom, {}).innerHTML, decode);
+}
+
+function addMsg(message, cls, target) {
+	const m = document.createElement('div');
+	m.className = `${cls || 'error'} msg`;
+	m.innerHTML = message;
+	if (target?.classList.contains('input')) {
+		target.parentNode.insertBefore(m, target.nextSibling);
+	} else {
+		(target || sel('#message')).appendChild(m);
+	}
+	setTimeout(() => {
+		m.remove();
+	}, 5000);
+}
+
+function addConfirm(message, onconfirm) {
+	const m = document.createElement('div');
+	m.className = 'confirm';
+	m.innerHTML = message +
+		`<a href="#" class="btn error yes">${_('Yes')}</a> ` +
+		`<a href="#" class="btn cancel">${_('Cancel')}</a>`;
+	evtDelegated(m, '.yes,.cancel', 'click', e => {
+		e.preventDefault();
+		this.closest('.confirm').remove();
+		// If Yes was clicked, execute callback
+		if (this.matches('.yes')) onconfirm();
+	});
+	sel('body').appendChild(m);
+}
+
+function ttip(dom, event, modal = false) {
+	const tooltip = document.createElement('div');
+	tooltip.className = `tooltip${modal ? ' modal' : ''}`;
+
+	// Insert after trigger element
+	dom.insertAdjacentElement('afterend', tooltip);
+
+	// Close other non-modal tooltips
+	clean_ttip(tooltip);
+
+	const container = tooltip.offsetParent || document.body;
+
+	// Calculate position relative to container
+	const trigger = event ? event.target : dom;
+
+	const triggerRect = trigger.getBoundingClientRect();
+	const containerRect = container.getBoundingClientRect();
+
+	const x = triggerRect.left - containerRect.left;
+	const y = triggerRect.top - containerRect.top;
+
+	// Determine whether tooltip should appear above or below
+	const showAbove = event ? event.clientY > window.innerHeight / 2 : y > container.clientHeight / 2;
+
+	if (showAbove) {
+		tooltip.style.bottom = `${container.clientHeight - y + 5}px`;
+	} else {
+		tooltip.style.top = `${y + (event ? 10 : dom.offsetHeight)}px`;
+	}
+
+	// Horizontal positioning
+	if (!modal) {
+		const showLeft = x < container.clientWidth / 2;
+
+		if (showLeft) {
+			tooltip.style.left = `${x}px`;
+		} else {
+			tooltip.style.right = `${container.clientWidth - x - (event ? 0 : dom.offsetWidth)}px`;
+		}
+	} else {
+		tooltip.innerHTML = '<a href="#" class="btn close">✕</a>';
+	}
+
+	return tooltip;
+}
+
+function clean_ttip(currentTooltip) {
+	document.querySelectorAll('.tooltip:not(.modal)').forEach(tooltip => {
+		// Skip the tooltip being created
+		if (tooltip === currentTooltip) return;
+
+		// Skip ancestors containing it
+		if (tooltip.contains(currentTooltip)) return;
+
+		trg(tooltip, 'close');
+	});
+}
+
+function select(value, emptyOption, options, multiple = false) {
+	// Create select container
+	const select = document.createElement('div');
+	select.className = `select${multiple ? ' multiple' : ''}`;
+	select.dataset.value = multiple ? JSON.stringify(value) : value;
+
+	// Create options in container and set selected ones
+	const selectedValues = Array.isArray(value) ? value : [value];
+	for (const [key, label] of Object.entries(options)) {
+		const option = document.createElement('a');
+		option.href = '#';
+		option.dataset.value = key;
+		option.textContent = _(label);
+
+		if (selectedValues.includes(key)) option.classList.add('selected');
+
+		select.appendChild(option);
+	}
+
+	// Create empty option if allowed and select it if nothing is selected
+	if (emptyOption !== undefined) {
+		const option = document.createElement('a');
+		option.href = '#';
+		option.className = 'no-value';
+		option.textContent = _(emptyOption);
+
+		if (!select.querySelector('.selected')) option.classList.add('selected');
+
+		select.prepend(option);
+	}
+
+	return select;
+}
+
+function disable(s, enable, dom) {
+	const el = sel(s, dom);
+	if (el) el.classList.toggle('disabled', !enable);
+}
+
+function _(text) {
+	return window.Locale && Locale[text] || text;
+}
