@@ -763,74 +763,79 @@ const editor = new Editor(sel('#editor'), function (chunks, values) {
 		chunks[cid].value = values[cid];
 		tosave.push(chunks[cid]);
 	}
-	save(tosave);
+	save(tosave).catch(err => addMsg(err.message, 'error'));
 });
 
-function loadJSONFromURL(url) {
-	return fetch(url)
-		.then(response => {
-			if (!response.ok) {
-				addMsg(_('Error fetching file: ' + url), 'error');
-				throw new Error(_('Failed to load ') + url);
-			}
-			return response.json();
-		});
+class TemplateManager {
+	constructor(templateDir = 'templates') {
+		this.templateDir = templateDir;
+	}
+
+	async loadJSON(url) {
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			addMsg(_('Error fetching file: ') + url, 'error');
+			throw new Error(_('Failed to load ') + url);
+		}
+
+		return response.json();
+	}
+
+	async getAvailableTemplates() {
+		// Cache loaded template list
+		if (!this._templates) this._templates = await this.loadJSON(`./${this.templateDir}/template_list.json`);
+		return this._templates;
+	}
+
+	async loadTemplate(path) {
+		const template = await this.loadJSON(`./${this.templateDir}/${path}`);
+
+		if (typeof template.css === 'string') template.css = template.css.split(',');
+		if (typeof template.js === 'string') template.js = template.js.split(',');
+
+		template.css = template.css.map(file => `./${this.templateDir}/${file}`);
+		template.js = template.js.map(file => `./${this.templateDir}/${file}`);
+
+		return template;
+	}
 }
 
-function loadTemplate(templateDir, url) {
-	return loadJSONFromURL(`./${templateDir}/${url}`)
-		.then(template => {
-			if (typeof template['css'] === 'string') {
-				template['css'] = template['css'].split(',');
-			}
-			if (typeof template['js'] === 'string') {
-				template['js'] = template['js'].split(',');
-			}
+class TemplatePicker {
+	constructor(repository) {
+		this.repository = repository;
+	}
 
-			template.css = template.css.map(e => `./${templateDir}/${e}`);
-			template.js = template.js.map(e => `./${templateDir}/${e}`);
+	async show(action, target, event) {
+		try {
+			let templates = await this.repository.getAvailableTemplates();
 
-			return template;
-		})
-		.catch(err => {
-			console.error('Error loading template:', err);
-			// Rethrow so the caller can handle it
-			return Promise.reject(err);
-		});
-}
+			const tt = ttip(target, event);
+			tt.classList.add('dropdown');
 
-function getAvailableTemplates(templateDir) {
-	return loadJSONFromURL(`./${templateDir}/template_list.json`)
-		.then(templateList => {
-			return templateList;
-		})
-		.catch(err => {
-			console.error('Error loading template:', err);
-			// Rethrow so the caller can handle it
-			return Promise.reject(err);
-		});
-}
+			if (action === 'new') templates = templates.filter(t => t.new);
 
-function selectTemplate(action, event) {
-	let tt = ttip(event.target, event);
-	tt.classList.add('dropdown');
-	getAvailableTemplates('templates')
-		.then(templates => {
-			if (action === 'new') {
-				templates = templates.filter(t => t.new === true);
-			}
+			for (const template of templates) {
+				const a = document.createElement('a');
 
-			templates.forEach(template => {
-				let a = document.createElement('a');
 				a.href = '#';
 				a.className = 'template-select';
 				a.dataset.template = template.id;
 				a.dataset.action = action;
 				a.innerHTML = template.name;
+
 				tt.appendChild(a);
-			});
-		});
+			}
+
+		} catch (err) {
+			addMsg(_('Error loading templates: ') + err, 'error');
+		}
+		return tt;
+	}
 }
+
+const templates = new TemplateManager();
+const templatePicker = new TemplatePicker(templates);
 
 class DocumentManager {
 	constructor(db, editor) {
@@ -1077,7 +1082,7 @@ async function open(id, onsuccess, template) {
 	if (id === undefined) {
 		// Open new file
 		loadedTemplate = typeof template === 'string' ?
-			await loadTemplate('templates', template) : template;
+			await templates.loadTemplate(template) : template;
 	}
 
 	try {
@@ -1152,24 +1157,24 @@ function undo(reverse) {
 			tosave.push(d);
 			if (f === 'hidden') hids.push(cid.substring(1));
 		}
-		save(tosave);
+		save(tosave).catch(err => addMsg(err.message, 'error'));
 		if (hids.length) editor.renderHidden(hids);
 		editor.render(data.cids);
 	}
 
 	if (data.id !== editor.id) {
-		open(data.id, h);
+		open(data.id, h).catch(err => addMsg(err.message, 'error'));
 	} else {
 		h();
 	}
 }
 
 evt('.ed-open', 'click', function (e) {
-	selectTemplate('open', e);
+	templatePicker.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
 evt('.ed-new', 'click', function (e) {
-	selectTemplate('new', e);
+	templatePicker.show('new', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
 evt('.ed-recent', 'click', function (e) {
@@ -1186,7 +1191,7 @@ evt('.ed-recent', 'click', function (e) {
 });
 evt('.ed-save', 'click', function (e) {
 	if (e.target.classList.contains('disabled')) return;
-	save();
+	save().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', function () {
 	undo();
@@ -1227,7 +1232,8 @@ function callTokenNew(template) {
 				const [filename, data] = result;
 				const newData = ChunkProcessor.createDocument(filename, data, template);
 				// TODO this should be cleaner
-				documents.db.storeFile(filename, newData).then(() => showDocument(newData));
+				documents.db.storeFile(filename, newData).then(() => showDocument(newData))
+					.catch(err => addMsg(String(err), 'error'));
 			}
 		});
 	} else {
@@ -1239,20 +1245,20 @@ document.addEventListener('click', function (e) {
 	const t = e.target;
 	if (t && t.matches('[data-open]')) {
 		editor.ischanged(function () {
-			open(hist.recent.get(t.dataset.open));
+			open(hist.recent.get(t.dataset.open)).catch(err => addMsg(err.message, 'error'));
 		});
 	}
 	if (t && t.matches('.template-select')) {
 		let templateId = t.dataset.template;
 		let action = t.dataset.action;
-		getAvailableTemplates('templates')
+		templates.getAvailableTemplates()
 			.then(templates => {
 				let templateInfo = templates.find(t => t.id === templateId);
 				if (templateInfo) {
-					loadTemplate('templates', templateInfo.path).then(template => {
+					templates.loadTemplate(templateInfo.path).then(template => {
 						if (action === 'open') {
 							editor.ischanged(function () {
-								open(undefined, undefined, template);
+								open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
 							});
 						} else if (action === 'new') {
 							// Find scripts not yet loaded
