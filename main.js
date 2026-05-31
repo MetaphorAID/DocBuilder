@@ -1,55 +1,74 @@
+function handleSelectOption(e, t) {
+	const s = t.parentNode;
+
+	if (!s.classList.contains('open')) {
+		s.classList.add('open');
+		return true;
+	}
+
+	if (!t.classList.contains('no-value')) {
+		if (!s.classList.contains('multiple')) {
+			each('.selected', i => i.classList.remove('selected'), s);
+		}
+		t.classList.toggle('selected');
+	}
+
+	const values = [];
+	each('.selected', i => {
+		if (i.dataset.value) values.push(i.dataset.value);
+	}, s);
+
+	s.dataset.value = s.classList.contains('multiple') ? JSON.stringify(values) : (values[0] || '');
+
+	if (s.classList.contains('multiple') && !t.classList.contains('no-value')) {
+		return true;
+	}
+
+	trg(s, 'change');
+	s.classList.remove('open');
+
+	return false;
+}
+
 document.addEventListener('click', e => {
 	const t = e.target;
 	if (!t) return;
+
+	// Handle disabled
 	if (t.matches('.disabled')) {
 		e.preventDefault();
 		return;
 	}
+
+	// Handle anchor
 	if (t.matches('a[href="#"]')) e.preventDefault();
+
+	// Handle tooltip close
 	if (t.matches('.tooltip .close')) trg(t.closest('.tooltip'), 'close');
+
+	// Handle exidental clicks inside input
 	if (t.matches('.dropdown .input') && !t.matches('.select')) return;
+
+	// Handle select togle
 	if (t.matches('.select') && !t.matches('a')) {
 		t.classList.toggle('open');
 		return;
 	}
-	if (t.matches('.select > a')) {
-		const s = t.parentNode;
-		if (s.classList.contains('open')) {
-			if (!t.classList.contains('no-value')) {
-				if (!s.classList.contains('multiple')) {
-					each('.selected', i => {
-						i.classList.remove('selected');
-					}, s);
-				}
-				t.classList.toggle('selected');
-			}
-			const v = [];
-			each('.selected', i => {
-				if (i.dataset.value) v.push(i.dataset.value);
-			}, s);
 
-			s.dataset.value = s.classList.contains('multiple') ? JSON.stringify(v) : (v[0] || '');
-			if (s.classList.contains('multiple') && !t.classList.contains('no-value')) return;
-			trg(s, 'change');
-			s.classList.remove('open');
-		} else {
-			s.classList.add('open');
-			return;
-		}
+	// Handle select option
+	if (t.matches('.select > a')) {
+		const shouldStop = handleSelectOption(e, t);
+		if (shouldStop) return;
 	}
+
 	clean_ttip(t.closest('.tooltip:not(.dropdown)'));
 });
 
-document.addEventListener('close', e => {
-	const t = e.target;
-	if (t && t.matches('.tooltip')) {
-		each('.select.multiple.open', i => {
-			trg(i, 'change');
-		}, t)
-		setTimeout(() => {
-			t.remove();
-		}, 50);
-	}
+document.addEventListener('close', ({target}) => {
+	if (!target?.matches('.tooltip')) return;
+	// Save the value before close
+	each('.select.multiple.open', el => trg(el, 'change'), target);
+	requestAnimationFrame(() => target.remove());
 });
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -66,19 +85,18 @@ window.addEventListener('DOMContentLoaded', async () => {
 		const keys = await fileDB.getAllKeys();
 
 		hist.recent.clear();
-		keys.forEach(key => {
-			hist.recent.add(key);
-		});
+		keys.forEach(key => hist.recent.add(key));
 	} catch (err) {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
 
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
+	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')');
 };
 
 class AnnotationDB {
+	// An IndexedDB-based storage backend storing (filename, data) pairs
 	constructor(
 		dbName = 'AnnotationInterfaceIndexedDB',
 		storeName = 'annotationFiles',
@@ -101,11 +119,8 @@ class AnnotationDB {
 			request.onupgradeneeded = e => {
 				const db = e.target.result;
 
-				if (!db.objectStoreNames.contains(this.storeName)) {
-					db.createObjectStore(this.storeName, {
-						keyPath: 'name'
-					});
-				}
+				// Create schema if not already exists
+				if (!db.objectStoreNames.contains(this.storeName)) db.createObjectStore(this.storeName, {keyPath: 'name'});
 			};
 
 			request.onsuccess = e => {
@@ -120,9 +135,8 @@ class AnnotationDB {
 	async transaction(mode = 'readonly') {
 		await this.init();
 
-		return this.db
-			.transaction(this.storeName, mode)
-			.objectStore(this.storeName);
+		// Create a transaction
+		return this.db.transaction(this.storeName, mode).objectStore(this.storeName);
 	}
 
 	async retrieveFile(fileName) {
@@ -131,9 +145,8 @@ class AnnotationDB {
 		return new Promise((resolve, reject) => {
 			const request = store.get(fileName);
 
-			request.onsuccess = () =>
-				resolve(request.result?.data ?? null);
-
+			// Return the result or null if not found
+			request.onsuccess = () => resolve(request.result?.data ?? null);
 			request.onerror = e => reject(e.target.error);
 		});
 	}
@@ -142,10 +155,7 @@ class AnnotationDB {
 		const store = await this.transaction('readwrite');
 
 		return new Promise((resolve, reject) => {
-			const request = store.put({
-				name: fileName,
-				data
-			});
+			const request = store.put({name: fileName, data});
 
 			request.onsuccess = () => resolve(data);
 			request.onerror = e => reject(e.target.error);
@@ -158,9 +168,7 @@ class AnnotationDB {
 		return new Promise((resolve, reject) => {
 			const request = store.getAllKeys();
 
-			request.onsuccess = () =>
-				resolve(request.result);
-
+			request.onsuccess = () => resolve(request.result);
 			request.onerror = e => reject(e.target.error);
 		});
 	}
@@ -229,8 +237,7 @@ class Editor {
 		disable('.ed-save', !!this.id);
 
 		evt(dom, 'change', e => {
-			const t = e.target;
-			if (t && t.matches('[data-cid]')) this.onchange([t.dataset.cid]);
+			if (e.target.matches('[data-cid]')) this.onchange([e.target.dataset.cid]);
 		});
 
 		evt(dom, 'click', e => {
