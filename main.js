@@ -21,6 +21,16 @@ function evt(s, t, fn, dom) {
 	}, dom);
 }
 
+function evtDelegated(parent, selector, type, fn) {
+	parent.addEventListener(type, e => {
+		const target = e.target.closest(selector);
+
+		if (target) {
+			fn.call(target, e);
+		}
+	});
+}
+
 function trg(s, e, dom) {
 	each(s, i => {
 		i.dispatchEvent(new Event(e, {bubbles: true}));
@@ -1241,42 +1251,43 @@ function callTokenNew(template) {
 	}
 }
 
-document.addEventListener('click', function (e) {
-	const t = e.target;
-	if (t && t.matches('[data-open]')) {
-		editor.ischanged(function () {
-			open(hist.recent.get(t.dataset.open)).catch(err => addMsg(err.message, 'error'));
-		});
-	}
-	if (t && t.matches('.template-select')) {
-		let templateId = t.dataset.template;
-		let action = t.dataset.action;
-		templates.getAvailableTemplates()
-			.then(templates => {
-				let templateInfo = templates.find(t => t.id === templateId);
-				if (templateInfo) {
-					templates.loadTemplate(templateInfo.path).then(template => {
-						if (action === 'open') {
-							editor.ischanged(function () {
-								open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
-							});
-						} else if (action === 'new') {
-							// Find scripts not yet loaded
-							let scripts = (template.js || []).filter(js => !sel('script[src="' + js + '"]'));
-							loadNextScript(scripts)
-								.then(() => {
-									callTokenNew(template);
-								})
-								.catch(err => {
-									console.error(err);
-								});
-						}
-					}).catch(err => {
-						addMsg(_('Error loading template:') + err, 'error');
-					});
-				}
-				trg(t.closest('.tooltip'), 'close');
+evtDelegated(document, '[data-open]', 'click', function () {
+	editor.ischanged(() => {
+		open(hist.recent.get(this.dataset.open)).catch(err => addMsg(err.message, 'error'));
+	});
+});
+
+evtDelegated(document, '.template-select', 'click', async function () {
+	try {
+		const templateId = this.dataset.template;
+		const action = this.dataset.action;
+
+		const templatesList = await templates.getAvailableTemplates();
+
+		const templateInfo = templatesList.find(t => t.id === templateId);
+
+		if (!templateInfo) {
+			return;
+		}
+
+		const template = await templates.loadTemplate(templateInfo.path);
+
+		if (action === 'open') {
+			editor.ischanged(() => {
+				open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
 			});
+		} else if (action === 'new') {
+			// Find scripts not yet loaded
+			const scripts = (template.js || []).filter(js => !sel(`script[src="${js}"]`));
+
+			await loadNextScript(scripts);
+			callTokenNew(template);
+		}
+
+		trg(this.closest('.tooltip'), 'close');
+
+	} catch (err) {
+		addMsg(_('Error loading template: ') + err, 'error');
 	}
 });
 
