@@ -199,3 +199,46 @@ function disable(s, enable, dom) {
 function _(text) {
 	return window.Locale && Locale[text] || text;
 }
+
+function pickFile({extension, multiple = false, accept} = {}) {
+	return new Promise((resolve, reject) => {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = accept ?? (extension ? `.${extension}` : '');
+		input.multiple = multiple;
+		input.style.display = 'none';
+
+		document.body.appendChild(input);
+
+		let done = false;
+
+		// Reliable cleanup without DOM leaking
+		const cleanup = () => {
+			if (done) return;
+			done = true;
+			input.remove();
+		};
+
+		const fail = () => {
+			cleanup();
+			reject(new Error('No file chosen'));
+		};
+
+		input.addEventListener('change', () => {
+			const files = Array.from(input.files || []);
+			cleanup();
+
+			if (!files.length) return fail();
+			resolve(multiple ? files : files[0]);
+		});
+
+		window.addEventListener('focus', () => {
+			// When regaining the focus (FilePicker dialog closed) allot 100ms to process change, if still no file, then fail
+			setTimeout(() => {
+				if (!done && (!input.files || input.files.length === 0)) fail();
+			}, 100);
+		}, {once: true});
+
+		input.click();
+	});
+}

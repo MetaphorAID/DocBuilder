@@ -92,7 +92,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')');
+	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
 
 class AnnotationDB {
@@ -226,7 +226,7 @@ class Editor {
 
 	constructor(dom, onchange) {
 		this.dom = dom;
-		this.onchange_cb = onchange;
+		this.onchange_callback = onchange;
 		this.chunks = [];
 		this.restore = false;
 		this.restoreHidden = false;
@@ -406,7 +406,7 @@ class Editor {
 			}
 		}
 
-		if (changed) this.onchange_cb(chunks, values);
+		if (changed) this.onchange_callback(chunks, values);
 	}
 
 	render(cids) {
@@ -519,15 +519,16 @@ class History {
 	constructor(name, max, onchange) {
 		this.name = name;
 		this.max = max;
-		this.data = JSON.parse(localStorage[name] || '[]');
-		this.bu_stamp = Date.now();
-		this.onchange_cb = onchange;
-		this.onchange_cb?.(this);
+		this.data = JSON.parse(localStorage[name] ?? '[]');
+		this.backup_timestamp = Date.now();
+		this.onchange_callback = onchange;
+		this.onchange_callback?.(this);
 	}
 
 	backup() {
-		this.bu_stamp = Date.now();
+		this.backup_timestamp = Date.now();
 		const d = structuredClone(this.data);
+		// Try to save progressively smaller versions (dropping the oldest entries) if storage quota fails
 		while (d.length) {
 			try {
 				localStorage[this.name] = JSON.stringify(d);
@@ -541,23 +542,22 @@ class History {
 
 	onchange() {
 		clearTimeout(this.timer);
-		this.timer = setTimeout(() => {
-				this.backup();
-			},
-			Math.max(200, (this.bu_stamp || 0) + History.BACKUP_INTERVAL - Date.now()));
-		this.onchange_cb?.(this);
+		// Try to save at most every History.BACKUP_INTERVAL ms but never sooner than 200ms
+		const nextAllowed = (this.backup_timestamp || 0) + History.BACKUP_INTERVAL - Date.now();
+		this.timer = setTimeout(() => this.backup(), Math.max(200, nextAllowed));
+		this.onchange_callback?.(this);
 	}
 
 	add(data) {
-		while (this.data.length >= this.max) {
-			this.data.pop();
-		}
+		// Add new data while maintaining maximum size
+		this.data = this.data.slice(0, this.max - 1);
 		this.data.unshift(structuredClone(data));
 		this.onchange();
 	}
 
 	get(num, peek) {
-		const index = num || 0;
+		// Return element by index (pop or peek, the latest element is 0)
+		const index = num ?? 0;
 		const data = this.data[index];
 		if (data && !peek) {
 			this.data.splice(index, 1);
@@ -571,7 +571,7 @@ class History {
 	}
 
 	walk(callback) {
-		for (const [i, item] of this.data.entries()) callback(item, i);
+		this.data.forEach(callback);
 	}
 
 	clear() {
@@ -615,6 +615,7 @@ class TemplateManager {
 	}
 }
 
+// TODO merge with TemplateManager
 class TemplatePicker {
 	constructor(repository) {
 		this.repository = repository;
@@ -631,7 +632,6 @@ class TemplatePicker {
 
 			for (const template of templates) {
 				const a = document.createElement('a');
-
 				a.href = '#';
 				a.className = 'template-select';
 				a.dataset.template = template.id;
@@ -640,7 +640,9 @@ class TemplatePicker {
 
 				tt.appendChild(a);
 			}
+
 			return tt;
+
 		} catch (err) {
 			addMsg(_('Error loading templates: ') + err, 'error');
 		}
@@ -651,35 +653,6 @@ class DocumentManager {
 	constructor(db, editor) {
 		this.db = db;
 		this.editor = editor;
-	}
-
-	async chooseFile(extension) {
-		// Create a hidden file input restricted to the template extension
-		return new Promise((resolve, reject) => {
-			const input = document.createElement('input');
-
-			input.type = 'file';
-			input.accept = `.${extension}`;
-			input.multiple = false;
-			input.style.display = 'none';
-
-			document.body.appendChild(input);
-
-			// TODO test cancel button click
-			input.onchange = () => {
-				const file = input.files[0];
-				// Clean up
-				input.remove();
-
-				if (file) {
-					resolve(file);
-				} else {
-					reject(new Error(_('No file chosen')));
-				}
-			};
-
-			input.click();
-		});
 	}
 
 	async readFile(file) {
@@ -693,6 +666,39 @@ class DocumentManager {
 		});
 	}
 
+	async open(id, template) {
+		if (id !== undefined) {
+			// Open file from IndexedDB
+			const doc = await this.db.retrieveFile(id);
+			if (!doc) throw new Error(_('Document not found: ') + id);
+
+			return doc;
+		}
+
+		// Import file from disk
+		const file = await pickFile({extension: template.extension});
+		const text = await this.readFile(file);
+		const document = ChunkProcessor.createDocument(file.name, text, template);
+
+		await this.db.storeFile(file.name, document);
+
+		return document;
+	}
+
+	async saveToIDB(changes) {
+		// If changes is undefined, use editor.chunks, otherwise use provided changes
+		const data = await this.db.retrieveFile(this.editor.id || 0);
+		if (!data) throw new Error(_('Document not found: ') + this.editor.id);
+
+		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
+		data.chunks = ChunkProcessor.merge(changes || this.editor.chunks, data.chunks);
+
+		// Store the data in IndexedDB with the correct fileName (data.id)
+		await this.db.storeFile(data.id, data);
+
+		return data;
+	}
+
 	download(data) {
 		const blob = ChunkProcessor.createBlob(data.chunks);
 
@@ -700,9 +706,7 @@ class DocumentManager {
 		const url = URL.createObjectURL(blob);
 
 		// Create a temporary <a> element to trigger the download
-
 		const a = document.createElement('a');
-
 		a.href = url;
 		a.download = this.editor.id;  // Original file name
 		a.click();                    // Simulate click to download
@@ -715,37 +719,6 @@ class DocumentManager {
 		addMsg(_('Document Saved'), 'success');
 	}
 
-	async open(id, template) {
-		if (id !== undefined) {
-			const doc = await this.db.retrieveFile(id);
-			if (!doc) throw new Error(`Document not found: ${id}`);  // TODO localise
-
-			return doc;
-		}
-
-		// Import file
-		const file = await this.chooseFile(template.extension);
-		const text = await this.readFile(file);
-		const document = ChunkProcessor.createDocument(file.name, text, template);
-
-		await this.db.storeFile(file.name, document);
-
-		return document;
-	}
-
-	async save(changes) {
-		// If chunks is undefined, use editor.chunks, otherwise use provided chunks
-		const data = await this.db.retrieveFile(this.editor.id || 0);
-		if (!data) throw new Error(`Document not found: ${this.editor.id}`);  // TODO localise
-
-		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
-		data.chunks = ChunkProcessor.merge(changes || this.editor.chunks, data.chunks);
-
-		// Store the data in IndexedDB with the correct fileName (data.id)
-		await this.db.storeFile(data.id, data);
-
-		return data;
-	}
 }
 
 class ChunkProcessor {
@@ -939,7 +912,7 @@ async function open(id, onsuccess, template) {
 
 async function save(chunks) {
 	try {
-		const data = await documents.save(chunks);
+		const data = await documents.saveToIDB(chunks);
 
 		if (!chunks) {
 			documents.download(data);
@@ -980,7 +953,7 @@ function undo(reverse) {
 		}
 		if (current === false) {
 			hist[reverse ? 'redo' : 'undo'].add(data);
-			addMsg(_('Document changed outside, history action is disabled'));
+			addMsg(_('Document changed outside, history action is disabled'), 'error');
 			editor.render(cids);
 			return;
 		}
