@@ -235,13 +235,50 @@ window.onerror = function (errorMsg, url, lineNum, colNum, error) {
   addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');  // TODO unused params
 };
 
+var AppLocale = {
+  current: localStorage.locale == 'en' ? 'en' : 'hu'
+};
+
 function _(text) {
-  return window.Locale && Locale[text] || text;
+  return AppLocale.current == 'hu' && window.Locale && Locale[text] || text;
 }
 
-each('.locale', function (i) {
-  i.innerHTML = _(i.innerHTML.trim());
+function localizeDocument() {
+  document.documentElement.lang = AppLocale.current;
+
+  each('.locale', function (i) {
+    if (!i.dataset.localeKey) i.dataset.localeKey = i.innerHTML.trim();
+    i.innerHTML = _(i.dataset.localeKey);
+  });
+
+  var lang = sel('.ed-language');
+  if (lang) {
+    lang.dataset.value = AppLocale.current;
+    each('a[data-value]', function (i) {
+      i.classList.toggle('selected', i.dataset.value == AppLocale.current);
+    }, lang);
+  }
+
+  var view = sel('header .btn-view');
+  if (view) view.innerHTML = _(localStorage.tableview ? 'Normal View' : 'Table View');
+}
+
+function setLocale(lang) {
+  AppLocale.current = lang == 'en' ? 'en' : 'hu';
+  localStorage.locale = AppLocale.current;
+  localizeDocument();
+
+  if (window.editor) {
+    editor.render(editor.getVisible());
+    if (editor.render_hidden && editor.render_hidden.length) editor.renderHidden(editor.render_hidden);
+  }
+}
+
+evt('.ed-language', 'change', function () {
+  setLocale(this.dataset.value);
 });
+
+localizeDocument();
 
 var Editor = function (dom, onchange) {
   this.dom = dom;

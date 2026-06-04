@@ -112,8 +112,13 @@ a.disabled.disabled, .dropdown a.disabled, .tooltip a.disabled {
   pointer-events: none;
 }
 
-.btn.ed-exit {
+.btn.ed-exit, .btn.ed-language {
   float: right;
+}
+
+.btn.ed-language {
+  min-width: 3.5em;
+  text-align: left;
 }
 
 .select {
