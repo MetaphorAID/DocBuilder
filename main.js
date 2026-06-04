@@ -467,11 +467,11 @@ class Editor {
 
 		// Create +1 sentence button
 		const lastCid = cids[cids.length - 1];
-		if (this.chunks.length > cids[lastCid] + 1) {
+		if (this.chunks.length > lastCid + 1) {
 			const a = document.createElement('a');
 			a.href = '#';
 			a.className = 'btn plus-one';
-			a.dataset.next = String(cids[lastCid] + 1);
+			a.dataset.next = String(lastCid + 1);
 			a.innerHTML = _('Show +1 sentence');
 
 			this.dom.appendChild(a);
@@ -596,20 +596,20 @@ class History {
 	}
 
 	#updateButton() {
-		if (this.#buttonSelector) disable(this.#buttonSelector, this.data.length !== 0);
+		if (this.#buttonSelector) disable(this.#buttonSelector, this.#data.length !== 0);
 	}
 
 	#onHistChange() {
 		clearTimeout(this.timer);
 		// Try to save at most every History.#BACKUP_INTERVAL ms but never sooner than 200ms
-		const nextAllowed = (this.backup_timestamp || 0) + History.#BACKUP_INTERVAL - Date.now();
+		const nextAllowed = (this.#backup_timestamp || 0) + History.#BACKUP_INTERVAL - Date.now();
 		this.timer = setTimeout(() => this.#backup(), Math.max(200, nextAllowed));
 		this.#updateButton();
 	}
 
 	#backup() {
-		this.backup_timestamp = Date.now();
-		const d = structuredClone(this.data);
+		this.#backup_timestamp = Date.now();
+		const d = structuredClone(this.#data);
 		// Try to save progressively smaller versions (dropping the oldest entries) if storage quota fails
 		while (d.length) {
 			try {
@@ -620,20 +620,21 @@ class History {
 				d.pop();
 			}
 		}
+		if (d.length === 0) localStorage[this.#name] = JSON.stringify(d);
 	}
 
 	add(data) {
 		// Add new data while maintaining maximum size
-		this.data = this.data.slice(0, this.#max - 1);
-		this.data.unshift(structuredClone(data));
+		this.#data = this.#data.slice(0, this.#max - 1);
+		this.#data.unshift(structuredClone(data));
 		this.#onHistChange();
 	}
 
-	get(index, peek = false) {
+	get(index = 0, peek = false) {
 		// Return element by index (pop or peek, the latest element is 0)
-		const data = this.data[index ?? 0];
+		const data = this.#data[index];
 		if (data && !peek) {
-			this.data.splice(index, 1);
+			this.#data.splice(index, 1);
 			this.#onHistChange();
 		}
 
@@ -641,17 +642,17 @@ class History {
 	}
 
 	moveToTop(value) {
-		const index = this.data.indexOf(value);
-		if (index >= 0) this.data.splice(index, 1);
+		const index = this.#data.indexOf(value);
+		if (index >= 0) this.#data.splice(index, 1);
 		this.add(value);
 	}
 
 	walk(callback) {
-		this.data.forEach(callback);
+		this.#data.forEach(callback);
 	}
 
 	clear() {
-		this.data = [];
+		this.#data = [];
 		this.#onHistChange();
 	}
 }
@@ -675,7 +676,8 @@ class TemplateManager {
 	}
 
 	async getTemplateById(templateId) {
-		return await this.#getAvailableTemplates().find(t => t.id === templateId);
+		const templates = await this.#getAvailableTemplates();
+		return templates.find(t => t.id === templateId);
 	}
 
 	async #getAvailableTemplates() {
@@ -869,6 +871,7 @@ class ChunkProcessor {
 	static merge(changes, chunks) {
 		const changesById = new Map(changes.map(c => [c.id, c]));
 
+		// Go through chunks and update them
 		for (const chunk of chunks) {
 			const change = changesById.get(chunk.id);
 
@@ -926,7 +929,8 @@ class UndoManager {
 
 	#loadDocumentForHistory(data, callback) {
 		if (data.id !== this.#editor.id) {
-			open(data.id, callback).catch(err => addMsg(err.message, 'error'));
+			// TODO Here do we need data.template for open?
+			open(data.id, callback, data.template).catch(err => addMsg(err.message, 'error'));
 		} else {
 			callback();
 		}
@@ -1121,6 +1125,7 @@ async function save(chunks) {
 		addMsg(_('Document Saved'), 'success');
 
 		if (editor.forceReload) {
+			// TODO template parameter?
 			await open(editor.id, false);
 			editor.forceReload = false;
 
@@ -1186,12 +1191,14 @@ function callTokenNew(template) {
 		const newData = ChunkProcessor.createDocument(filename, data, template);
 		documents.store(filename, newData).then(() => showDocument(newData))
 			.catch(err => addMsg(String(err), 'error'));
-	});
+	}).catch(err => addMsg(String(err), 'error'));
 }
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	editor.confirmDiscardChanges(() => {
-		open(hist.recent.get(this.dataset.open)).catch(err => addMsg(err.message, 'error'));
+		open(hist.recent.get(Number(this.dataset.open), true)).catch(err => addMsg(err.message, 'error'));
+		// Remove only after successful open
+		hist.recent.get(Number(this.dataset.open));
 	});
 });
 
