@@ -79,8 +79,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
 window.addEventListener('DOMContentLoaded', async () => {
 	try {
-		Object.values(hist).forEach(updateHistoryButton);
-
 		await fileDB.init();
 		const keys = await fileDB.getAllKeys();
 
@@ -198,6 +196,7 @@ class AnnotationDB {
 
 class Editor {
 	static TYPES = {
+		// This is the default editor type interface to be overloaded in plug-ins (see strategy pattern)
 		_default_: {
 			remove(input, chunk) {
 			},
@@ -221,6 +220,7 @@ class Editor {
 	};
 
 	static getType(type) {
+		// Select editor type (defined by plug-ins) fallback to the default type
 		return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 	}
 
@@ -228,24 +228,31 @@ class Editor {
 		this.dom = dom;
 		this.onchange_callback = onchange;
 		this.chunks = [];
-		this.restore = false;
-		this.restoreHidden = false;
+		this.restore = null;
+		this.restoreHidden = null;
 
+		// Mark the container as editor
 		dom.classList.add('editor');
 
 		// Initially disable save button since no file is open
-		disable('.ed-save', !!this.id);
+		disable('.ed-save', false);
 
+		// Rerender chunk when changed
 		evt(dom, 'change', e => {
-			if (e.target.matches('[data-cid]')) this.onchange([e.target.dataset.cid]);
+			if (e.target.matches('[data-cid]')) this.onchange([Number(e.target.dataset.cid)]);
 		});
 
 		evt(dom, 'click', e => {
 			const t = e.target;
 			if (!t) return;
 
-			if (t.matches('[data-render]')) this.render([Number(t.dataset.render)]);
+			// Render the actual page identified by pagenumber
+			if (t.matches('[data-render]')) {
+				this.render([Number(t.dataset.render)]);
+				return;
+			}
 
+			// Plus one behaviour
 			if (t.matches('.plus-one')) {
 				const cid = Number(t.dataset.next);
 				const d = this.renderChunk(cid);
@@ -260,8 +267,9 @@ class Editor {
 			}
 		});
 
+		// Unsaved changes warning
 		window.addEventListener('beforeunload', e => {
-			if (this.ischanged()) {
+			if (this.hasChanges()) {
 				e.preventDefault();
 				e.returnValue = _('There are unsaved changes! Are you sure?');
 				return e.returnValue;
@@ -269,245 +277,294 @@ class Editor {
 		});
 	}
 
-	load(data, store_filler) {
+	load(data, store_filler, onLoaded) {
+		// Load data
 		if (!data.id) return;
 
+		// Reset the editor
+		this.reset(data, store_filler);
+
+		// Clear the UI
+		this.dom.innerHTML = '';
+		clean_ttip(this.dom);
+
+		// Load the required resources + finish loading
+		this.loadResources(data, () => this.finishLoad(onLoaded));
+	}
+
+	finishLoad(onLoaded) {
+		addMsg(_('Document Loaded'), 'success');
+
+		// Render the UI
+		const hids = Object.keys(this.hidden);
+		this.renderHidden(hids);
+		this.render([0]);
+
+		// Notify others
+		trg(this.dom, 'document-loaded');
+		onLoaded?.();
+	}
+
+	loadResources(data, onSuccess) {
+		// Dynamically load the required CSS if not already loaded
+		for (const css of data.css || []) {
+			if (sel(`link[href="${css}"]`)) continue;
+
+			const e = document.createElement('link');
+			e.rel = 'stylesheet';
+			e.href = css;
+			document.head.appendChild(e);
+		}
+
+		// Dynamically load the required JS if not already loaded and wait for it to be loeaded
+		/** @type {string[]} */
+		const scripts = (data.js || []).filter(js => !sel(`script[src="${js}"]`));
+
+		if (!scripts.length) return onSuccess();
+
+		let remaining = scripts.length;
+		for (const js of scripts) {
+			const e = document.createElement('script');
+			e.src = js;
+			e.onload = () => {
+				if (--remaining === 0) onSuccess();
+			};
+			e.onerror = () => {
+				addMsg(_('Failed to load ') + js, 'error');
+				// Continue else the editor hangs on the first error
+				if (--remaining === 0) onSuccess();
+			};
+			document.body.appendChild(e);
+		}
+	}
+
+	reset(data, store_filler) {
+		// Reset the editor to a clean state
 		this.id = data.id;
 		this.eol = false;
 		this.hidden = [];
 		this.chunks = [];
 
+		// Separate chunks to visible and hidden
 		for (const chunk of data.chunks || []) {
 			if (!store_filler && !chunk.name) continue;
 
+			// Store original line endings to preserve them later
 			if (!this.eol) {
 				const m = chunk.value.match(/(\r?\n|\r)/);
-
 				if (m) this.eol = m[1];
 			}
 
-			if (chunk.name?.startsWith('.')) this.hidden.push(chunk);
-			else this.chunks.push(chunk);
-		}
-
-		if (!this.eol) this.eol = '\n';
-
-		this.dom.innerHTML = '';
-		clean_ttip(this.dom);
-
-		for (const css of data.css || []) {
-			if (sel(`link[href="${css}"]`)) continue;
-
-			const e = document.createElement('link');
-			e.setAttribute('rel', 'stylesheet');
-			e.setAttribute('href', css);
-			sel('head').appendChild(e);
-		}
-
-		let loading = 0;
-		for (const js of data.js || []) {
-			if (sel(`script[src="${js}"]`)) continue;
-
-			++loading;
-			const e = document.createElement('script');
-			e.setAttribute('src', js);
-			evt(e, 'load', () => {
-				--loading;
-			});
-			sel('body').appendChild(e);
-		}
-
-		const onload = () => {
-			if (loading > 0) {
-				setTimeout(onload, 50);
-				return;
+			// Decide if the current chunk is to be shown or hidden
+			if (chunk.name?.startsWith('.')) {
+				this.hidden.push(chunk);
+			} else {
+				this.chunks.push(chunk);
 			}
+		}
 
-			addMsg(_('Document Loaded'), 'success');
-
-			trg(this.dom, 'load');
-			const hids = Object.keys(this.hidden);
-			this.renderHidden(hids);
-			this.render([0]);
-		};
-
-		onload();
+		// Fallback line ending
+		if (!this.eol) this.eol = '\n';
 	}
 
-	ischanged(onnotchanged) {
+	hasChanges() {
+		// Detect changes by comparing every visible chunk (and normalising line endings)
 		let changed = false;
 
 		each('[data-cid]', i => {
-			const c = this.chunks[i.dataset.cid];
-			const t = Editor.getType(c.name);
+			const chunk = this.chunks[i.dataset.cid];
+			const c_type = Editor.getType(chunk.name);
 
-			if (c.id && t.getValue && c.value !== t.getValue(i, c).replace(/(\r?\n|\r)/g, this.eol)) {
+			if (chunk.id && c_type.getValue && chunk.value !== c_type.getValue(i, chunk).replace(/(\r?\n|\r)/g, this.eol))
 				changed = true;
-			}
 		}, this.dom);
 
-		if (!onnotchanged) {
-			return changed;
-		}
+		return changed;
+	}
 
-		const oncontinue = () => {
+	confirmDiscardChanges(callback) {
+		const cleanupChunks = () => {
 			each('[data-cid]', i => {
 				const c = this.chunks[i.dataset.cid];
 				const t = Editor.getType(c.name);
 
-				if (t.remove) t.remove(i, c);
+				t.remove?.(i, c);
 			}, this.dom);
 
-			onnotchanged();
+			// Call the callback
+			callback();
 		};
 
-		if (!changed) {
-			oncontinue();
+		if (!this.hasChanges()) {
+			cleanupChunks();
 		} else {
-			addConfirm(_('There are unsaved changes! Are you sure?'), oncontinue);
+			addConfirm(_('There are unsaved changes! Are you sure?'), cleanupChunks);
 		}
 	}
 
 	onchange(cids, hdata) {
+		// Collect changes/differences and call the callback on them
+
+		// Save the current visible and hidden elements
 		this.restore = this.getVisible();
 
-		const hids = Object.keys(hdata || {});
+		const hiddenData = hdata || {};
+		const hids = Object.keys(hiddenData);
 		if (hids.length) this.restoreHidden = hids;
 
+		// Collect changed visible chunks by change id (derived from chunk index)
 		const chunks = {};
 		const values = {};
-		let changed = false;
 		for (const cid of cids) {
-			const c = this.chunks[cid];
-			const t = Editor.getType(c.name);
+			const chunk = this.chunks[cid];
+			const chunk_type = Editor.getType(chunk.name);
 
-			if (c.id && t.getValue) {
-				const v = t.getValue(sel(`[data-cid="${cid}"]`, this.dom), c).replace(/(\r?\n|\r)/g, this.eol);
-
-				if (c.value !== v) {
-					changed = true;
-					chunks[`c${cid}`] = c;
-					values[`c${cid}`] = v;
-				}
+			if (chunk_type.getValue) {
+				const chunk_value = chunk_type.getValue(sel(`[data-cid="${cid}"]`, this.dom), chunk);
+				this.recordChangeForChunk(chunk, chunk_value, `c${cid}`, chunks, values);
 			}
 		}
 
-		for (const hid in (hdata || {})) {
-			const h = this.hidden[hid];
-
-			if (h.id) {
-				const v = hdata[hid].replace(/(\r?\n|\r)/g, this.eol);
-
-				if (h.value !== v) {
-					changed = true;
-					chunks[`h${hid}`] = h;
-					values[`h${hid}`] = v;
-				}
-			}
+		// Collect changed hidden chunks by change id (derived from chunk index)
+		for (const hid in hiddenData) {
+			this.recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
 		}
 
-		if (changed) this.onchange_callback(chunks, values);
+		// If there were changes commit them
+		if (Object.keys(chunks).length > 0) this.onchange_callback(chunks, values);
+	}
+
+	recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
+		if (!chunk.id) return;
+		// Normalise the line ending to ensure comparison isn't affected
+		const value = chunk_value.replace(/(\r?\n|\r)/g, this.eol);
+
+		// Record the change if there is any
+		if (chunk.value !== value) {
+			chunks[key] = chunk;
+			values[key] = value;
+		}
 	}
 
 	render(cids) {
+		// Clear the current view
 		this.dom.innerHTML = '';
-
 		clean_ttip(this.dom);
 
 		if (!cids.length) return;
 
+		// Render the paginator
 		this.dom.appendChild(this.renderPaginator(cids[0]));
 
-		for (const cid of cids) {
-			this.dom.appendChild(this.renderChunk(cid));
-		}
+		// Render the chunks
+		for (const cid of cids) this.dom.appendChild(this.renderChunk(cid));
 
-		if (this.chunks.length > cids[cids.length - 1] + 1) {
+		// Create +1 sentence button
+		const lastCid = cids[cids.length - 1];
+		if (this.chunks.length > cids[lastCid] + 1) {
 			const a = document.createElement('a');
-
 			a.href = '#';
 			a.className = 'btn plus-one';
-			a.dataset.next = String(Number(cids[cids.length - 1]) + 1);
+			a.dataset.next = String(cids[lastCid] + 1);
 			a.innerHTML = _('Show +1 sentence');
+
 			this.dom.appendChild(a);
 		}
 	}
 
 	renderHidden(hids) {
-		this.render_hidden = hids;
-		trg(this.dom, 'change-hidden');
-		this.render_hidden = [];
+		// Tell the templates to render the hidden chunks in hids
+		this.dom.dispatchEvent(new CustomEvent('change-hidden', {detail: hids}));
 	}
 
 	renderChunk(cid) {
-		cid = Number(cid);
-		const c = this.chunks[cid];
-		if (!c) return null;
+		// Delegates rendering to the specific editor type's render() function
+		const chunk = this.chunks[cid];
+		if (!chunk) return null;
 
-		const e = Editor.getType(c.name).render(c, cid);
+		const e = Editor.getType(chunk.name).render(chunk, cid);
+		// Note which chunk this DOM element represents
 		if (e) e.dataset.cid = cid;
 
 		return e;
 	}
 
+	getPaginationItems(current, max) {
+		// Create pagination items without formatting
+		const items = [];
+
+		if (current > 2) items.push({label: '(1) <<', page: 0});
+
+		if (current > 1) items.push({label: '<', page: current - 2});
+
+		if (current > 4) items.push({label: '...', disabled: true});
+
+		for (let p = Math.max(1, current - 3); p <= Math.min(max, current + 3); ++p) {
+			items.push({
+				label: String(p),
+				page: p - 1,
+				active: p === current
+			});
+		}
+
+		if (max > current + 3) items.push({label: '...', disabled: true});
+
+		if (max > current) items.push({label: '>', page: current});
+
+		if (max > current + 1) items.push({label: `>> (${max})`, page: max - 1});
+
+		return items;
+	}
+
 	renderPaginator(cid) {
-		cid = Number(cid);
-		const cur = cid + 1;
+		// Define formatting for pagination items
 		const max = (this.chunks || []).length;
 		if (max < 1) return;
 
-		let html = '';
-		if (cur > 2) {
-			html += '<li><a href="#" class="btn" data-render="0">(1) &lt;&lt;</a></li>';
-		}
-		if (cur > 1) {
-			html += `<li><a href="#" class="btn" data-render="${cid - 1}">&lt;</a></li>`;
-		}
-		if (cur > 4) {
-			html += '<li class="disabled"><a>...</a></li>';
+		const items = this.getPaginationItems(cid + 1, max);
+
+		const ul = document.createElement('ul');
+		ul.className = 'pagination';
+
+		for (const item of items) {
+			const li = document.createElement('li');
+
+			if (item.active) li.classList.add('active');
+
+			if (item.disabled) li.classList.add('disabled');
+
+			const a = document.createElement('a');
+
+			if (!item.disabled) {
+				a.href = '#';
+				a.className = 'btn';
+				a.dataset.render = item.page;
+			}
+
+			a.textContent = item.label;
+
+			li.appendChild(a);
+			ul.appendChild(li);
 		}
 
-		const s = Math.min(max, cur + 3);
-		for (let p = Math.max(1, cur - 3); p <= s; ++p) {
-			html += `<li class="${p === cur ? 'active' : ''}"><a href="#" class="btn" data-render="${p - 1}">${p}</a></li>`;
-		}
-		if (max > cur + 3) {
-			html += '<li class="disabled"><a>...</a></li>';
-		}
-		if (max > cur) {
-			html += `<li><a href="#" class="btn" data-render="${cid + 1}">&gt;</a></li>`;
-		}
-		if (max > cur + 1) {
-			html += `<li><a href="#" class="btn" data-render="${max - 1}">&gt;&gt; (${max})</a></li>`;
-		}
-
-		const p = document.createElement('ul');
-		p.className = 'pagination';
-		p.innerHTML = html;
-
-		return p;
+		return ul;
 	}
 
 	getVisible() {
-		const cids = [];
-		each('[data-cid]', i => {
-			cids.push(i.dataset.cid);
-		}, this.dom);
-
-		return cids;
+		// Get visible chunk indices
+		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
 	restoreView() {
+		// Restore visible and hidden chunks if a saved state exists and clear the state
 		if (this.restore) {
 			this.render(this.restore);
-			this.restore = false;
+			this.restore = null;
 		}
 
 		if (this.restoreHidden) {
-			this.renderHidden(
-				this.restoreHidden
-			);
-			this.restoreHidden = false;
+			this.renderHidden(this.restoreHidden);
+			this.restoreHidden = null;
 		}
 	}
 }
@@ -516,13 +573,27 @@ class History {
 	static BACKUP_INTERVAL = 30000;
 	static MAX_NUMBER = 10;
 
-	constructor(name, max, onchange) {
+	constructor(name, max) {
 		this.name = name;
+		// Implicit name convention for selector
+		this.buttonSelector = `.${this.name.replace('_', '-')}`;
 		this.max = max;
 		this.data = JSON.parse(localStorage[name] ?? '[]');
 		this.backup_timestamp = Date.now();
-		this.onchange_callback = onchange;
-		this.onchange_callback?.(this);
+
+		this.updateButton();
+	}
+
+	updateButton() {
+		if (this.buttonSelector) disable(this.buttonSelector, !this.isEmpty());
+	}
+
+	onchange() {
+		clearTimeout(this.timer);
+		// Try to save at most every History.BACKUP_INTERVAL ms but never sooner than 200ms
+		const nextAllowed = (this.backup_timestamp || 0) + History.BACKUP_INTERVAL - Date.now();
+		this.timer = setTimeout(() => this.backup(), Math.max(200, nextAllowed));
+		this.updateButton();
 	}
 
 	backup() {
@@ -540,14 +611,6 @@ class History {
 		}
 	}
 
-	onchange() {
-		clearTimeout(this.timer);
-		// Try to save at most every History.BACKUP_INTERVAL ms but never sooner than 200ms
-		const nextAllowed = (this.backup_timestamp || 0) + History.BACKUP_INTERVAL - Date.now();
-		this.timer = setTimeout(() => this.backup(), Math.max(200, nextAllowed));
-		this.onchange_callback?.(this);
-	}
-
 	add(data) {
 		// Add new data while maintaining maximum size
 		this.data = this.data.slice(0, this.max - 1);
@@ -555,15 +618,21 @@ class History {
 		this.onchange();
 	}
 
-	get(num, peek) {
+	get(index, peek = false) {
 		// Return element by index (pop or peek, the latest element is 0)
-		const index = num ?? 0;
-		const data = this.data[index];
+		const data = this.data[index ?? 0];
 		if (data && !peek) {
 			this.data.splice(index, 1);
 			this.onchange();
 		}
+
 		return data;
+	}
+
+	moveToTop(value) {
+		const index = this.data.indexOf(value);
+		if (index >= 0) this.data.splice(index, 1);
+		this.add(value);
 	}
 
 	isEmpty() {
@@ -726,7 +795,7 @@ class ChunkProcessor {
 		const matches = [];
 
 		// Collect all matches
-		Object.entries(splitter).forEach(([patternStr, key]) => {
+		for (const [patternStr, key] of Object.entries(splitter)) {
 			const regex = new RegExp(patternStr, 'gs');  // g = global, s = dotall
 
 			let match;
@@ -741,15 +810,10 @@ class ChunkProcessor {
 					}
 				});
 			}
-		});
+		}
 
-		// Sort matches
-		matches.sort((a, b) => {
-			if (a.start === b.start) {
-				return b.end - a.end;  // Longer match first
-			}
-			return a.start - b.start;
-		});
+		// Sort matches (Longer match first)
+		matches.sort((a, b) => a.start - b.start || b.end - a.end);
 
 		const chunks = [];
 		let pos = 0;
@@ -759,7 +823,8 @@ class ChunkProcessor {
 			const {start, end, chunk} = match;
 
 			if (pos > start) {
-				// Overlapping, just add this chunk TODO pos should be updated? -> Check!
+				// Overlapping, just add this chunk
+				// TODO pos should be updated? -> Check!, Why it does not have id. Comment!
 				chunks.push(chunk);
 				continue;
 			}
@@ -790,28 +855,28 @@ class ChunkProcessor {
 	}
 
 	static merge(changes, chunks) {
-		let i = 0;
-		let j = 0;
+		const changesById = new Map(changes.map(c => [c.id, c]));
 
-		// Changes and chunks must be sorted by chunk.id
-		while (i < changes.length || j < chunks.length) {
-			if (i < changes.length && j < chunks.length && changes[i].id === chunks[j].id) {
-				// If both changes and chunks have the same id, merge them
-				if (changes[i].append) {
-					chunks[j].value += changes[i].value || '';
-				} else {
-					chunks[j].value = changes[i].value || '';
-				}
+		for (const chunk of chunks) {
+			const change = changesById.get(chunk.id);
 
-				i++;
-				j++;
-			} else if (i < changes.length && (j >= chunks.length || changes[i].id < chunks[j].id)) {
-				// If no matching mChunk, just add the chunk
-				throw new Error(_('No matching chunk found for chunk with id: ') + changes[i].id);
+			// If no change for chunk, skip it
+			if (!change) continue;
+
+			// If both changes and chunks have the same id, merge them
+			if (change.append) {
+				chunk.value += change.value ?? '';
 			} else {
-				// If no matching chunk, just add the chunk leave chunk as is (skip)
-				j++;
+				chunk.value = change.value ?? '';
 			}
+
+			// Remove applied change
+			changesById.delete(chunk.id);
+		}
+
+		if (changesById.size) {
+			// If there are non-applicable changes, list them
+			throw new Error(_('No matching chunk found for chunk with id: ') + [...changesById.keys()][0]);
 		}
 
 		return chunks;
@@ -838,33 +903,28 @@ class ChunkProcessor {
 	}
 }
 
-function updateHistoryButton(history) {
-	const map = {
-		ed_recent: '.ed-recent',
-		ed_undo: '.ed-undo',
-		ed_redo: '.ed-redo'
-	};
-	disable(map[history.name], !history.isEmpty());
-}
-
 const hist = {
-	recent: new History('ed_recent', History.MAX_NUMBER, updateHistoryButton),
-	undo: new History('ed_undo', History.MAX_NUMBER, updateHistoryButton),
-	redo: new History('ed_redo', History.MAX_NUMBER, updateHistoryButton)
+	recent: new History('ed_recent', History.MAX_NUMBER),
+	undo: new History('ed_undo', History.MAX_NUMBER),
+	redo: new History('ed_redo', History.MAX_NUMBER)
 };
 const editor = new Editor(sel('#editor'), (chunks, values) => {
+	// Store previous values in Undo history
 	hist.undo.add({
 		id: editor.id,
 		chunks: chunks,
 		values: values,
 		cids: editor.getVisible()
 	});
+	// Any new edit invalidates Redo history
 	hist.redo.clear();
+	// Apply changes to chunk objects
 	const tosave = [];
 	for (const cid in chunks) {
 		chunks[cid].value = values[cid];
 		tosave.push(chunks[cid]);
 	}
+	// Persist changes
 	save(tosave).catch(err => addMsg(err.message, 'error'));
 });
 const fileDB = new AnnotationDB();
@@ -873,29 +933,21 @@ const templatePicker = new TemplatePicker(templates);
 const documents = new DocumentManager(fileDB, editor);
 
 function showDocument(data, onsuccess) {
-	evt(editor.dom, 'load', () => {
-		hist.recent.walk(function (data, i) {
-			if (data === editor.id) hist.recent.get(i);
-		});
-		hist.recent.add(editor.id);
-		if (onsuccess) onsuccess();
+	editor.load(data, false, () => {
+		hist.recent.moveToTop(editor.id);
+
+		onsuccess?.();
 	});
-	editor.load(data, false);
+
+	// Enable save button
 	disable('.ed-save', !!editor.id);
-	if (editor.restore) {
-		editor.render(editor.restore);
-		editor.restore = false;
-	}
-	if (editor.restoreHidden) {
-		editor.renderHidden(editor.restoreHidden);
-		editor.restoreHidden = false;
-	}
+	editor.restoreView()
 }
 
 async function open(id, onsuccess, template) {
 	let loadedTemplate;
 	if (id === undefined) {
-		// Open new file
+		// Open new file or just pass the template
 		loadedTemplate = typeof template === 'string' ?
 			await templates.loadTemplate(template) : template;
 	}
@@ -912,6 +964,7 @@ async function open(id, onsuccess, template) {
 
 async function save(chunks) {
 	try {
+		// TODO Can here be chunks undefined?
 		const data = await documents.saveToIDB(chunks);
 
 		if (!chunks) {
@@ -1057,7 +1110,7 @@ function callTokenNew(template) {
 }
 
 evtDelegated(document, '[data-open]', 'click', function () {
-	editor.ischanged(() => {
+	editor.confirmDiscardChanges(() => {
 		open(hist.recent.get(this.dataset.open)).catch(err => addMsg(err.message, 'error'));
 	});
 });
@@ -1078,7 +1131,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		const template = await templates.loadTemplate(templateInfo.path);
 
 		if (action === 'open') {
-			editor.ischanged(() => {
+			editor.confirmDiscardChanges(() => {
 				open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
 			});
 		} else if (action === 'new') {

@@ -110,9 +110,9 @@
 		},
 	}
 
-	evt(editor.dom, 'change-hidden', function () {
-		for (let i in editor.render_hidden) {
-			let hid = editor.render_hidden[i];
+	evt(editor.dom, 'change-hidden', function (e) {
+		// The value of hids is in e.detail
+		for (const hid of e.detail) {
 			let h = editor.hidden[hid];
 			if (h.name === '.mm_header') {
 				let html = '';

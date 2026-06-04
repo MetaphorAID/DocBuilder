@@ -98,9 +98,9 @@
 		},
 	}
 
-	evt(editor.dom, 'change-hidden', function () {
-		for (var i in editor.render_hidden) {
-			var hid = editor.render_hidden[i];
+	evt(editor.dom, 'change-hidden', function (e) {
+		// The value of hids is in e.detail
+		for (const hid of e.detail) {
 			var h = editor.hidden[hid];
 			if (h.name === '.t_header') {
 				var html = '';

@@ -40,7 +40,7 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
-		evt(editor.dom, 'load', function() {
+		evt(editor.dom, 'document-loaded', function() {
 			sel('#header').innerHTML = '';
 			sel('#footer').innerHTML = '';
 
