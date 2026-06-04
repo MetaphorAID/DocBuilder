@@ -317,24 +317,21 @@ class Editor {
 		}
 
 		// Dynamically load the required JS if not already loaded and wait for it to be loeaded
-		/** @type {string[]} */
-		const scripts = (data.js || []).filter(js => !sel(`script[src="${js}"]`));
+		const scripts = data.js || [];
 
 		if (!scripts.length) return onSuccess();
 
 		let remaining = scripts.length;
+		const done = () => {
+			if (--remaining === 0) onSuccess();
+		};
+
 		for (const js of scripts) {
-			const e = document.createElement('script');
-			e.src = js;
-			e.onload = () => {
-				if (--remaining === 0) onSuccess();
-			};
-			e.onerror = () => {
-				addMsg(_('Failed to load ') + js, 'error');
+			loadScript(js).then(done).catch(err => {
+				addMsg(err.message, 'error');
 				// Continue else the editor hangs on the first error
-				if (--remaining === 0) onSuccess();
-			};
-			document.body.appendChild(e);
+				done();
+			});
 		}
 	}
 
@@ -768,6 +765,10 @@ class DocumentManager {
 		return data;
 	}
 
+	async store(filename, document) {
+		await this.db.storeFile(filename, document);
+	}
+
 	download(data) {
 		const blob = ChunkProcessor.createBlob(data.chunks);
 
@@ -787,7 +788,6 @@ class DocumentManager {
 
 		addMsg(_('Document Saved'), 'success');
 	}
-
 }
 
 class ChunkProcessor {
@@ -903,6 +903,140 @@ class ChunkProcessor {
 	}
 }
 
+class UndoManager {
+	#editor;
+	#hist;
+
+	constructor(editor, hist) {
+		this.#editor = editor;
+		this.#hist = hist;
+	}
+
+	#loadDocumentForHistory(data, callback) {
+		if (data.id !== this.#editor.id) {
+			open(data.id, callback).catch(err => addMsg(err.message, 'error'));
+		} else {
+			callback();
+		}
+	}
+
+	#createReverseHistoryEntry(data) {
+		const chunks = {};
+		const values = {};
+
+		let valid = true;
+		this.#forEachHistoryChunk(data, item => {
+			if (!valid) return;
+
+			// Verify that the document has not changed since the history entry was created
+			if (item.current.value !== item.expected) {
+				valid = false;
+				return;
+			}
+
+			// Build the reverse history entry that	will be pushed onto the opposite stack (undo <-> redo)
+			chunks[item.cid] = item.current;
+			values[item.cid] = item.target.value;
+		});
+		return valid ? {chunks, values} : false;
+	}
+
+	#applyChunks(data) {
+		const tosave = [];
+		const hidden = [];
+
+		this.#forEachHistoryChunk(data, item => {
+			// Apply the item to the appropriate category (visible or hidden)
+			this.#editor[item.store][item.index] = item.target;
+
+			// Changes should be saved
+			tosave.push(item.target);
+
+			// Hidden sections that need rerendering
+			if (item.store === 'hidden') hidden.push(item.index);
+		});
+
+		return {tosave, hidden};
+	}
+
+	#forEachHistoryChunk(data, callback) {
+		for (const cid in data.chunks) {
+			const hidden = cid[0] === 'h';
+			const store = hidden ? 'hidden' : 'chunks';
+			const index = cid.substring(1);
+
+			// Provide metadata about each chunk to the callback
+			callback({
+				cid,
+				store,
+				index,
+				current: this.#editor[store][index],
+				target: data.chunks[cid],
+				expected: data.values[cid]
+			});
+		}
+	}
+
+	#applyHistoryEntry(data, visible, from, to) {
+		this.#editor.render([]);
+
+		// Create the corresponding reverse entry
+		const reverseEntry = this.#createReverseHistoryEntry(data);
+
+		if (!reverseEntry) {
+			from.add(data);
+
+			addMsg(_('Document changed outside, history action is disabled'), 'error');
+
+			this.#editor.render(visible);
+			return;
+		}
+
+		to.add({
+			id: data.id,
+			chunks: reverseEntry.chunks,
+			values: reverseEntry.values,
+			cids: visible
+		});
+
+		// Apply a single history entry to the editor
+		const {tosave, hidden} = this.#applyChunks(data);
+
+		// Save the changes and rerender
+		save(tosave).catch(err => addMsg(err.message, 'error'));
+
+		if (hidden.length) {
+			this.#editor.renderHidden(hidden);
+		}
+
+		this.#editor.render(data.cids);
+	}
+
+	#apply(reverse) {
+		const from = this.#hist[reverse ? 'redo' : 'undo'];
+		const to = this.#hist[reverse ? 'undo' : 'redo'];
+
+		// Get history (undo or redo) if any
+		const data = from.get();
+		if (!data) return;
+
+		const visible = this.#editor.getVisible();
+
+		this.#loadDocumentForHistory(data, () => {
+			this.#applyHistoryEntry(data, visible, from, to);
+		});
+	}
+
+	undo() {
+		this.#apply(false);
+	}
+
+	redo() {
+		this.#apply(true);
+	}
+
+}
+
 const hist = {
 	recent: new History('ed_recent', History.MAX_NUMBER),
 	undo: new History('ed_undo', History.MAX_NUMBER),
@@ -931,6 +1065,7 @@ const fileDB = new AnnotationDB();
 const templates = new TemplateManager();
 const templatePicker = new TemplatePicker(templates);
 const documents = new DocumentManager(fileDB, editor);
+const undoManager = new UndoManager(editor, hist);
 
 function showDocument(data, onsuccess) {
 	editor.load(data, false, () => {
@@ -986,57 +1121,6 @@ async function save(chunks) {
 	}
 }
 
-function undo(reverse) {
-	const data = hist[reverse ? 'redo' : 'undo'].get();
-	if (!data) return;
-	const cids = editor.getVisible();
-	editor.render([]);
-
-	function h() {
-		let current = {};
-		const next = {};
-		for (const cid in data.chunks) {
-			const f = cid[0] === 'h' ? 'hidden' : 'chunks';
-			const c = editor[f][cid.substring(1)];
-			if (c.value !== data.values[cid]) {
-				current = false;
-			}
-			if (current !== false) current[cid] = c;
-			next[cid] = data.chunks[cid].value;
-		}
-		if (current === false) {
-			hist[reverse ? 'redo' : 'undo'].add(data);
-			addMsg(_('Document changed outside, history action is disabled'), 'error');
-			editor.render(cids);
-			return;
-		}
-		hist[reverse ? 'undo' : 'redo'].add({
-			id: data.id,
-			chunks: current,
-			values: next,
-			cids: cids
-		});
-		const tosave = [];
-		const hids = [];
-		for (const cid in data.chunks) {
-			const d = data.chunks[cid];
-			const f = cid[0] === 'h' ? 'hidden' : 'chunks';
-			editor[f][cid.substring(1)] = d;
-			tosave.push(d);
-			if (f === 'hidden') hids.push(cid.substring(1));
-		}
-		save(tosave).catch(err => addMsg(err.message, 'error'));
-		if (hids.length) editor.renderHidden(hids);
-		editor.render(data.cids);
-	}
-
-	if (data.id !== editor.id) {
-		open(data.id, h).catch(err => addMsg(err.message, 'error'));
-	} else {
-		h();
-	}
-}
-
 evt('.ed-open', 'click', e => {
 	templatePicker.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
@@ -1047,11 +1131,12 @@ evt('.ed-new', 'click', e => {
 });
 evt('.ed-recent', 'click', e => {
 	const t = ttip(e.target, e);
-	hist.recent.walk(function (data, id) {
+	hist.recent.walk((data, id) => {
 		const a = document.createElement('a');
-		a.setAttribute('href', '#');
+		a.href = '#';
 		a.dataset.open = id;
-		a.innerHTML = data.split("\t")[0].replace(/^.*?([^\\\/]+)$/, '$1');
+		// Use basename of the file
+		a.innerHTML = data.split('\t')[0].replace(/^.*?([^\\\/]+)$/, '$1');
 		t.appendChild(a);
 	});
 	t.classList.add('dropdown');
@@ -1062,10 +1147,10 @@ evt('.ed-save', 'click', e => {
 	save().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', () => {
-	undo();
+	undoManager.undo();
 });
 evt('.ed-redo', 'click', () => {
-	undo(true);
+	undoManager.redo();
 });
 evt('.ed-exit', 'click', () => {
 	if (confirm(_('Do you want to exit?'))) {
@@ -1073,40 +1158,24 @@ evt('.ed-exit', 'click', () => {
 	}
 });
 
-function loadNextScript(scripts, index = 0) {
-	return new Promise((resolve, reject) => {
-		function next(i) {
-			if (i >= scripts.length) {
-				resolve(); // All scripts loaded
-				return;
-			}
-			let js = scripts[i];
-			let e = document.createElement('script');
-			e.src = js;
-			e.onload = () => next(i + 1);
-			e.onerror = () => reject(new Error('Error loading script: ' + js));
-			document.body.appendChild(e);
-		}
-
-		next(index);
-	});
-}
-
 function callTokenNew(template) {
+	// TODO this should be stem from Editor not Token class
+	// Locate token class and test if it supports new() method
 	const TokenClass = window.TOKEN || (typeof TOKEN !== 'undefined' && TOKEN);
-	if (TokenClass && typeof TokenClass.new === 'function') {
-		TokenClass.new().then(result => {
-			if (result) {
-				const [filename, data] = result;
-				const newData = ChunkProcessor.createDocument(filename, data, template);
-				// TODO this should be cleaner
-				documents.db.storeFile(filename, newData).then(() => showDocument(newData))
-					.catch(err => addMsg(String(err), 'error'));
-			}
-		});
-	} else {
+	if (!TokenClass?.new) {
 		addMsg(_('New document creation not supported for this template'), 'error');
+		return;
 	}
+
+	TokenClass.new().then(result => {
+		if (!result) return;
+
+		// Get the content from the plug-in and pass it for processing, saving and rendering
+		const [filename, data] = result;
+		const newData = ChunkProcessor.createDocument(filename, data, template);
+		documents.store(filename, newData).then(() => showDocument(newData))
+			.catch(err => addMsg(String(err), 'error'));
+	});
 }
 
 evtDelegated(document, '[data-open]', 'click', function () {
@@ -1117,6 +1186,7 @@ evtDelegated(document, '[data-open]', 'click', function () {
 
 evtDelegated(document, '.template-select', 'click', async function () {
 	try {
+		// Find and load the selected template
 		const templateId = this.dataset.template;
 		const action = this.dataset.action;
 
@@ -1130,21 +1200,20 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 		const template = await templates.loadTemplate(templateInfo.path);
 
+		// Execute action on template
 		if (action === 'open') {
 			editor.confirmDiscardChanges(() => {
 				open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
 			});
 		} else if (action === 'new') {
-			// Find scripts not yet loaded
-			const scripts = (template.js || []).filter(js => !sel(`script[src="${js}"]`));
-
-			await loadNextScript(scripts);
+			// Load necessary scipts
+			for (const src of template.js || []) await loadScript(src);
 			callTokenNew(template);
 		}
 
 		trg(this.closest('.tooltip'), 'close');
 
 	} catch (err) {
-		addMsg(_('Error loading template: ') + err, 'error');
+		addMsg(_('Failed to load ') + err, 'error');
 	}
 });
