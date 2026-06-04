@@ -95,50 +95,55 @@ window.onerror = function (errorMsg, url, lineNum, colNum, error) {
 
 class AnnotationDB {
 	// An IndexedDB-based storage backend storing (filename, data) pairs
+	#dbName
+	#storeName
+	#version
+	#db
+
 	constructor(
 		dbName = 'AnnotationInterfaceIndexedDB',
 		storeName = 'annotationFiles',
 		version = 1
 	) {
-		this.dbName = dbName;
-		this.storeName = storeName;
-		this.version = version;
-		this.db = null;
+		this.#dbName = dbName;
+		this.#storeName = storeName;
+		this.#version = version;
+		this.#db = null;
 	}
 
 	async init() {
-		if (this.db) {
-			return this.db;
+		if (this.#db) {
+			return this.#db;
 		}
 
 		return new Promise((resolve, reject) => {
-			const request = indexedDB.open(this.dbName, this.version);
+			const request = indexedDB.open(this.#dbName, this.#version);
 
 			request.onupgradeneeded = e => {
 				const db = e.target.result;
 
 				// Create schema if not already exists
-				if (!db.objectStoreNames.contains(this.storeName)) db.createObjectStore(this.storeName, {keyPath: 'name'});
+				if (!db.objectStoreNames.contains(this.#storeName)) db.createObjectStore(this.#storeName, {keyPath: 'name'});
 			};
 
 			request.onsuccess = e => {
-				this.db = e.target.result;
-				resolve(this.db);
+				this.#db = e.target.result;
+				resolve(this.#db);
 			};
 
 			request.onerror = e => reject(e.target.error);
 		});
 	}
 
-	async transaction(mode = 'readonly') {
+	async #transaction(mode = 'readonly') {
 		await this.init();
 
 		// Create a transaction
-		return this.db.transaction(this.storeName, mode).objectStore(this.storeName);
+		return this.#db.transaction(this.#storeName, mode).objectStore(this.#storeName);
 	}
 
 	async retrieveFile(fileName) {
-		const store = await this.transaction('readonly');
+		const store = await this.#transaction('readonly');
 
 		return new Promise((resolve, reject) => {
 			const request = store.get(fileName);
@@ -150,7 +155,7 @@ class AnnotationDB {
 	}
 
 	async storeFile(fileName, data) {
-		const store = await this.transaction('readwrite');
+		const store = await this.#transaction('readwrite');
 
 		return new Promise((resolve, reject) => {
 			const request = store.put({name: fileName, data});
@@ -161,7 +166,7 @@ class AnnotationDB {
 	}
 
 	async getAllKeys() {
-		const store = await this.transaction('readonly');
+		const store = await this.#transaction('readonly');
 
 		return new Promise((resolve, reject) => {
 			const request = store.getAllKeys();
@@ -172,7 +177,7 @@ class AnnotationDB {
 	}
 
 	async delete(fileName) {
-		const store = await this.transaction('readwrite');
+		const store = await this.#transaction('readwrite');
 
 		return new Promise((resolve, reject) => {
 			const request = store.delete(fileName);
@@ -183,7 +188,7 @@ class AnnotationDB {
 	}
 
 	async clear() {
-		const store = await this.transaction('readwrite');
+		const store = await this.#transaction('readwrite');
 
 		return new Promise((resolve, reject) => {
 			const request = store.clear();
@@ -224,12 +229,16 @@ class Editor {
 		return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 	}
 
+	#onchange_callback
+	#restore
+	#restoreHidden
+
 	constructor(dom, onchange) {
 		this.dom = dom;
-		this.onchange_callback = onchange;
+		this.#onchange_callback = onchange;
 		this.chunks = [];
-		this.restore = null;
-		this.restoreHidden = null;
+		this.#restore = null;
+		this.#restoreHidden = null;
 
 		// Mark the container as editor
 		dom.classList.add('editor');
@@ -269,7 +278,7 @@ class Editor {
 
 		// Unsaved changes warning
 		window.addEventListener('beforeunload', e => {
-			if (this.hasChanges()) {
+			if (this.#hasChanges()) {
 				e.preventDefault();
 				e.returnValue = _('There are unsaved changes! Are you sure?');
 				return e.returnValue;
@@ -282,17 +291,17 @@ class Editor {
 		if (!data.id) return;
 
 		// Reset the editor
-		this.reset(data, store_filler);
+		this.#reset(data, store_filler);
 
 		// Clear the UI
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
 
 		// Load the required resources + finish loading
-		this.loadResources(data, () => this.finishLoad(onLoaded));
+		this.#loadResources(data, () => this.#finishLoad(onLoaded));
 	}
 
-	finishLoad(onLoaded) {
+	#finishLoad(onLoaded) {
 		addMsg(_('Document Loaded'), 'success');
 
 		// Render the UI
@@ -305,7 +314,7 @@ class Editor {
 		onLoaded?.();
 	}
 
-	loadResources(data, onSuccess) {
+	#loadResources(data, onSuccess) {
 		// Dynamically load the required CSS if not already loaded
 		for (const css of data.css || []) {
 			if (sel(`link[href="${css}"]`)) continue;
@@ -335,7 +344,7 @@ class Editor {
 		}
 	}
 
-	reset(data, store_filler) {
+	#reset(data, store_filler) {
 		// Reset the editor to a clean state
 		this.id = data.id;
 		this.eol = false;
@@ -364,7 +373,7 @@ class Editor {
 		if (!this.eol) this.eol = '\n';
 	}
 
-	hasChanges() {
+	#hasChanges() {
 		// Detect changes by comparing every visible chunk (and normalising line endings)
 		let changed = false;
 
@@ -392,7 +401,7 @@ class Editor {
 			callback();
 		};
 
-		if (!this.hasChanges()) {
+		if (!this.#hasChanges()) {
 			cleanupChunks();
 		} else {
 			addConfirm(_('There are unsaved changes! Are you sure?'), cleanupChunks);
@@ -403,11 +412,11 @@ class Editor {
 		// Collect changes/differences and call the callback on them
 
 		// Save the current visible and hidden elements
-		this.restore = this.getVisible();
+		this.#restore = this.getVisible();
 
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
-		if (hids.length) this.restoreHidden = hids;
+		if (hids.length) this.#restoreHidden = hids;
 
 		// Collect changed visible chunks by change id (derived from chunk index)
 		const chunks = {};
@@ -418,20 +427,20 @@ class Editor {
 
 			if (chunk_type.getValue) {
 				const chunk_value = chunk_type.getValue(sel(`[data-cid="${cid}"]`, this.dom), chunk);
-				this.recordChangeForChunk(chunk, chunk_value, `c${cid}`, chunks, values);
+				this.#recordChangeForChunk(chunk, chunk_value, `c${cid}`, chunks, values);
 			}
 		}
 
 		// Collect changed hidden chunks by change id (derived from chunk index)
 		for (const hid in hiddenData) {
-			this.recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
+			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
 		}
 
 		// If there were changes commit them
-		if (Object.keys(chunks).length > 0) this.onchange_callback(chunks, values);
+		if (Object.keys(chunks).length > 0) this.#onchange_callback(chunks, values);
 	}
 
-	recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
+	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
 		if (!chunk.id) return;
 		// Normalise the line ending to ensure comparison isn't affected
 		const value = chunk_value.replace(/(\r?\n|\r)/g, this.eol);
@@ -451,7 +460,7 @@ class Editor {
 		if (!cids.length) return;
 
 		// Render the paginator
-		this.dom.appendChild(this.renderPaginator(cids[0]));
+		this.dom.appendChild(this.#renderPaginator(cids[0]));
 
 		// Render the chunks
 		for (const cid of cids) this.dom.appendChild(this.renderChunk(cid));
@@ -486,7 +495,7 @@ class Editor {
 		return e;
 	}
 
-	getPaginationItems(current, max) {
+	#getPaginationItems(current, max) {
 		// Create pagination items without formatting
 		const items = [];
 
@@ -513,12 +522,12 @@ class Editor {
 		return items;
 	}
 
-	renderPaginator(cid) {
+	#renderPaginator(cid) {
 		// Define formatting for pagination items
 		const max = (this.chunks || []).length;
 		if (max < 1) return;
 
-		const items = this.getPaginationItems(cid + 1, max);
+		const items = this.#getPaginationItems(cid + 1, max);
 
 		const ul = document.createElement('ul');
 		ul.className = 'pagination';
@@ -554,52 +563,57 @@ class Editor {
 
 	restoreView() {
 		// Restore visible and hidden chunks if a saved state exists and clear the state
-		if (this.restore) {
-			this.render(this.restore);
-			this.restore = null;
+		if (this.#restore) {
+			this.render(this.#restore);
+			this.#restore = null;
 		}
 
-		if (this.restoreHidden) {
-			this.renderHidden(this.restoreHidden);
-			this.restoreHidden = null;
+		if (this.#restoreHidden) {
+			this.renderHidden(this.#restoreHidden);
+			this.#restoreHidden = null;
 		}
 	}
 }
 
 class History {
-	static BACKUP_INTERVAL = 30000;
-	static MAX_NUMBER = 10;
+	static #BACKUP_INTERVAL = 30000;
+	static #MAX_NUMBER = 10;
+	#name
+	#buttonSelector
+	#max
+	#data
+	#backup_timestamp
 
-	constructor(name, max) {
-		this.name = name;
+	constructor(name, max = History.#MAX_NUMBER) {
+		this.#name = name;
 		// Implicit name convention for selector
-		this.buttonSelector = `.${this.name.replace('_', '-')}`;
-		this.max = max;
-		this.data = JSON.parse(localStorage[name] ?? '[]');
-		this.backup_timestamp = Date.now();
+		this.#buttonSelector = `.${this.#name.replace('_', '-')}`;
+		this.#max = max;
+		this.#data = JSON.parse(localStorage[name] ?? '[]');
+		this.#backup_timestamp = Date.now();
 
-		this.updateButton();
+		this.#updateButton();
 	}
 
-	updateButton() {
-		if (this.buttonSelector) disable(this.buttonSelector, !this.isEmpty());
+	#updateButton() {
+		if (this.#buttonSelector) disable(this.#buttonSelector, this.data.length !== 0);
 	}
 
-	onchange() {
+	#onHistChange() {
 		clearTimeout(this.timer);
-		// Try to save at most every History.BACKUP_INTERVAL ms but never sooner than 200ms
-		const nextAllowed = (this.backup_timestamp || 0) + History.BACKUP_INTERVAL - Date.now();
-		this.timer = setTimeout(() => this.backup(), Math.max(200, nextAllowed));
-		this.updateButton();
+		// Try to save at most every History.#BACKUP_INTERVAL ms but never sooner than 200ms
+		const nextAllowed = (this.backup_timestamp || 0) + History.#BACKUP_INTERVAL - Date.now();
+		this.timer = setTimeout(() => this.#backup(), Math.max(200, nextAllowed));
+		this.#updateButton();
 	}
 
-	backup() {
+	#backup() {
 		this.backup_timestamp = Date.now();
 		const d = structuredClone(this.data);
 		// Try to save progressively smaller versions (dropping the oldest entries) if storage quota fails
 		while (d.length) {
 			try {
-				localStorage[this.name] = JSON.stringify(d);
+				localStorage[this.#name] = JSON.stringify(d);
 				break;
 			} catch (e) {
 				console.error('Could not save data into localStorage');
@@ -610,9 +624,9 @@ class History {
 
 	add(data) {
 		// Add new data while maintaining maximum size
-		this.data = this.data.slice(0, this.max - 1);
+		this.data = this.data.slice(0, this.#max - 1);
 		this.data.unshift(structuredClone(data));
-		this.onchange();
+		this.#onHistChange();
 	}
 
 	get(index, peek = false) {
@@ -620,7 +634,7 @@ class History {
 		const data = this.data[index ?? 0];
 		if (data && !peek) {
 			this.data.splice(index, 1);
-			this.onchange();
+			this.#onHistChange();
 		}
 
 		return data;
@@ -632,26 +646,24 @@ class History {
 		this.add(value);
 	}
 
-	isEmpty() {
-		return this.data.length === 0;
-	}
-
 	walk(callback) {
 		this.data.forEach(callback);
 	}
 
 	clear() {
 		this.data = [];
-		this.onchange();
+		this.#onHistChange();
 	}
 }
 
 class TemplateManager {
+	#templateDir
+
 	constructor(templateDir = 'templates') {
-		this.templateDir = templateDir;
+		this.#templateDir = templateDir;
 	}
 
-	async loadJSON(url) {
+	async #loadJSON(url) {
 		const response = await fetch(url);
 
 		if (!response.ok) {
@@ -662,34 +674,31 @@ class TemplateManager {
 		return response.json();
 	}
 
-	async getAvailableTemplates() {
+	async getTemplateById(templateId) {
+		return await this.#getAvailableTemplates().find(t => t.id === templateId);
+	}
+
+	async #getAvailableTemplates() {
 		// Cache loaded template list
-		if (!this._templates) this._templates = await this.loadJSON(`./${this.templateDir}/template_list.json`);
+		if (!this._templates) this._templates = await this.#loadJSON(`./${this.#templateDir}/template_list.json`);
 		return this._templates;
 	}
 
 	async loadTemplate(path) {
-		const template = await this.loadJSON(`./${this.templateDir}/${path}`);
+		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
 
 		if (typeof template.css === 'string') template.css = template.css.split(',');
 		if (typeof template.js === 'string') template.js = template.js.split(',');
 
-		template.css = template.css.map(file => `./${this.templateDir}/${file}`);
-		template.js = template.js.map(file => `./${this.templateDir}/${file}`);
+		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
+		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
 
 		return template;
-	}
-}
-
-// TODO merge with TemplateManager
-class TemplatePicker {
-	constructor(repository) {
-		this.repository = repository;
 	}
 
 	async show(action, target, event) {
 		try {
-			let templates = await this.repository.getAvailableTemplates();
+			let templates = await this.#getAvailableTemplates();
 
 			const tt = ttip(target, event);
 			tt.classList.add('dropdown');
@@ -716,12 +725,15 @@ class TemplatePicker {
 }
 
 class DocumentManager {
+	#db
+	#editor
+
 	constructor(db, editor) {
-		this.db = db;
-		this.editor = editor;
+		this.#db = db;
+		this.#editor = editor;
 	}
 
-	async readFile(file) {
+	async #readFile(file) {
 		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
 
@@ -735,7 +747,7 @@ class DocumentManager {
 	async open(id, template) {
 		if (id !== undefined) {
 			// Open file from IndexedDB
-			const doc = await this.db.retrieveFile(id);
+			const doc = await this.#db.retrieveFile(id);
 			if (!doc) throw new Error(_('Document not found: ') + id);
 
 			return doc;
@@ -743,30 +755,30 @@ class DocumentManager {
 
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
-		const text = await this.readFile(file);
+		const text = await this.#readFile(file);
 		const document = ChunkProcessor.createDocument(file.name, text, template);
 
-		await this.db.storeFile(file.name, document);
+		await this.#db.storeFile(file.name, document);
 
 		return document;
 	}
 
 	async saveToIDB(changes) {
 		// If changes is undefined, use editor.chunks, otherwise use provided changes
-		const data = await this.db.retrieveFile(this.editor.id || 0);
-		if (!data) throw new Error(_('Document not found: ') + this.editor.id);
+		const data = await this.#db.retrieveFile(this.#editor.id || 0);
+		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
 
 		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
-		data.chunks = ChunkProcessor.merge(changes || this.editor.chunks, data.chunks);
+		data.chunks = ChunkProcessor.merge(changes || this.#editor.chunks, data.chunks);
 
 		// Store the data in IndexedDB with the correct fileName (data.id)
-		await this.db.storeFile(data.id, data);
+		await this.#db.storeFile(data.id, data);
 
 		return data;
 	}
 
 	async store(filename, document) {
-		await this.db.storeFile(filename, document);
+		await this.#db.storeFile(filename, document);
 	}
 
 	download(data) {
@@ -778,8 +790,8 @@ class DocumentManager {
 		// Create a temporary <a> element to trigger the download
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = this.editor.id;  // Original file name
-		a.click();                    // Simulate click to download
+		a.download = this.#editor.id;  // Original file name
+		a.click();                     // Simulate click to download
 
 		// Clean up the temporary URL
 		URL.revokeObjectURL(url);
@@ -791,7 +803,7 @@ class DocumentManager {
 }
 
 class ChunkProcessor {
-	static parse(content, splitter) {
+	static #parse(content, splitter) {
 		const matches = [];
 
 		// Collect all matches
@@ -882,7 +894,7 @@ class ChunkProcessor {
 		return chunks;
 	}
 
-	static build(chunks) {
+	static #build(chunks) {
 		return chunks
 			.filter(chunk => chunk.id !== null)
 			.map(chunk => chunk.value)
@@ -892,14 +904,14 @@ class ChunkProcessor {
 	static createDocument(fileName, text, template) {
 		return {
 			id: fileName,
-			chunks: this.parse(text, template.chunks),
+			chunks: this.#parse(text, template.chunks),
 			js: template.js,
 			css: template.css
 		};
 	}
 
 	static createBlob(chunks) {
-		return new Blob([this.build(chunks)]);
+		return new Blob([this.#build(chunks)]);
 	}
 }
 
@@ -1038,9 +1050,9 @@ class UndoManager {
 }
 
 const hist = {
-	recent: new History('ed_recent', History.MAX_NUMBER),
-	undo: new History('ed_undo', History.MAX_NUMBER),
-	redo: new History('ed_redo', History.MAX_NUMBER)
+	recent: new History('ed_recent'),
+	undo: new History('ed_undo'),
+	redo: new History('ed_redo')
 };
 const editor = new Editor(sel('#editor'), (chunks, values) => {
 	// Store previous values in Undo history
@@ -1063,7 +1075,6 @@ const editor = new Editor(sel('#editor'), (chunks, values) => {
 });
 const fileDB = new AnnotationDB();
 const templates = new TemplateManager();
-const templatePicker = new TemplatePicker(templates);
 const documents = new DocumentManager(fileDB, editor);
 const undoManager = new UndoManager(editor, hist);
 
@@ -1122,11 +1133,11 @@ async function save(chunks) {
 }
 
 evt('.ed-open', 'click', e => {
-	templatePicker.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
+	templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
 evt('.ed-new', 'click', e => {
-	templatePicker.show('new', e.target, e).catch(err => addMsg(err.message, 'error'));
+	templates.show('new', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
 evt('.ed-recent', 'click', e => {
@@ -1186,17 +1197,11 @@ evtDelegated(document, '[data-open]', 'click', function () {
 
 evtDelegated(document, '.template-select', 'click', async function () {
 	try {
-		// Find and load the selected template
-		const templateId = this.dataset.template;
 		const action = this.dataset.action;
 
-		const templatesList = await templates.getAvailableTemplates();
-
-		const templateInfo = templatesList.find(t => t.id === templateId);
-
-		if (!templateInfo) {
-			return;
-		}
+		// Find and load the selected template
+		const templateInfo = await templates.getTemplateById(this.dataset.template)
+		if (!templateInfo) return;
 
 		const template = await templates.loadTemplate(templateInfo.path);
 
