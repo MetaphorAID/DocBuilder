@@ -304,13 +304,14 @@ class Editor {
 	#finishLoad(onLoaded) {
 		addMsg(_('Document Loaded'), 'success');
 
+		// Notify others
+		trg(this.dom, 'document-loaded');
+
 		// Render the UI
 		const hids = Object.keys(this.hidden);
 		this.renderHidden(hids);
 		this.render([0]);
 
-		// Notify others
-		trg(this.dom, 'document-loaded');
 		onLoaded?.();
 	}
 

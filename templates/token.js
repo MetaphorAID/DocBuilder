@@ -10,7 +10,7 @@ class TOKEN {
 	}
 
 	static initalize() {
-		// common
+		// Common
 		Locale['EMPTY'] = 'ÜRES';
 		Locale['Invalid Action'] = 'Nem végrehajtható akció';
 		Locale['Invalid Format'] = 'Hibás formátum';
@@ -40,20 +40,22 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
-		evt(editor.dom, 'document-loaded', function() {
+		evt(editor.dom, 'document-loaded', function () {
 			sel('#header').innerHTML = '';
 			sel('#footer').innerHTML = '';
 
+			// Add Normal/Table view swithcher button
 			if (!sel('header .btn-view')) {
 				const a = document.createElement('a');
 				a.href = '#';
 				a.className = 'btn btn-view';
 				a.innerHTML = _(localStorage.tableview ? 'Normal View' : 'Table View');
+
 				sel('header').appendChild(a);
 			}
 		});
 
-		document.addEventListener('click', function(e) {
+		document.addEventListener('click', function (e) {
 			const t = e.target;
 			if (!t) return;
 
@@ -66,16 +68,22 @@ class TOKEN {
 		});
 	}
 
-	static getSelect(tid, cls, val, empty_opt, opts, multiple) {
-		const s = select(val, empty_opt, opts, multiple);
+	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {
+		const s = select(val, emptyOpt, opts, multiple);
 		s.className += ' ' + cls;
 		if (tid) s.dataset.tid = tid;
+
 		return s.outerHTML;
 	}
 
 	static getLink(tid, cls, txt, tpl) {
-		return '<a href="#" class="' + cls + '"' + (tid ? ' data-tid="' + tid + '"' : '') + '>'
-			+ (tpl ? tpl.replace('@', _(txt)) : _(txt)) + '</a>';
+		const a = document.createElement('a');
+		a.href = '#';
+		a.className = cls;
+		if (tid) a.dataset.tid = tid;
+		a.innerHTML = tpl ? tpl.replace('@', _(txt)) : _(txt);
+
+		return a.outerHTML;
 	}
 }
 
