@@ -92,9 +92,9 @@ function addConfirm(message, onconfirm) {
 		`<a href="#" class="btn cancel">${_('Cancel')}</a>`;
 	evtDelegated(m, '.yes,.cancel', 'click', e => {
 		e.preventDefault();
-		this.closest('.confirm').remove();
+		e.target.closest('.confirm').remove();
 		// If Yes was clicked, execute callback
-		if (this.matches('.yes')) onconfirm();
+		if (e.target.matches('.yes')) onconfirm();
 	});
 	sel('body').appendChild(m);
 }
