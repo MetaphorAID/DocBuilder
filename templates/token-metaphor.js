@@ -268,8 +268,8 @@
 					html += TOKEN.getSelect(tid, 'split token', '', 'Split Token...', split);
 				}
 				html += TOKEN.getSelect(tid, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
-				html += TOKEN.getLink(tid, 'ins token', 'Insert Token');
-				html += TOKEN.getLink(tid, 'del token', 'Delete Token');
+				html += TOKEN.getLink(tid, 'ins token disabled', 'Insert Token');
+				html += TOKEN.getLink(tid, 'del token disabled', 'Delete Token');
 			} else {
 				s.classList.add('active');
 			}
