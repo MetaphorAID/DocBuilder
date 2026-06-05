@@ -52,7 +52,9 @@
 	Locale['Network error:'] = 'Hálózati hiba:';
 
 	function format(name, el) {
+		// Extract and normalize display text from XML/HTML elements
 		if (!el) return '&nbsp;';
+
 		switch (name) {
 			case 'metaphor':
 				return _(TOKEN.SEL_BOOL[el.textContent] || '&nbsp;');
@@ -61,13 +63,19 @@
 				if (val === 'None' || val === 'none') val = '0';
 				return INDIRECT[val] || '&nbsp;';
 			case 'meanings':
-				let c = sel('contextualIndex', el);
-				if (!c || 1 === c.textContent) return format('', sel('primary', el));
-				return format('', sel('other', el))
-					.replace(new RegExp('.*(?:^|\n)(' + c.textContent + '\\..*?)(?:\n.*|$)', 's'), '$1');
+				const idx = sel('contextualIndex', el)?.textContent;
+				if (!idx || idx === '1') return format('', sel('primary', el));
+
+				// Find the line whose numbering matches the contextual index
+				const lines = format('', sel('other', el)).split('\n');
+				return lines.find(line => line.startsWith(`${idx}.`)) || '&nbsp;';
 		}
-		return el.textContent.replaceAll('\\n', '\n').replaceAll('\\t', '\t').trim().replaceAll(/[\t ]+/g, ' ')
-			.replaceAll(/ *\n */g, '\n');
+		return el.textContent
+			.replaceAll('\\n', '\n')
+			.replaceAll('\\t', '\t')
+			.trim()
+			.replace(/[\t ]+/g, ' ')
+			.replace(/ *\n */g, '\n');
 	}
 
 	const _active = {};
@@ -78,139 +86,186 @@
 			delete _active[input.dataset.cid];
 		},
 		getValue: function (input, chunk) {
-			let x = _content[input.dataset.cid];
-			if (x) {
-				delete _content[input.dataset.cid];
-				return x;
+			const cid = input.dataset.cid;
+			const value = _content[cid];
+			if (value) {
+				delete _content[cid];
+				return value;
 			}
-			x = _active[input.dataset.cid];
-			return x ? x.documentElement.outerHTML : chunk.value;
+			return _active[cid]?.documentElement.outerHTML ?? chunk.value;
 		},
 		render: function (chunk, cid) {
-			let pr = 0;
-			for (let cid2 in _active) pr = Math.max(pr, editor.chunks[cid2].id || 0);
-			let h = '';
-			for (let i in editor.hidden) {
-				i = editor.hidden[i];
-				if ((i.id || 0) > (editor.chunks[cid].id || 0)) break;
-				if ((i.id || 0) < pr) continue;
-				if (i.name === '.mm_head') h = i.value;
+			// Find the largest active chunk Id
+			const currentId = editor.chunks[cid].id || 0;
+			let previousId = 0;
+			for (const activeCid in _active) previousId = Math.max(previousId, editor.chunks[activeCid].id || 0);
+
+			// Find the current section heading
+			let header = '';
+			for (const hidden of editor.hidden) {
+				const hiddenId = hidden.id || 0;
+
+				if ((hiddenId || 0) > currentId) break;
+				if ((hiddenId || 0) < previousId) continue;
+
+				if (hidden.name === '.mm_head') header = hidden.value;
 			}
 
-			let x = parseXml(chunk.value);
+			// Parse the XML to paragraph format
+			const x = parseXml(chunk.value);
 			_active[parseInt(cid)] = x;
-			let ep = parsePar(x);
+			const ep = parsePar(x);
+
+			// Empty paragraph handling
 			if (!ep.children.length) {
 				ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
 			} else {
 				ep.classList.add('par', 'tei');
 			}
-			if (h) ep.innerHTML = '<h4>' + h + '</h4>' + ep.innerHTML;
+
+			// Add heading
+			if (header) ep.innerHTML = '<h4>' + header + '</h4>' + ep.innerHTML;
 			return ep;
 		},
 	}
 
 	evt(editor.dom, 'change-hidden', function (e) {
+		// Find the header and print the legend
 		// The value of hids is in e.detail
-		for (const hid of e.detail) {
-			let h = editor.hidden[hid];
-			if (h.name === '.mm_header') {
-				let html = '';
-				let x = parseXml(h.value);
-				let legend = '<div class="legend">'
-					+ '<h4>' + _('Token Color Legend') + '</h4>'
-					+ '<div class="legend-item"><span class="legend-color metaphor-token"></span> ' + _('Metaphor') + '</div>'
-					+ '<div class="legend-item"><span class="legend-color indirect-token"></span> ' + _('Other Indirect Meaning')
-					+ '</div>'
-					+ '<div class="legend-item"><span class="legend-color direct-token"></span> ' + _('Direct meaning') + '</div>'
-					+ '</div>';
-				html = '<img alt="MetaphorAID logo" class="logo" src="./templates/assets/metaphor-aid.webp"' +
-					' style="height:3em"/>'
-					+ '<h2>' + selToText(x, 'title') + '</h2>'
-					+ '<h3>' + selToText(x, 'author') + '</h3>'
-					+ legend
-					+ html;
-				sel('#header').innerHTML = html;
-			}
-		}
+		const headerChunk = e.detail.map(hid => editor.hidden[hid]).find(h => h?.name === '.mm_header');
+		if (!headerChunk) return;
+		const x = parseXml(headerChunk.value);
+		const legend = `
+				<div class="legend">
+						<h4>${_('Token Color Legend')}</h4>
+						<div class="legend-item">
+								<span class="legend-color metaphor-token"></span>
+								${_('Metaphor')}
+						</div>
+						<div class="legend-item">
+								<span class="legend-color indirect-token"></span>
+								${_('Other Indirect Meaning')}
+						</div>
+						<div class="legend-item">
+								<span class="legend-color direct-token"></span>
+								${_('Direct meaning')}
+						</div>
+				</div>
+		`;
+
+		sel('#header').innerHTML = `
+				<img alt="MetaphorAID logo" class="logo" src="./templates/assets/metaphor-aid.webp" style="height:3em"/>
+				<h2>${selToText(x, 'title')}</h2>
+				<h3>${selToText(x, 'author')}</h3>
+				${legend}
+		`;
 	});
 
-	function parseXml(xml) {
-		return (new DOMParser()).parseFromString(xml, 'text/xml');
-	}
+	function getUID(xml, prefix) {
+		// Find an exisiting Uniquie ID or generate one
+		let n = 0;
+		let id = `${prefix}_${++n}`;
 
-	function getUID(xml, prefix, start) {
-		if (!sel('[*|id="' + prefix + (start ? '_' + start : '') + '"]', xml)) {
-			return prefix + (start ? '_' + start : '');
+		// Using namespace-aware CSS selector
+		while (sel(`[*|id="${id}"]`, xml)) {
+			id = `${prefix}_${++n}`;
 		}
-		return getUID(xml, prefix, start ? start + 1 : 2);
+
+		return id;
 	}
 
-	function delNode(s) {
-		if (s.previousSibling && s.previousSibling.nodeName === '#text') s.previousSibling.remove();
-		s.remove();
+	function delNode(node) {
+		const prev = node.previousSibling;
+		if (prev?.nodeName === '#text') prev.remove();
+	}
+
+	function getTokenClass(token) {
+		// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
+		let otherIndirect = sel('otherIndirect', token)?.textContent.trim();
+		if (['None', 'none'].includes(otherIndirect)) otherIndirect = '0';
+
+		const metaphor = sel('metaphor', token)?.textContent.trim();
+		if (metaphor === 'True') return 'metaphor-token';
+		if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') return 'indirect-token';
+
+		return 'direct-token';
+	}
+
+	function createConfigRow(tableView) {
+		const row = document.createElement(tableView ? 'tr' : 'span');
+		row.className = 'cfg';
+		row.innerHTML = tableView ? '<td colspan="42" class="as-parent">⚙</td>' : '⚙';
+
+		return row;
+	}
+
+	function renderToken(token, tid, tableView) {
+		// Create word element
+		const wordEl = document.createElement(tableView ? 'tr' : 'span');
+		wordEl.className = 't';
+		wordEl.dataset.tid = tid;
+
+		// Add joins if needed
+		const joinType = token.getAttribute('join') || '';
+		if (['left', 'both'].includes(joinType)) wordEl.classList.add('left');
+		if (['right', 'both'].includes(joinType)) wordEl.classList.add('right');
+
+		// Construct tableView for word
+		const word = sel('word', token);
+		if (!word) return null;
+		if (tableView) {
+			for (const field in COLS) {
+				const tokenEl = document.createElement('td');
+				tokenEl.className = 'as-parent';
+				tokenEl.innerHTML = format(field, sel(field, token)).replaceAll('\n', '<br>');
+				wordEl.appendChild(tokenEl);
+			}
+		} else {
+			wordEl.innerHTML = word.innerHTML || '&nbsp;';
+		}
+
+		wordEl.classList.add(getTokenClass(token));
+		return wordEl;
+	}
+
+	function renderSentence(sentence, sid, tableView) {
+		// Create and setup sentence element
+		let sentenceEl = document.createElement(tableView ? 'table' : 'div');
+		sentenceEl.className = 's';
+		sentenceEl.dataset.sid = sid;
+		if (tableView) {
+			sentenceEl.innerHTML = '<tbody><tr><th>' + Object.values(COLS).join('</th><th>') + '</th></tr></tbody>'
+			// Change from <table> to <tbody>
+			sentenceEl = sentenceEl.children[0];
+		}
+		// Put each token into the sentence element
+		each('token', (token, tid) => {
+			const renderedToken = renderToken(token, tid, tableView);
+
+			if (renderedToken)
+				sentenceEl.appendChild(renderedToken);
+		}, sentence);
+
+		// Create the config row for the sentence
+		sentenceEl.appendChild(createConfigRow(tableView));
+
+		return tableView ? sentenceEl.parentNode : sentenceEl;
 	}
 
 	function parsePar(dom) {
-		let tv = localStorage.tableview;
-		let ep = document.createElement('div');
-		if (tv) ep.className = 'table';
-		each('s', function (s, si) {
-			let es = document.createElement(tv ? 'table' : 'div');
-			es.className = 's';
-			es.dataset.sid = si;
-			if (tv) {
-				es.innerHTML = '<tbody><tr><th>' + Object.values(COLS).join('</th><th>') + '</th></tr></tbody>'
-				es = es.children[0];
-			}
-			each('token', function (w, wi) {
-				let ew = document.createElement(tv ? 'tr' : 'span');
-				let j = w.getAttribute('join') || '';
-				ew.className = 't';
-				if (['left', 'both'].indexOf(j) !== -1) ew.className += ' left';
-				if (['right', 'both'].indexOf(j) !== -1) ew.className += ' right';
-				ew.dataset.tid = wi;
-				let tkn = sel('word', w);
-				if (!tkn) return;
-				if (tv) {
-					for (const f in COLS) {
-						let et = document.createElement('td');
-						let el = sel(f, w);
-						et.innerHTML = format(f, el).replaceAll('\n', '<br>');
-						et.className = 'as-parent';
-						ew.appendChild(et);
-					}
-				} else {
-					ew.innerHTML = tkn.innerHTML || '&nbsp;';
-				}
-				// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
-				let metaphorEl = sel('metaphor', w);
-				let otherIndirectEl = sel('otherIndirect', w);
-				let metaphor = metaphorEl ? metaphorEl.textContent.trim() : '';
-				let otherIndirect = otherIndirectEl ? otherIndirectEl.textContent.trim() : '';
-				if (otherIndirect === 'None' || otherIndirect === 'none') otherIndirect = '0';
+		// Create paragraph element
+		const tableView = localStorage.tableview;
+		const root = document.createElement('div');
+		if (tableView) root.className = 'table';
 
-				ew.classList.remove('metaphor-token', 'indirect-token', 'direct-token');
-				if (metaphor === 'True') {
-					ew.classList.add('metaphor-token');
-				} else if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') {
-					ew.classList.add('indirect-token');
-				} else {
-					ew.classList.add('direct-token');
-				}
-				es.appendChild(ew);
-			}, s);
-			let ew = document.createElement(tv ? 'tr' : 'span');
-			ew.className = 'cfg';
-			ew.innerHTML = tv ? '<td colspan="42" class="as-parent">⚙</td>' : '⚙';
-			es.appendChild(ew);
-			ep.appendChild(tv ? es.parentNode : es);
-		}, dom);
-		return ep;
+		// Put sentences into the paragraph element
+		each('s', (sentence, sid) => root.appendChild(renderSentence(sentence, sid, tableView)), dom);
+
+		return root;
 	}
 
 	function savePar(cids) {
-		let hdata = {};
+		const hdata = {};
 		editor.onchange(cids, hdata);
 	}
 
@@ -544,10 +599,10 @@
 			let tkn = sel('word', xt);
 			tkn.setAttribute('modified', 'True');
 			let xt2 = parseXml(xt.outerHTML).documentElement;
-			sel('word', xt2).textContent = tkn.textContent.slice(val);
+			sel('word', xt2).textContent = tkn.textContent.slice(Number(val));
 			let id1 = xt.getAttribute('xml:id');
 			if (id1) xt2.setAttribute('xml:id', getUID(x, id1.split('_')[0]));
-			tkn.textContent = tkn.textContent.slice(0, val);
+			tkn.textContent = tkn.textContent.slice(0, Number(val));
 			xs.insertBefore(xt2, xt.nextSibling);
 			if (xt.previousSibling && xt.previousSibling.nodeName === '#text') {
 				xs.insertBefore(x.createTextNode(xt.previousSibling.textContent), xt.nextSibling);
@@ -679,7 +734,7 @@
 		return xml;
 	}
 
-	// Add new method for creating new metaphor documents
+// Add new method for creating new metaphor documents
 	TOKEN.new = function () {
 		return new Promise((resolve, reject) => {
 			let tt = ttip(sel('header'), null, true);

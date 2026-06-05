@@ -41,6 +41,10 @@ function trg(target, eventName, dom) {
 	}, dom);
 }
 
+function parseXml(xml) {
+	return (new DOMParser()).parseFromString(xml, 'text/xml');
+}
+
 function encXml(t) {
 	return String(t)
 		.replace('&', '&amp;')
