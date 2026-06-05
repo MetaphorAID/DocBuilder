@@ -334,7 +334,7 @@
 		}
 
 		// Show the tooltip a dropdown menu
-		let tt = ttip(ctx.target, e);
+		let tt = ttip(target, e);
 		tt.classList.add('dropdown');
 		tt.innerHTML = html;
 	}
@@ -585,7 +585,7 @@
 
 		// Cancel new document creation
 		if (target && target.matches('.new-cancel')) {
-			trg(t.closest('.tooltip'), 'close');
+			trg(target.closest('.tooltip'), 'close');
 			return;
 		}
 
@@ -593,27 +593,28 @@
 		if (!ctx) return;
 
 		// Open tooltip
-		if (t.matches('.t, .cfg')) return handleTokenContextMenu(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.t, .cfg'))
+			return handleTokenContextMenu(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
-		if (t.matches('.show.info')) return handleEditTokenInfo(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.show.info')) return handleEditTokenInfo(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
-		if (t.matches('.show.meaning')) return handleEditMeaning(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.show.meaning')) return handleEditMeaning(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
-		if (t.matches('.show.reason')) return handleEditReason(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.show.reason')) return handleEditReason(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
-		if (t.matches('.save.info,.save.meaning,.save.reason'))
+		if (ctx.target.matches('.save.info,.save.meaning,.save.reason'))
 			return handleSaveTokenFields(e, ctx.target, ctx.tokenXml, ctx.paragraphId);
 
-		if (t.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml, ctx.tokenId);
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml, ctx.tokenId);
 
-		if (t.matches('.ins-save.token'))
+		if (ctx.target.matches('.ins-save.token'))
 			return handleSaveInsertedToken(e, ctx.target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml);
 
-		if (t.matches('.del.token')) return handleDeleteToken(ctx.paragraphId, ctx.tokenXml);
+		if (ctx.target.matches('.del.token')) return handleDeleteToken(ctx.paragraphId, ctx.tokenXml);
 
-		if (t.matches('.set.content')) return handleSetContent(e, ctx.sentence, ctx.tokenId);
+		if (ctx.target.matches('.set.content')) return handleSetContent(e, ctx.sentence, ctx.tokenId);
 
-		if (t.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
+		if (ctx.target.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
 	});
 
 	document.addEventListener('change', function (e) {
