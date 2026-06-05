@@ -328,20 +328,9 @@ class Editor {
 		// Dynamically load the required JS if not already loaded and wait for it to be loeaded
 		const scripts = data.js || [];
 
-		if (!scripts.length) return onSuccess();
-
-		let remaining = scripts.length;
-		const done = () => {
-			if (--remaining === 0) onSuccess();
-		};
-
-		for (const js of scripts) {
-			loadScript(js).then(done).catch(err => {
-				addMsg(err.message, 'error');
-				// Continue else the editor hangs on the first error
-				done();
-			});
-		}
+		scripts.reduce((p, js) => p.then(() =>
+			loadScript(js).catch(err => addMsg(err.message, 'error'))), Promise.resolve())
+			.then(onSuccess);
 	}
 
 	#reset(data, store_filler) {
