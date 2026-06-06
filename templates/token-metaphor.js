@@ -666,7 +666,7 @@
 		if (ctx.target.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
 	});
 
-	function handleSplitToken(e, target, paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
+	function handleSplitToken(paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
 		const index = Number(value);
 		if (isNaN(index) || index < 0 || index > text.length) return;
 
@@ -879,7 +879,7 @@
 		if (!ctx) return;
 
 		if (target.matches('.split.token'))
-			return handleSplitToken(e, target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.value)
+			return handleSplitToken(target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.value)
 
 		if (target.matches('.join.token'))
 			return handleJoinToken(ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId, ctx.value)
