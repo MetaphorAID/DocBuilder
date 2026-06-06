@@ -307,6 +307,7 @@
 
 		return {
 			...paragraphCtx,
+			target,
 			sentence,
 			sentenceId,
 			sentenceXml,
