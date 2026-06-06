@@ -273,7 +273,7 @@
 		//TODO: update from API
 	}
 
-	function getContext(target) {
+	function getContextClick(target) {
 		// Only handle clicks within paragraph containers
 		const paragraph = target.closest('.par.tei');
 		if (!paragraph) return null;
@@ -579,7 +579,7 @@
 			});
 	}
 
-	document.addEventListener('click', function (e) {
+	document.addEventListener('click', e => {
 		let target = e.target;
 		if (!target) return;
 
@@ -589,7 +589,7 @@
 			return;
 		}
 
-		const ctx = getContext(target);
+		const ctx = getContextClick(target);
 		if (!ctx) return;
 
 		// Open tooltip
@@ -617,186 +617,288 @@
 		if (ctx.target.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
 	});
 
-	document.addEventListener('change', function (e) {
-		let t = e.target;
-		if (!t) return;
-
+	// TODO is there any real difference between getContextClick() and this?
+	function getContextChange(target) {
 		// Only handle changes within paragraph containers
-		let c = t.closest('.par.tei');
-		if (!c) return;
+		const paragraph = target.closest('.par.tei');
+		if (!paragraph) return null;
 
 		// Only handle changes on elements inside sentences (.s)
-		if (!t.closest('.s')) return;
+		const sentence = target.closest('.s');
+		if (!sentence) return null;
 
-		let cid = parseInt(c.dataset.cid);
-		let x = _active[cid];
-		let s = t.closest('.s');
-		let sid = parseInt(s.dataset.sid);
-		let xsl = find('s,l', x);
-		let xs = xsl[sid];
-		let tid = t.dataset.tid;
-		let xtl = find('token', xs);
-		let xt = tid ? xtl[tid] : false;
+		const paragraphId = Number(paragraph.dataset.cid);
+		const sentenceId = Number(sentence.dataset.sid);
 
-		let val = t.dataset.value || t.value;
-		if (t.classList.contains('multiple')) val = JSON.parse(t.dataset.value);
+		const paragraphXml = _active[paragraphId];
+		const sentenceXml = find('s,l', paragraphXml)[sentenceId];
 
-		if (t.matches('.split.token')) {
-			if (val === '') return;
-			let tkn = sel('word', xt);
-			tkn.setAttribute('modified', 'True');
-			let xt2 = parseXml(xt.outerHTML).documentElement;
-			sel('word', xt2).textContent = tkn.textContent.slice(Number(val));
-			let id1 = xt.getAttribute('xml:id');
-			if (id1) xt2.setAttribute('xml:id', getUID(x, id1.split('_')[0]));
-			tkn.textContent = tkn.textContent.slice(0, Number(val));
-			xs.insertBefore(xt2, xt.nextSibling);
-			if (xt.previousSibling && xt.previousSibling.nodeName === '#text') {
-				xs.insertBefore(x.createTextNode(xt.previousSibling.textContent), xt.nextSibling);
-			}
-			refresh([cid]);
-			savePar([cid]);
+		const tokenId = target.dataset.tid;
+		const tokenXml = tokenId ? find('token', sentenceXml)[tokenId] : null;
+
+		let value = target.dataset.value || target.value;
+		if (target.classList.contains('multiple')) value = JSON.parse(target.dataset.value);
+		if (value === '') return null;
+
+		return {target, paragraph, sentence, paragraphId, sentenceId, paragraphXml, sentenceXml, tokenId, tokenXml, value};
+	}
+
+	function handleSplitToken(e, target, paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
+		const index = Number(value);
+		if (isNaN(index) || index < 0 || index > text.length) return;
+
+		// Select token to modify
+		const wordEl = sel('word', tokenXml);
+		const text = wordEl.textContent;
+
+		// Split text
+		const left = text.slice(0, index);
+		const right = text.slice(index);
+
+		// Clone the original token XML
+		const newTokenXml = parseXml(tokenXml.outerHTML).documentElement;
+
+		// Create new unique ID, store value and note modified status
+		const baseId = tokenXml.getAttribute('xml:id')?.split('_')[0];
+		if (baseId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
+
+		const newWordEl = sel('word', newTokenXml);
+
+		// Update original + new token
+		wordEl.textContent = left;
+		wordEl.setAttribute('modified', 'True');
+
+		newWordEl.textContent = right;
+		newWordEl.setAttribute('modified', 'True');
+
+		// Insertion point (insert after current token)
+		const referenceNode = tokenXml.nextSibling;
+
+		// Preserve whitespace
+		const previousText = tokenXml.previousSibling?.nodeName === '#text' ? tokenXml.previousSibling.textContent : '';
+
+		// Insert new token and reinsert whitespace
+		sentenceXml.insertBefore(newTokenXml, referenceNode);
+		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
+
+		// Save changes and refresh UI
+		refresh([paragraphId]);
+		savePar([paragraphId]);
+	}
+
+	function handleJoinToken(paragraphXml, paragraphId, sentenceXml, tokenXml, tokenId, value) {
+		// Find neighbouring token
+		let offset = value === '0' ? -1 : 1;
+		let tokenXml2 = find('token', sentenceXml)[Number(tokenId) + offset];
+		if (!tokenXml2) {
+			addMsg(_('Invalid Action'));
 			return;
 		}
 
-		if (t.matches('.join.token')) {
-			if (val === '') return;
-			let off = val === '0' ? -1 : 1;
-			let xt2 = xtl[parseInt(tid) + off];
-			if (!xt2) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			let u = off > 0 ? [xt, xt2] : [xt2, xt];
-			let tkn = sel('word', u[0]);
-			tkn.setAttribute('modified', 'True');
-			tkn.textContent = format('', sel('word', u[0])) + format('', sel('word', u[1]));
-			let id2 = u[1].getAttribute('xml:id').split('_');
-			delNode(u[1]);
-			let id1 = u[0].getAttribute('xml:id').split('_');
-			if (id1.length > 1) {
-				if (id2.length > 1) {
-					u[0].setAttribute('xml:id', '');
-					u[0].setAttribute('xml:id', getUID(x, id1[0]));
-				} else {
-					u[0].setAttribute('xml:id', id2[0]);
-				}
-			}
-			refresh([cid]);
-			savePar([cid]);
-			return;
-		}
+		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
+		const keepWord = sel('word', keepToken);
+		const removeWord = sel('word', removeToken);
 
-		if (t.matches('.split.sent')) {
-			if (val === '') return;
-			let xt2 = xtl[parseInt(tid) + (val === '0' ? 0 : 1)];
-			if (!xt2 || xt2 === xtl[0]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			let indent = xs.previousSibling && xs.previousSibling.nodeName === '#text' ? xs.previousSibling.textContent : '';
-			xs.setAttribute('modified', 'True');
-			xs.insertBefore(x.createElement('split'), xt2);
-			let xe = x.documentElement;
-			let id = xs.getAttribute('xml:id').split('_')[0];
-			xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
-				, indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName + (id ? ' xml:id="'
-				+ getUID(x, id) + '"' : '') + ' modified="True"> $1');
-			refresh([cid]);
-			savePar([cid]);
-			return;
-		}
+		// Join text
+		keepWord.setAttribute('modified', 'True');
+		keepWord.textContent = format('', keepWord) + format('', removeWord);
 
-		if (t.matches('.join.sent')) {
-			if (val === '') return;
-			let off = val === '0' ? -1 : 1;
-			let u, cids;
-			if (xsl[sid + off]) {
-				u = off > 0 ? [xs, xsl[sid + off]] : [xsl[sid + off], xs];
-				cids = [cid];
+		// TODO Investigate the ID generation
+		// Update IDs and remove second token
+		const id1 = keepToken.getAttribute('xml:id').split('_');
+		const id2 = removeToken.getAttribute('xml:id').split('_');
+		delNode(removeToken);
+
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				keepToken.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
 			} else {
-				if (!_active[cid + off]) {
-					let e = editor.renderChunk(cid + off);
-					if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
-				}
-				if (!_active[cid + off]) {
-					addMsg(_('Invalid Action'));
-					return;
-				}
-				u = off > 0 ? [xs, sel('s', _active[cid + off])] : [sel('s:last-of-type', _active[cid + off]), xs];
-				cids = off > 0 ? [cid, cid + off] : [cid + off, cid];
+				keepToken.setAttribute('xml:id', id2[0]);
 			}
-			if (!u[0] || !u[1]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			u[0].setAttribute('modified', 'True');
-			u[0].innerHTML = u[0].innerHTML.replace(/[ \r\n\t]+$/, '') + u[1].innerHTML;
-			let id2 = u[1].getAttribute('xml:id').split('_');
-			delNode(u[1]);
-			let id1 = u[0].getAttribute('xml:id').split('_');
-			if (id1.length > 1) {
-				if (id2.length > 1) {
-					u[0].setAttribute('xml:id', '');
-					u[0].setAttribute('xml:id', getUID(x, id1[0]));
-				} else {
-					u[0].setAttribute('xml:id', id2[0]);
-				}
-			}
-			refresh([cids[0]]);
-			savePar(cids);
+		}
+
+		// Save changes and refresh UI
+		refresh([paragraphId]);
+		savePar([paragraphId]);
+	}
+
+	function handleSplitSentence(paragraphXml, paragraphId, sentenceXml, tokenId, value) {
+		// Determine split point
+		const tokenNodes = find('token', sentenceXml);
+		const offset = value === '0' ? 0 : 1;
+		const splitToken = tokenNodes[Number(tokenId) + offset];
+		if (!splitToken || splitToken === tokenNodes[0]) {
+			addMsg(_('Invalid Action'));
 			return;
 		}
 
-		if (t.matches('.move.sent')) {
-			if (val === '') return;
-			let off = val === '0' ? -1 : 1;
-			if (!_active[cid + off]) {
-				let e = editor.renderChunk(cid + off);
-				if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
+		// Preserve indentation
+		const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+		// Mark sentence and insert split marker
+		sentenceXml.setAttribute('modified', 'True');
+		sentenceXml.insertBefore(paragraphXml.createElement('split'), splitToken);
+
+		// Create new sentence ID
+		const root = paragraphXml.documentElement;
+		const idBase = sentenceXml.getAttribute('xml:id').split('_')[0];
+		const newSentence = `</${sentenceXml.nodeName}>` + indent + `<${sentenceXml.nodeName}`
+			+ (idBase ? ` xml:id="${getUID(paragraphXml, idBase)}"` : '') + ' modified="True"> ';
+
+		// Replace marker with sentence boundary
+		root.innerHTML = root.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/, indent + newSentence + '$1');
+
+		// Save changes and refresh UI
+		refresh([paragraphId]);
+		savePar([paragraphId]);
+	}
+
+	function handleJoinSentence(paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+		// Determine direction
+		const sentences = find('s,l', paragraphXml);
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
+
+
+		let keepSentence;
+		let removeSentence;
+		let paragraphIds;
+
+		// Determine survivor and removed node
+		const adjacentSentence = sentences[sentenceId + offset];
+		if (adjacentSentence) {
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, adjacentSentence] : [adjacentSentence, sentenceXml];
+			paragraphIds = [paragraphId];
+		} else {
+			const adjacentParagraphId = paragraphId + offset;
+			if (!_active[adjacentParagraphId]) {
+				let chunk = editor.renderChunk(adjacentParagraphId);
+				if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
 			}
-			if (!_active[cid + off] || (off > 0 && xsl.length > sid + 1) || (off < 0 && sid > 0)) {
+			if (!_active[adjacentParagraphId]) {
 				addMsg(_('Invalid Action'));
 				return;
 			}
-			let x2 = _active[cid + off].documentElement
-			if (off > 0) {
-				x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)</, '$1' + xs.outerHTML + '$1<');
-			} else {
-				let indent = xs.previousSibling
-				&& xs.previousSibling.nodeName === '#text' ? xs.previousSibling.textContent : '';
-				x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)$/, indent + xs.outerHTML + '$1');
-			}
-			delNode(xs);
-			savePar(off > 0 ? [cid, cid + off] : [cid + off, cid]);
+
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, sel('s', _active[adjacentParagraphId])]
+				: [sel('s:last-of-type', _active[adjacentParagraphId]), sentenceXml];
+			paragraphIds = joinRight ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId];
 		}
+		if (!keepSentence || !removeSentence) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+
+		// Merge sentences
+		keepSentence.setAttribute('modified', 'True');
+		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
+
+
+		// Update IDs
+		const id1 = keepSentence.getAttribute('xml:id').split('_');
+		const id2 = removeSentence.getAttribute('xml:id').split('_');
+
+		delNode(removeSentence);
+
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				keepSentence.setAttribute('xml:id', '');
+				keepSentence.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
+			} else {
+				keepSentence.setAttribute('xml:id', id2[0]);
+			}
+		}
+
+		refresh([paragraphIds[0]]);
+		savePar(paragraphIds);
+	}
+
+	function handleMoveSentence(paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+		// Determine destination paragraph
+		const moveToNextParagraph = value !== '0';
+		const offset = moveToNextParagraph ? 1 : -1;
+		const adjacentParagraphId = paragraphId + offset;
+
+		// Ensure target paragraph is loaded
+		if (!_active[adjacentParagraphId]) {
+			const chunk = editor.renderChunk(adjacentParagraphId);
+			if (chunk) paragraph.parentNode.insertBefore(chunk, moveToNextParagraph ? paragraph.nextSibling : paragraph);
+		}
+
+		// Validate move
+		const isLastSentence = sentenceId === find('s,l', paragraphXml).length - 1;
+		const isFirstSentence = sentenceId === 0;
+		if (!_active[adjacentParagraphId] || (moveToNextParagraph && !isLastSentence) || (offset < 0 && !isFirstSentence)) {
+			addMsg(_('Invalid Action'));
+			return;
+		}
+
+		// Move sentence
+		const targetParagraph = _active[adjacentParagraphId].documentElement
+		if (moveToNextParagraph) {
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)</, '$1' + sentenceXml.outerHTML + '$1<');
+		} else {
+			const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)$/, indent + sentenceXml.outerHTML + '$1');
+		}
+		delNode(sentenceXml);
+
+		// Save changes
+		savePar(moveToNextParagraph ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId]);
+	}
+
+	document.addEventListener('change', function (e) {
+		let target = e.target;
+		if (!target) return;
+
+		const ctx = getContextChange(target);
+		if (!ctx) return;
+
+		if (target.matches('.split.token'))
+			return handleSplitToken(e, target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.value)
+
+		if (target.matches('.join.token'))
+			return handleJoinToken(ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId, ctx.value)
+
+		if (target.matches('.split.sent'))
+			return handleSplitSentence(ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenId, ctx.value);
+
+		if (target.matches('.join.sent'))
+			return handleJoinSentence(ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.sentenceId,
+				ctx.value);
+
+		if (target.matches('.move.sent'))
+			return handleMoveSentence(ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.sentenceId,
+				ctx.value);
 	});
 
 	function normalizeDocumentTitle(xml, filename) {
-		let title = filename.replace(/\.xml$/i, '');
+		// Derive a title from the filename
+		const title = filename.replace(/\.xml$/i, '');
 		if (!title) return xml;
-		if (/<title\b[^>]*>/i.test(xml)) {
-			return xml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '<title>' + encXml(title) + '</title>');
-		}
-		return xml;
+		// If there is a title tag replace with the value of title else return the XML unchanged
+		return xml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${encXml(title)}</title>`);
 	}
 
-// Add new method for creating new metaphor documents
 	TOKEN.new = function () {
-		return new Promise((resolve, reject) => {
-			let tt = ttip(sel('header'), null, true);
-			tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
-				'<input type="text" name="filename" class="input" placeholder="' + _('File Name') + '" value="uj-metafora-'
-				+ new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.xml">' +
-				'<input type="url" name="api" class="input" placeholder="API URL" value="'
-				+ (localStorage['metaphor_api'] || '') + '">' +
-				'<input type="password" name="token" class="input" placeholder="API Token" value="'
-				+ (localStorage['metaphor_token'] || '') + '">' +
-				'<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>' +
-				'<div class="center">' +
-				'<a href="#" class="btn metaphor-new-submit">' + _('Submit') + '</a>' +
-				'<a href="#" class="btn metaphor-new-cancel">' + _('Cancel') + '</a>' +
-				'</div>';
+		// Create new metaphor documents
+		return new Promise((resolve) => {
+			const tt = ttip(sel('header'), null, true);
+
+			const defaultFilename = 'uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_')
+				.replace(/Z$/, '') + '.xml';
+
+			tt.innerHTML = `<h3 style="text-align: center;">${_('New Text for Metaphor Detection')}</h3>
+			<input type="text" name="filename" class="input" placeholder="${_('File Name')}" value="${defaultFilename}">
+			<input type="url" name="api" class="input" placeholder="API URL" value="${localStorage['metaphor_api'] || ''}">
+			<input type="password" name="token" class="input" placeholder="API Token"
+			 value="${localStorage['metaphor_token'] || ''}">
+			<textarea name="content" class="input" placeholder="${_('Content')}"></textarea>
+			<div class="center">
+				<a href="#" class="btn metaphor-new-submit">${_('Submit')}</a>
+				<a href="#" class="btn metaphor-new-cancel">${_('Cancel')}</a>
+			</div>`;
 
 			// Set minimum height for the modal to fit content
 			tt.style.minHeight = '400px';
@@ -804,67 +906,74 @@
 			tt.style.flexDirection = 'column';
 
 			// Handle the submit button
-			let submitBtn = sel('.metaphor-new-submit', tt);
-			let cancelBtn = sel('.metaphor-new-cancel', tt);
+			const submitBtn = sel('.metaphor-new-submit', tt);
+			const cancelBtn = sel('.metaphor-new-cancel', tt);
 
-			cancelBtn.addEventListener('click', function () {
+			cancelBtn.onclick = () => {
 				trg(tt, 'close');
 				resolve(null);
-			});
+			};
 
-			submitBtn.addEventListener('click', function () {
+			submitBtn.onclick = async () => {
 				let filename = sel('[name="filename"]', tt).value.trim();
-				let api = sel('[name="api"]', tt).value.trim();
-				let token = sel('[name="token"]', tt).value.trim();
-				let content = sel('[name="content"]', tt).value.trim();
+				const api = sel('[name="api"]', tt).value.trim();
+				const token = sel('[name="token"]', tt).value.trim();
+				const content = sel('[name="content"]', tt).value.trim();
 
-				if (!filename || !content || !api) {
+				if (!filename || !api || !content) {
 					addMsg(_('Please fill in all fields'), 'error', tt);
 					return;
 				}
-				if (!filename.toLowerCase().endsWith('.xml')) {
-					filename += '.xml';
-				}
+
+				if (!filename.toLowerCase().endsWith('.xml')) filename += '.xml';
 
 				localStorage['metaphor_api'] = api;
 				localStorage['metaphor_token'] = token;
 
 				// Show loading state
-				let originalText = submitBtn.textContent;
+				const originalText = submitBtn.textContent;
 				submitBtn.textContent = _('Processing...');
 				submitBtn.classList.add('disabled');
 
-				fetch(api, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json; charset=utf-8',
-						'Authorization': 'Bearer ' + token
-					},
-					body: JSON.stringify({text: content})
-				}).then(r => {
+				try {
+					const r = await fetch(api, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json; charset=utf-8',
+							'Authorization': 'Bearer ' + token
+						},
+						body: JSON.stringify({text: content})
+					});
+
 					// Check for authentication errors first
 					if (r.status === 401) {
-						return Promise.reject(new Error(_('Invalid bearer token')));
-					}
-					if (!r.ok) {
-						return r.json().then(err => {
-							return Promise.reject(new Error(err.detail || err.message || _('API server error')));
-						}).catch(e => {
-							// If JSON parsing fails, return status error
-							return Promise.reject(new Error(_('API server error')));
-						});
-					}
-					return r.text();
-				}).then(function (data) {
-					if (typeof data == 'string') {
-						trg(tt, 'close');
-						resolve([filename, normalizeDocumentTitle(data, filename)]);
-					} else {
-						addMsg(data.detail || _('unknown error'), 'error', tt);
+						addMsg(_('Invalid bearer token'), 'error', tt);
+						// Reset button state
 						submitBtn.textContent = originalText;
 						submitBtn.classList.remove('disabled');
+						return;
 					}
-				}).catch(err => {
+
+					if (!r.ok) {
+						// If JSON parsing fails, return status error
+						let msg = _('API server error');
+						try {
+							const err = await r.json();
+							msg = err.detail || err.message || msg;
+						} catch {
+						}
+						addMsg(msg, 'error', tt);
+						// Reset button state
+						submitBtn.textContent = originalText;
+						submitBtn.classList.remove('disabled');
+						return;
+					}
+
+					const data = await r.text();
+
+					trg(tt, 'close');
+					resolve([filename, normalizeDocumentTitle(data, filename)]);
+				} catch (err) {
 					// Catch network errors and invalid bearer token errors
 					let errorMsg = err.message;
 					if (err.name === 'TypeError') {
@@ -875,8 +984,8 @@
 					// Reset button state
 					submitBtn.textContent = originalText;
 					submitBtn.classList.remove('disabled');
-				});
-			});
+				}
+			};
 		});
 	};
 })();
