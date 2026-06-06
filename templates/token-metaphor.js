@@ -273,28 +273,77 @@
 		//TODO: update from API
 	}
 
-	function getContextClick(target) {
-		// Only handle clicks within paragraph containers
+	function resolveParagraphContext(target) {
+		// Only handle events within paragraph containers
 		const paragraph = target.closest('.par.tei');
 		if (!paragraph) return null;
 
-		// Normalize target for table view
-		if (localStorage.tableview && target.classList.contains('as-parent')) target = target.parentNode;
+		const paragraphId = Number(paragraph.dataset.cid);
+		const paragraphXml = _active[paragraphId];
 
-		// Only handle clicks on elements inside sentences (.s)
+		if (!paragraphXml) return null;
+
+		return {paragraph, paragraphId, paragraphXml};
+	}
+
+	function resolveTokenContext(target, paragraphCtx, normaliseTarget = false) {
+
+		// Normalize target for table view
+		if (normaliseTarget && localStorage.tableview && target.classList.contains('as-parent')) target = target.parentNode;
+
+		// Only handle events on elements inside sentences (.s)
 		const sentence = target.closest('.s');  // TODO Normalized s before return or unnormalised in the original code?
 		if (!sentence) return null;
 
-		const paragraphId = Number(paragraph.dataset.cid);
 		const sentenceId = Number(sentence.dataset.sid);
+		const sentences = find('s,l', paragraphCtx.paragraphXml);
+		const sentenceXml = sentences[sentenceId];
 
-		const paragraphXml = _active[paragraphId];
-		const sentenceXml = find('s,l', paragraphXml)[sentenceId];
+		if (!sentenceXml) return null;
 
 		const tokenId = target.dataset.tid;
-		const tokenXml = tokenId ? find('token', sentenceXml)[tokenId] : null;
+		const tokens = find('token', sentenceXml);
+		const tokenXml = tokenId ? tokens[Number(tokenId)] : null;
 
-		return {target, paragraph, sentence, paragraphId, sentenceId, paragraphXml, sentenceXml, tokenId, tokenXml};
+		return {
+			...paragraphCtx,
+			sentence,
+			sentenceId,
+			sentenceXml,
+			tokenId,
+			tokenXml
+		};
+	}
+
+	function resolveChangeValue(target) {
+		let value = target.dataset.value ?? target.value;
+
+		if (target.classList.contains('multiple')) {
+			try {
+				value = JSON.parse(target.dataset.value);
+			} catch {
+				value = null;
+			}
+		}
+
+		if (value === '') return null;
+
+		return value;
+	}
+
+	function resolveContext(target, {includeValue = false, normaliseTarget = false} = {}) {
+		const paragraphCtx = resolveParagraphContext(target);
+		if (!paragraphCtx) return null;
+
+		const tokenCtx = resolveTokenContext(target, paragraphCtx, normaliseTarget);
+		if (!tokenCtx) return null;
+
+		if (!includeValue) return tokenCtx;
+
+		const value = resolveChangeValue(target);
+		if (value == null) return null;
+
+		return {...tokenCtx, value};
 	}
 
 	function handleTokenContextMenu(e, target, tokenXml, tokenId, sentence) {
@@ -589,7 +638,7 @@
 			return;
 		}
 
-		const ctx = getContextClick(target);
+		const ctx = resolveContext(target, {normaliseTarget: true});
 		if (!ctx) return;
 
 		// Open tooltip
@@ -616,32 +665,6 @@
 
 		if (ctx.target.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
 	});
-
-	// TODO is there any real difference between getContextClick() and this?
-	function getContextChange(target) {
-		// Only handle changes within paragraph containers
-		const paragraph = target.closest('.par.tei');
-		if (!paragraph) return null;
-
-		// Only handle changes on elements inside sentences (.s)
-		const sentence = target.closest('.s');
-		if (!sentence) return null;
-
-		const paragraphId = Number(paragraph.dataset.cid);
-		const sentenceId = Number(sentence.dataset.sid);
-
-		const paragraphXml = _active[paragraphId];
-		const sentenceXml = find('s,l', paragraphXml)[sentenceId];
-
-		const tokenId = target.dataset.tid;
-		const tokenXml = tokenId ? find('token', sentenceXml)[tokenId] : null;
-
-		let value = target.dataset.value || target.value;
-		if (target.classList.contains('multiple')) value = JSON.parse(target.dataset.value);
-		if (value === '') return null;
-
-		return {target, paragraph, sentence, paragraphId, sentenceId, paragraphXml, sentenceXml, tokenId, tokenXml, value};
-	}
 
 	function handleSplitToken(e, target, paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
 		const index = Number(value);
@@ -852,7 +875,7 @@
 		let target = e.target;
 		if (!target) return;
 
-		const ctx = getContextChange(target);
+		const ctx = resolveContext(target, {includeValue: true});
 		if (!ctx) return;
 
 		if (target.matches('.split.token'))
