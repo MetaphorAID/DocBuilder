@@ -466,8 +466,7 @@
 
 	function handleEditReason(e, tokenXml, tokenId, sentence) {
 		let tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += `<textarea name="reasoning" class="input">
-			${encXml(format('', sel('reasoning', tokenXml)))}</textarea>
+		tt.innerHTML += `<textarea name="reasoning" class="input">${encXml(format('', sel('reasoning', tokenXml)))}</textarea>
       <div class="center">${TOKEN.getLink(tokenId, 'btn reason save', 'Save')}</div>`;
 
 		// let tt = ttip(sentence, e);
