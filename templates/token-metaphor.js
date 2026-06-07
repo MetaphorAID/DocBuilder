@@ -905,7 +905,7 @@
 		return xml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${encXml(title)}</title>`);
 	}
 
-	TOKEN.new = function () {
+	Editor.registerNewDocumentType('metaphor', function () {
 		// Create new metaphor documents
 		return new Promise((resolve) => {
 			const tt = ttip(sel('header'), null, true);
@@ -1011,5 +1011,5 @@
 				}
 			};
 		});
-	};
+	});
 })();

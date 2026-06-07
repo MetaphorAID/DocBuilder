@@ -223,10 +223,19 @@ class Editor {
 			}
 		}
 	};
+	static NEW_DOCUMENT_TYPES = {};
 
 	static getType(type) {
 		// Select editor type (defined by plug-ins) fallback to the default type
 		return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
+	}
+
+	static registerNewDocumentType(type, handler) {
+		Editor.NEW_DOCUMENT_TYPES[type] = handler;
+	}
+
+	static getNewDocumentType(type) {
+		return Editor.NEW_DOCUMENT_TYPES[type];
 	}
 
 	#onchange_callback
@@ -1166,24 +1175,21 @@ evt('.ed-exit', 'click', () => {
 	}
 });
 
-function callTokenNew(template) {
-	// TODO this should be stem from Editor not Token class
-	// Locate token class and test if it supports new() method
-	const TokenClass = window.TOKEN || (typeof TOKEN !== 'undefined' && TOKEN);
-	if (!TokenClass?.new) {
+async function createNewDocument(templateId, template) {
+	const handler = Editor.getNewDocumentType(templateId);
+	if (!handler) {
 		addMsg(_('New document creation not supported for this template'), 'error');
 		return;
 	}
 
-	TokenClass.new().then(result => {
-		if (!result) return;
+	const result = await handler();
+	if (!result) return;
 
-		// Get the content from the plug-in and pass it for processing, saving and rendering
-		const [filename, data] = result;
-		const newData = ChunkProcessor.createDocument(filename, data, template);
-		documents.store(filename, newData).then(() => showDocument(newData))
-			.catch(err => addMsg(String(err), 'error'));
-	}).catch(err => addMsg(String(err), 'error'));
+	// Process the source returned by the plug-in, then save and render the document.
+	const [filename, data] = result;
+	const newData = ChunkProcessor.createDocument(filename, data, template);
+	await documents.store(filename, newData);
+	showDocument(newData);
 }
 
 evtDelegated(document, '[data-open]', 'click', function () {
@@ -1210,9 +1216,11 @@ evtDelegated(document, '.template-select', 'click', async function () {
 				open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
 			});
 		} else if (action === 'new') {
-			// Load necessary scipts
+			// Load the resources that register this template's creation handler.
 			for (const src of template.js || []) await loadScript(src);
-			callTokenNew(template);
+			trg(this.closest('.tooltip'), 'close');
+			await createNewDocument(templateInfo.id, template);
+			return;
 		}
 
 		trg(this.closest('.tooltip'), 'close');
