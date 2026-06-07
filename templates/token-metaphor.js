@@ -63,11 +63,15 @@
 				if (val === 'None' || val === 'none') val = '0';
 				return INDIRECT[val] || '&nbsp;';
 			case 'meanings':
+				const primary = sel('primary', el)?.textContent.trim() || '';
+				const other = sel('other', el)?.textContent.trim() || '';
+				if (!primary && !other) return '&nbsp;';
+
 				const idx = sel('contextualIndex', el)?.textContent;
-				if (!idx || idx === '1') return format('', sel('primary', el));
+				if (!idx || idx === '1') return primary || '&nbsp;';
 
 				// Find the line whose numbering matches the contextual index
-				const lines = format('', sel('other', el)).split('\n');
+				const lines = other.split('\n');
 				return lines.find(line => line.startsWith(`${idx}.`)) || '&nbsp;';
 		}
 		return el.textContent
@@ -447,9 +451,13 @@
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const headers = [];
 		const cells = [];
+		const hasMeanings = ['primary', 'other']
+			.some(field => sel(field, tokenXml)?.textContent.trim());
 
 		for (const field in MEANING) {
-			const value = format('', sel(field, tokenXml));
+			const value = field === 'contextualIndex' && !hasMeanings
+				? ''
+				: format('', sel(field, tokenXml));
 			headers.push(`<th>${MEANING[field]}</th>`);
 			switch (field) {
 				case 'primary':
