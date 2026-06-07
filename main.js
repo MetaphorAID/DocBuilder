@@ -761,7 +761,8 @@ class DocumentManager {
 		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
 
 		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
-		data.chunks = ChunkProcessor.merge(changes || this.#editor.chunks, data.chunks);
+		const chunks = changes === undefined ? this.#editor.chunks : changes;
+		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
 
 		// Store the data in IndexedDB with the correct fileName (data.id)
 		await this.#db.storeFile(data.id, data);
@@ -827,8 +828,8 @@ class ChunkProcessor {
 			const {start, end, chunk} = match;
 
 			if (pos > start) {
-				// Overlapping, just add this chunk
-				// TODO pos should be updated? -> Check!, Why it does not have id. Comment!
+				// Keep overlapping matches as non-owning views, without an id,
+				// so their source text is not included twice when saving.
 				chunks.push(chunk);
 				continue;
 			}
@@ -919,8 +920,8 @@ class UndoManager {
 
 	#loadDocumentForHistory(data, callback) {
 		if (data.id !== this.#editor.id) {
-			// TODO Here do we need data.template for open?
-			open(data.id, callback, data.template).catch(err => addMsg(err.message, 'error'));
+			// Stored documents already contain the resources needed by the editor.
+			open(data.id, callback).catch(err => addMsg(err.message, 'error'));
 		} else {
 			callback();
 		}
@@ -1104,10 +1105,11 @@ async function open(id, onsuccess, template) {
 
 async function save(chunks) {
 	try {
-		// TODO Can here be chunks undefined?
+		// An omitted chunks argument means a user-requested full save and download.
+		const shouldDownload = chunks === undefined;
 		const data = await documents.saveToIDB(chunks);
 
-		if (!chunks) {
+		if (shouldDownload) {
 			documents.download(data);
 			return;
 		}
@@ -1115,7 +1117,7 @@ async function save(chunks) {
 		addMsg(_('Document Saved'), 'success');
 
 		if (editor.forceReload) {
-			// TODO template parameter?
+			// Reload the stored document by id; a template is only needed when importing a file.
 			await open(editor.id, false);
 			editor.forceReload = false;
 
