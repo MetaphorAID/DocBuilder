@@ -286,13 +286,17 @@
 		return {paragraph, paragraphId, paragraphXml};
 	}
 
-	function resolveTokenContext(target, paragraphCtx, normaliseTarget = false) {
+	function resolveTokenContext(target, paragraphCtx, resolveTableCellParent = false) {
 
-		// Normalize target for table view
-		if (normaliseTarget && localStorage.tableview && target.classList.contains('as-parent')) target = target.parentNode;
+		// In table view the click lands on a <td class="as-parent">, while the
+		// token class and data-tid live on its parent <tr>. Both nodes have the
+		// same .s ancestor, so this normalization is needed for token lookup,
+		// not for resolving the sentence.
+		if (resolveTableCellParent && localStorage.tableview && target.classList.contains('as-parent'))
+			target = target.parentNode;
 
 		// Only handle events on elements inside sentences (.s)
-		const sentence = target.closest('.s');  // TODO Normalized s before return or unnormalised in the original code?
+		const sentence = target.closest('.s');
 		if (!sentence) return null;
 
 		const sentenceId = Number(sentence.dataset.sid);
@@ -332,11 +336,11 @@
 		return value;
 	}
 
-	function resolveContext(target, {includeValue = false, normaliseTarget = false} = {}) {
+	function resolveContext(target, {includeValue = false, resolveTableCellParent = false} = {}) {
 		const paragraphCtx = resolveParagraphContext(target);
 		if (!paragraphCtx) return null;
 
-		const tokenCtx = resolveTokenContext(target, paragraphCtx, normaliseTarget);
+		const tokenCtx = resolveTokenContext(target, paragraphCtx, resolveTableCellParent);
 		if (!tokenCtx) return null;
 
 		if (!includeValue) return tokenCtx;
@@ -638,7 +642,7 @@
 			return;
 		}
 
-		const ctx = resolveContext(target, {normaliseTarget: true});
+		const ctx = resolveContext(target, {resolveTableCellParent: true});
 		if (!ctx) return;
 
 		// Open tooltip
