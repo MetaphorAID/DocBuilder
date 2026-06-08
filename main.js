@@ -745,15 +745,7 @@ class DocumentManager {
 		});
 	}
 
-	async open(id, template) {
-		if (id !== undefined) {
-			// Open file from IndexedDB
-			const doc = await this.#db.retrieveFile(id);
-			if (!doc) throw new Error(_('Document not found: ') + id);
-
-			return doc;
-		}
-
+	async import(template) {
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
 		const text = await this.#readFile(file);
@@ -762,6 +754,14 @@ class DocumentManager {
 		await this.#db.storeFile(file.name, document);
 
 		return document;
+	}
+
+	async open(id) {
+		// Open file from IndexedDB
+		const doc = await this.#db.retrieveFile(id);
+		if (!doc) throw new Error(_('Document not found: ') + id);
+
+		return doc;
 	}
 
 	async saveToIDB(changes) {
@@ -1094,15 +1094,9 @@ function showDocument(data, onsuccess) {
 	editor.restoreView()
 }
 
-async function open(id, onsuccess, template) {
-	let loadedTemplate;
-	if (template !== undefined) {
-		// Open new file (id === undefined)
-		loadedTemplate = await templates.loadTemplate(template);
-	}
-
+async function open(id, onsuccess) {
 	try {
-		const data = await documents.open(id, loadedTemplate);
+		const data = await documents.open(id);
 		showDocument(data, onsuccess);
 
 	} catch (err) {
@@ -1113,7 +1107,7 @@ async function open(id, onsuccess, template) {
 
 async function save(chunks) {
 	try {
-		// An omitted chunks argument means a user-requested full save and download.
+		// An omitted chunks argument means a user-requested full save and download
 		const shouldDownload = chunks === undefined;
 		const data = await documents.saveToIDB(chunks);
 
@@ -1216,8 +1210,15 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 		// Execute action on template
 		if (action === 'open') {
-			editor.confirmDiscardChanges(() =>
-				open(undefined, undefined, templateInfo.path).catch(err => addMsg(err.message, 'error')));
+			editor.confirmDiscardChanges(() => {
+				templates.loadTemplate(templateInfo.path).then(loadedTemplate =>
+					documents.import(loadedTemplate).then(data => {
+						showDocument(data);
+					}).catch(err => {
+						console.error('Error during file open process:', err);
+						addMsg(_('Error during file open process:') + err, 'error');
+					}));
+			});
 		} else if (action === 'new') {
 			await createNewDocument(templateInfo);
 		}

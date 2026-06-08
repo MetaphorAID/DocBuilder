@@ -273,10 +273,6 @@
 		editor.onchange(cids, hdata);
 	}
 
-	function refresh(cids) {
-		//TODO: update from API
-	}
-
 	function resolveParagraphContext(target) {
 		// Only handle events within paragraph containers
 		const paragraph = target.closest('.par.tei');
@@ -510,8 +506,7 @@
 			return;
 		}
 
-		// Update view and save paragraph
-		if (target.matches('.info')) refresh([paragraphId]);
+		// Save paragraph
 		savePar([paragraphId]);
 	}
 
@@ -550,13 +545,11 @@
 		sentenceXml.insertBefore(newTokenXml, referenceNode);
 		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
 		// Save changes and refress the UI
-		refresh([paragraphId]);
 		savePar([paragraphId]);
 	}
 
 	function handleDeleteToken(paragraphId, tokenXml) {
 		delNode(tokenXml);
-		refresh([paragraphId]);
 		savePar([paragraphId]);
 	}
 
@@ -717,7 +710,6 @@
 		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
 
 		// Save changes and refresh UI
-		refresh([paragraphId]);
 		savePar([paragraphId]);
 	}
 
@@ -753,7 +745,6 @@
 		}
 
 		// Save changes and refresh UI
-		refresh([paragraphId]);
 		savePar([paragraphId]);
 	}
 
@@ -783,7 +774,6 @@
 		root.innerHTML = root.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/, indent + newSentence + '$1');
 
 		// Save changes and refresh UI
-		refresh([paragraphId]);
 		savePar([paragraphId]);
 	}
 
@@ -843,7 +833,6 @@
 			}
 		}
 
-		refresh([paragraphIds[0]]);
 		savePar(paragraphIds);
 	}
 
