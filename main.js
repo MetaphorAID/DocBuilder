@@ -764,13 +764,10 @@ class DocumentManager {
 		return doc;
 	}
 
-	async saveToIDB(changes) {
-		// If changes is undefined, use editor.chunks, otherwise use provided changes
+	async saveToIDB(chunks) {
 		const data = await this.#db.retrieveFile(this.#editor.id || 0);
 		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
 
-		// Set chunks using ChunkProcessor.merge(), and store the updated result in IndexedDB
-		const chunks = changes === undefined ? this.#editor.chunks : changes;
 		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
 
 		// Store the data in IndexedDB with the correct fileName (data.id)
@@ -783,7 +780,7 @@ class DocumentManager {
 		await this.#db.storeFile(filename, document);
 	}
 
-	download(data) {
+	#download(data) {
 		const blob = ChunkProcessor.createBlob(data.chunks);
 
 		// Create a temporary object URL to download
@@ -801,6 +798,11 @@ class DocumentManager {
 		a.remove();
 
 		addMsg(_('Document Saved'), 'success');
+	}
+
+	async export() {
+		const data = await documents.saveToIDB(this.#editor.chunks);
+		documents.#download(data);
 	}
 }
 
@@ -1107,15 +1109,7 @@ async function open(id, onsuccess) {
 
 async function save(chunks) {
 	try {
-		// An omitted chunks argument means a user-requested full save and download
-		const shouldDownload = chunks === undefined;
-		const data = await documents.saveToIDB(chunks);
-
-		if (shouldDownload) {
-			documents.download(data);
-			return;
-		}
-
+		await documents.saveToIDB(chunks);
 		addMsg(_('Document Saved'), 'success');
 
 		if (editor.forceReload) {
@@ -1154,7 +1148,7 @@ evt('.ed-recent', 'click', e => {
 });
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
-	save().catch(err => addMsg(err.message, 'error'));
+	documents.export().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', () => {
 	undoManager.undo();
