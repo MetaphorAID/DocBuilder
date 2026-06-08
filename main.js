@@ -1096,10 +1096,9 @@ function showDocument(data, onsuccess) {
 
 async function open(id, onsuccess, template) {
 	let loadedTemplate;
-	if (id === undefined) {
-		// Open new file or just pass the template
-		loadedTemplate = typeof template === 'string' ?
-			await templates.loadTemplate(template) : template;
+	if (template !== undefined) {
+		// Open new file (id === undefined)
+		loadedTemplate = await templates.loadTemplate(template);
 	}
 
 	try {
@@ -1127,7 +1126,7 @@ async function save(chunks) {
 
 		if (editor.forceReload) {
 			// Reload the stored document by id; a template is only needed when importing a file.
-			await open(editor.id, false);
+			await open(editor.id);
 			editor.forceReload = false;
 
 		} else {
@@ -1175,8 +1174,12 @@ evt('.ed-exit', 'click', () => {
 	}
 });
 
-async function createNewDocument(templateId, template) {
-	const handler = Editor.getNewDocumentType(templateId);
+async function createNewDocument(templateInfo) {
+	// Load the resources that register this template's creation handler.
+	const template = await templates.loadTemplate(templateInfo.path);
+	for (const src of template.js || []) await loadScript(src);
+
+	const handler = Editor.getNewDocumentType(templateInfo.id);
 	if (!handler) {
 		addMsg(_('New document creation not supported for this template'), 'error');
 		return;
@@ -1194,7 +1197,8 @@ async function createNewDocument(templateId, template) {
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	editor.confirmDiscardChanges(() => {
-		open(hist.recent.get(Number(this.dataset.open), true)).catch(err => addMsg(err.message, 'error'));
+		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
+		open(recentDocumentFilename).catch(err => addMsg(err.message, 'error'));
 		// Remove only after successful open
 		hist.recent.get(Number(this.dataset.open));
 	});
@@ -1208,22 +1212,15 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		const templateInfo = await templates.getTemplateById(this.dataset.template)
 		if (!templateInfo) return;
 
-		const template = await templates.loadTemplate(templateInfo.path);
+		trg(this.closest('.tooltip'), 'close');
 
 		// Execute action on template
 		if (action === 'open') {
-			editor.confirmDiscardChanges(() => {
-				open(undefined, undefined, template).catch(err => addMsg(err.message, 'error'));
-			});
+			editor.confirmDiscardChanges(() =>
+				open(undefined, undefined, templateInfo.path).catch(err => addMsg(err.message, 'error')));
 		} else if (action === 'new') {
-			// Load the resources that register this template's creation handler.
-			for (const src of template.js || []) await loadScript(src);
-			trg(this.closest('.tooltip'), 'close');
-			await createNewDocument(templateInfo.id, template);
-			return;
+			await createNewDocument(templateInfo);
 		}
-
-		trg(this.closest('.tooltip'), 'close');
 
 	} catch (err) {
 		addMsg(_('Failed to load ') + err, 'error');
