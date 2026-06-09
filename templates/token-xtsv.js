@@ -436,7 +436,7 @@
 			cid2 = Math.max(cid, cid2);
 			if (_active[cid2][0].length < 2) {
 				_active[cid2].shift();
-				editor.forceReload = true;
+				editor.requestReload();
 				saveSent([cid2]);
 			}
 			return;
@@ -445,7 +445,7 @@
 		if (t.matches('.split.sent')) {
 			if (val === '') return;
 			x.splice(parseInt(tid) + (val === '0' ? 0 : 1), 0, ['']);
-			editor.forceReload = true;
+			editor.requestReload();
 			saveSent([cid], true);
 			return;
 		}

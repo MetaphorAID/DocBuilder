@@ -241,6 +241,7 @@ class Editor {
 	#onchange_callback
 	#restore
 	#restoreHidden
+	#reloadRequested
 
 	constructor(dom, onchange) {
 		this.dom = dom;
@@ -248,6 +249,7 @@ class Editor {
 		this.chunks = [];
 		this.#restore = null;
 		this.#restoreHidden = null;
+		this.#reloadRequested = false;
 
 		// Mark the container as editor
 		dom.classList.add('editor');
@@ -295,7 +297,7 @@ class Editor {
 		});
 	}
 
-	load(data, store_filler, onLoaded) {
+	load(data, store_filler) {
 		// Load data
 		if (!data.id) return;
 
@@ -306,10 +308,23 @@ class Editor {
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
 
-		this.#finishLoad(onLoaded);
+		this.#finishLoad();
 	}
 
-	#finishLoad(onLoaded) {
+	requestReload() {
+		this.#reloadRequested = true;
+	}
+
+	applySavedDocument(data) {
+		if (this.#reloadRequested) {
+			this.#reloadRequested = false;
+			this.load(data, false);
+		}
+
+		this.restoreView();
+	}
+
+	#finishLoad() {
 		addMsg(_('Document Loaded'), 'success');
 
 		// Notify others
@@ -319,8 +334,6 @@ class Editor {
 		const hids = Object.keys(this.hidden);
 		this.renderHidden(hids);
 		this.render([0]);
-
-		onLoaded?.();
 	}
 
 	#reset(data, store_filler) {
@@ -969,22 +982,13 @@ class UndoManager {
 	#editor;
 	#hist;
 	#save;
-	#open;
+	#openDocument;
 
-	constructor(editor, hist, save, open) {
+	constructor(editor, hist, save, openDocument) {
 		this.#editor = editor;
 		this.#hist = hist;
 		this.#save = save;
-		this.#open = open;
-	}
-
-	#loadDocumentForHistory(data, callback) {
-		if (data.id !== this.#editor.id) {
-			// Stored documents already contain the resources needed by the editor.
-			this.#open(data.id, callback).catch(err => addMsg(err.message, 'error'));
-		} else {
-			callback();
-		}
+		this.#openDocument = openDocument;
 	}
 
 	#createReverseHistoryEntry(data) {
@@ -1044,7 +1048,7 @@ class UndoManager {
 		}
 	}
 
-	#applyHistoryEntry(data, visible, from, to) {
+	async #applyHistoryEntry(data, visible, from, to) {
 		this.#editor.render([]);
 
 		// Create the corresponding reverse entry
@@ -1059,18 +1063,24 @@ class UndoManager {
 			return;
 		}
 
+		// Apply a single history entry to the editor
+		const {tosave, hidden} = this.#applyChunks(data);
+
+		try {
+			await this.#save(tosave);
+		} catch (err) {
+			// Keep the editor consistent with storage if persistence fails.
+			this.#applyChunks({chunks: reverseEntry.chunks});
+			this.#editor.render(visible);
+			throw err;
+		}
+
 		to.add({
 			id: data.id,
 			chunks: reverseEntry.chunks,
 			values: reverseEntry.values,
 			cids: visible
 		});
-
-		// Apply a single history entry to the editor
-		const {tosave, hidden} = this.#applyChunks(data);
-
-		// Save the changes and rerender
-		this.#save(tosave).catch(err => addMsg(err.message, 'error'));
 
 		if (hidden.length) {
 			this.#editor.renderHidden(hidden);
@@ -1079,7 +1089,7 @@ class UndoManager {
 		this.#editor.render(data.cids);
 	}
 
-	#apply(reverse) {
+	async #apply(reverse) {
 		const from = this.#hist[reverse ? 'redo' : 'undo'];
 		const to = this.#hist[reverse ? 'undo' : 'redo'];
 
@@ -1087,19 +1097,25 @@ class UndoManager {
 		const data = from.get();
 		if (!data) return;
 
-		const visible = this.#editor.getVisible();
+		try {
+			if (data.id !== this.#editor.id) {
+				await this.#openDocument(data.id);
+			}
 
-		this.#loadDocumentForHistory(data, () => {
-			this.#applyHistoryEntry(data, visible, from, to);
-		});
+			const visible = this.#editor.getVisible();
+			await this.#applyHistoryEntry(data, visible, from, to);
+		} catch (err) {
+			from.add(data);
+			throw err;
+		}
 	}
 
 	undo() {
-		this.#apply(false);
+		return this.#apply(false);
 	}
 
 	redo() {
-		this.#apply(true);
+		return this.#apply(true);
 	}
 
 }
@@ -1133,48 +1149,31 @@ const editor = new Editor(sel('#editor'), (chunks, values) => {
 const fileDB = new AnnotationDB();
 const templates = new TemplateManager();
 const documents = new DocumentManager(fileDB, editor);
-const undoManager = new UndoManager(editor, hist, save, open);
+const undoManager = new UndoManager(editor, hist, save, openDocument);
 
-async function showDocument(data, onsuccess) {
+async function displayDocument(data) {
 	await templates.loadResources(data);
 
-	editor.load(data, false, () => {
-		hist.recent.moveToTop(editor.id);
-
-		onsuccess?.();
-	});
+	editor.load(data, false);
+	hist.recent.moveToTop(editor.id);
 
 	// Enable save button
 	disable('.ed-save', !!editor.id);
 	editor.restoreView()
 }
 
-async function open(id, onsuccess) {
-	try {
-		const data = await documents.open(id);
-		await showDocument(data, onsuccess);
-
-	} catch (err) {
-		console.error('Error during file open process:', err);
-		addMsg(_('Error during file open process:') + err, 'error');
-	}
+async function openDocument(id) {
+	const data = await documents.open(id);
+	await displayDocument(data);
 }
 
 async function save(chunks) {
 	try {
-		await documents.saveToIDB(chunks);
+		const data = await documents.saveToIDB(chunks);
 		addMsg(_('Document Saved'), 'success');
-
-		if (editor.forceReload) {
-			// Reload the stored document by id; a template is only needed when importing a file.
-			await open(editor.id);
-			editor.forceReload = false;
-
-		} else {
-			editor.restoreView();
-		}
+		editor.applySavedDocument(data);
 	} catch (err) {
-		addMsg(_('Error saving: ') + err, 'error');
+		throw new Error(_('Error saving: ') + (err.message || err));
 	}
 }
 
@@ -1195,7 +1194,7 @@ async function createNewDocument(templateInfo) {
 	// Process the source returned by the plug-in, then save and render the document.
 	const [filename, data] = result;
 	const newData = await documents.createDocument(filename, data, template);
-	await showDocument(newData);
+	await displayDocument(newData);
 }
 
 evt('.ed-open', 'click', e => {
@@ -1224,10 +1223,10 @@ evt('.ed-save', 'click', e => {
 	documents.export().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', () => {
-	undoManager.undo();
+	undoManager.undo().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-redo', 'click', () => {
-	undoManager.redo();
+	undoManager.redo().catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-exit', 'click', () => {
 	if (confirm(_('Do you want to exit?'))) {
@@ -1238,9 +1237,10 @@ evt('.ed-exit', 'click', () => {
 evtDelegated(document, '[data-open]', 'click', function () {
 	editor.confirmDiscardChanges(() => {
 		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
-		open(recentDocumentFilename).catch(err => addMsg(err.message, 'error'));
-		// Remove only after successful open
-		hist.recent.get(Number(this.dataset.open));
+		openDocument(recentDocumentFilename).catch(err => {
+			console.error('Error during file open process:', err);
+			addMsg(_('Error during file open process:') + err, 'error');
+		});
 	});
 });
 
@@ -1259,7 +1259,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 			editor.confirmDiscardChanges(() => {
 				templates.loadTemplate(templateInfo.path).then(loadedTemplate =>
 					documents.import(loadedTemplate).then(data => {
-						return showDocument(data);
+						return displayDocument(data);
 					}).catch(err => {
 						console.error('Error during file open process:', err);
 						addMsg(_('Error during file open process:') + err, 'error');
