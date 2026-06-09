@@ -578,24 +578,18 @@ class History {
 	static #BACKUP_INTERVAL = 30000;
 	static #MAX_NUMBER = 10;
 	#name
-	#buttonSelector
 	#max
+	#onchange
 	#data
 	#backup_timestamp
 
-	constructor(name, max = History.#MAX_NUMBER) {
+	constructor(name, max = History.#MAX_NUMBER, onchange = null) {
 		this.#name = name;
 		// Implicit name convention for selector
-		this.#buttonSelector = `.${this.#name.replace('_', '-')}`;
 		this.#max = max;
+		this.#onchange = onchange;
 		this.#data = JSON.parse(localStorage[name] ?? '[]');
 		this.#backup_timestamp = Date.now();
-
-		this.#updateButton();
-	}
-
-	#updateButton() {
-		if (this.#buttonSelector) disable(this.#buttonSelector, this.#data.length !== 0);
 	}
 
 	#onHistChange() {
@@ -603,7 +597,7 @@ class History {
 		// Try to save at most every History.#BACKUP_INTERVAL ms but never sooner than 200ms
 		const nextAllowed = (this.#backup_timestamp || 0) + History.#BACKUP_INTERVAL - Date.now();
 		this.timer = setTimeout(() => this.#backup(), Math.max(200, nextAllowed));
-		this.#updateButton();
+		this.#onchange?.(this);
 	}
 
 	#backup() {
@@ -620,6 +614,10 @@ class History {
 			}
 		}
 		if (d.length === 0) localStorage[this.#name] = JSON.stringify(d);
+	}
+
+	get length() {
+		return this.#data.length;
 	}
 
 	add(data) {
@@ -920,7 +918,7 @@ class DocumentManager {
 		this.#download(data);
 	}
 
-	async createDocument(filename, data, template){
+	async createDocument(filename, data, template) {
 		const newData = ChunkProcessor.createDocument(filename, data, template);
 		await this.#store(filename, newData);
 
@@ -931,16 +929,20 @@ class DocumentManager {
 class UndoManager {
 	#editor;
 	#hist;
+	#save;
+	#open;
 
-	constructor(editor, hist) {
+	constructor(editor, hist, save, open) {
 		this.#editor = editor;
 		this.#hist = hist;
+		this.#save = save;
+		this.#open = open;
 	}
 
 	#loadDocumentForHistory(data, callback) {
 		if (data.id !== this.#editor.id) {
 			// Stored documents already contain the resources needed by the editor.
-			open(data.id, callback).catch(err => addMsg(err.message, 'error'));
+			this.#open(data.id, callback).catch(err => addMsg(err.message, 'error'));
 		} else {
 			callback();
 		}
@@ -1029,7 +1031,7 @@ class UndoManager {
 		const {tosave, hidden} = this.#applyChunks(data);
 
 		// Save the changes and rerender
-		save(tosave).catch(err => addMsg(err.message, 'error'));
+		this.#save(tosave).catch(err => addMsg(err.message, 'error'));
 
 		if (hidden.length) {
 			this.#editor.renderHidden(hidden);
@@ -1065,8 +1067,10 @@ class UndoManager {
 
 const hist = {
 	recent: new History('ed_recent'),
-	undo: new History('ed_undo'),
-	redo: new History('ed_redo')
+	undo: new History('ed_undo', undefined,
+		h => disable('.ed-undo', !h.length)),
+	redo: new History('ed_redo', undefined,
+		h => disable('.ed-undo', !h.length))
 };
 const editor = new Editor(sel('#editor'), (chunks, values) => {
 	// Store previous values in Undo history
@@ -1090,7 +1094,7 @@ const editor = new Editor(sel('#editor'), (chunks, values) => {
 const fileDB = new AnnotationDB();
 const templates = new TemplateManager();
 const documents = new DocumentManager(fileDB, editor);
-const undoManager = new UndoManager(editor, hist);
+const undoManager = new UndoManager(editor, hist, save, open);
 
 function showDocument(data, onsuccess) {
 	editor.load(data, false, () => {
@@ -1133,6 +1137,26 @@ async function save(chunks) {
 	}
 }
 
+async function createNewDocument(templateInfo) {
+	// Load the resources that register this template's creation handler.
+	const template = await templates.loadTemplate(templateInfo.path);
+	for (const src of template.js || []) await loadScript(src);
+
+	const handler = Editor.getNewDocumentType(templateInfo.id);
+	if (!handler) {
+		addMsg(_('New document creation not supported for this template'), 'error');
+		return;
+	}
+
+	const result = await handler();
+	if (!result) return;
+
+	// Process the source returned by the plug-in, then save and render the document.
+	const [filename, data] = result;
+	const newData = await documents.createDocument(filename, data, template);
+	showDocument(newData);
+}
+
 evt('.ed-open', 'click', e => {
 	templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
@@ -1169,26 +1193,6 @@ evt('.ed-exit', 'click', () => {
 		window.location.href = 'about:blank';
 	}
 });
-
-async function createNewDocument(templateInfo) {
-	// Load the resources that register this template's creation handler.
-	const template = await templates.loadTemplate(templateInfo.path);
-	for (const src of template.js || []) await loadScript(src);
-
-	const handler = Editor.getNewDocumentType(templateInfo.id);
-	if (!handler) {
-		addMsg(_('New document creation not supported for this template'), 'error');
-		return;
-	}
-
-	const result = await handler();
-	if (!result) return;
-
-	// Process the source returned by the plug-in, then save and render the document.
-	const [filename, data] = result;
-	const newData = await documents.createDocument(filename, data, template);
-	showDocument(newData);
-}
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	editor.confirmDiscardChanges(() => {
