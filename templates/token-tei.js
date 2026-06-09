@@ -124,10 +124,7 @@
 		}
 	});
 
-	function parseXml(xml) {
-		return (new DOMParser()).parseFromString(xml, 'text/xml');
-	}
-
+	// Same as for tei-metaphor.js
 	function getUID(xml, prefix, start) {
 		if (!sel('[*|id="' + prefix + (start ? '_' + start : '') + '"]', xml)) {
 			return prefix + (start ? '_' + start : '');
@@ -135,6 +132,7 @@
 		return getUID(xml, prefix, start ? start + 1 : 2);
 	}
 
+	// Same as for tei-metaphor.js
 	function delNode(s) {
 		if (s.previousSibling && s.previousSibling.nodeName === '#text') s.previousSibling.remove();
 		s.remove();
@@ -288,6 +286,7 @@
 		});
 	}
 
+	// TODO BEGIN Same as for tei-metaphor.js (minus the new-cancel)
 	document.addEventListener('click', function (e) {
 		let t = e.target;
 		if (!t) return;
@@ -311,6 +310,7 @@
 		let xtl = find('token', xs);
 		let xt = tid ? xtl[tid] : false;
 
+		// TODO END Same as for tei-metaphor.js (minus the new-cancel)
 		// open tooltip
 		if (t.matches('.t, .cfg')) {
 			each('.par .active', i => {
@@ -564,6 +564,7 @@
 
 	});
 
+	// TODO BEGIN Same as for tei-metaphor.js (minus the edit.sent dead code)
 	document.addEventListener('change', function (e) {
 		let t = e.target;
 		if (!t) return;
@@ -680,6 +681,7 @@
 			return;
 		}
 
+		// TODO END Same as for tei-metaphor.js (minus the edit.sent dead code)
 		// token stuff
 
 		if (t.matches('.edit.sticky')) {
