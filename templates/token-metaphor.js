@@ -1,4 +1,12 @@
 (function () {
+	const EMPTY_CELL = '&nbsp;';
+	const PRIMARY_MEANING_INDEX = '1';
+	const MEANING_FIELD = Object.freeze({
+		PRIMARY: 'primary',
+		OTHER: 'other',
+		CONTEXTUAL_INDEX: 'contextualIndex',
+	});
+
 	const INDIRECT = {
 		'0': '-',
 		'1': 'metonímia',
@@ -18,9 +26,9 @@
 	}
 
 	const MEANING = {
-		'primary': 'elsődleges',
-		'other': 'többi',
-		'contextualIndex': 'jelenleg',
+		[MEANING_FIELD.PRIMARY]: 'elsődleges',
+		[MEANING_FIELD.OTHER]: 'többi',
+		[MEANING_FIELD.CONTEXTUAL_INDEX]: 'jelenleg',
 	}
 
 	Locale['Meanings'] = 'Jelentések';
@@ -51,35 +59,38 @@
 	Locale['Request timeout'] = 'Kérés időtúllépése';
 	Locale['Network error:'] = 'Hálózati hiba:';
 
-	function format(name, el) {
-		// Extract and normalize display text from XML/HTML elements
-		if (!el) return '&nbsp;';
+	function getText(el) {
+		if (!el) return '';
 
-		switch (name) {
-			case 'metaphor':
-				return _(TOKEN.SEL_BOOL[el.textContent] || '&nbsp;');
-			case 'otherIndirect':
-				let val = el.textContent.trim();
-				if (val === 'None' || val === 'none') val = '0';
-				return INDIRECT[val] || '&nbsp;';
-			case 'meanings':
-				const primary = sel('primary', el)?.textContent.trim() || '';
-				const other = sel('other', el)?.textContent.trim() || '';
-				if (!primary && !other) return '&nbsp;';
-
-				const idx = sel('contextualIndex', el)?.textContent;
-				if (!idx || idx === '1') return primary || '&nbsp;';
-
-				// Find the line whose numbering matches the contextual index
-				const lines = other.split('\n');
-				return lines.find(line => line.startsWith(`${idx}.`)) || '&nbsp;';
-		}
 		return el.textContent
 			.replaceAll('\\n', '\n')
 			.replaceAll('\\t', '\t')
 			.trim()
 			.replace(/[\t ]+/g, ' ')
 			.replace(/ *\n */g, '\n');
+	}
+
+	function format(name, el) {
+		let value = getText(el);
+		switch (name) {
+			case 'metaphor':
+				value = TOKEN.SEL_BOOL[value] ? _(TOKEN.SEL_BOOL[value]) : '';
+				break;
+			case 'otherIndirect':
+				if (value === 'None' || value === 'none') value = '0';
+				value = INDIRECT[value] || '';
+				break;
+			case 'meanings':
+				if (!el) break;
+				const primary = getText(sel(MEANING_FIELD.PRIMARY, el));
+				const other = getText(sel(MEANING_FIELD.OTHER, el));
+				const index = getText(sel(MEANING_FIELD.CONTEXTUAL_INDEX, el));
+				value = !index || index === PRIMARY_MEANING_INDEX
+					? primary
+					: other.split('\n').find(line => line.startsWith(`${index}.`));
+				break;
+		}
+		return value || EMPTY_CELL;
 	}
 
 	const _active = {};
@@ -225,7 +236,7 @@
 				wordEl.appendChild(tokenEl);
 			}
 		} else {
-			wordEl.innerHTML = word.innerHTML || '&nbsp;';
+			wordEl.innerHTML = word.innerHTML || EMPTY_CELL;
 		}
 
 		wordEl.classList.add(getTokenClass(token));
@@ -364,11 +375,11 @@
 			html += TOKEN.getLink(tokenId, 'show info', 'Edit');
 			html += TOKEN.getLink(tokenId, 'show meaning', 'Meanings');
 			// Show reasoning if there is any
-			if (format('', sel('reasoning', tokenXml))) {
+			if (getText(sel('reasoning', tokenXml))) {
 				html += TOKEN.getLink(tokenId, 'show reason', 'Reasoning');
 			}
 			// Setup possible token splittings
-			let tkn = format('', sel('word', tokenXml));
+			let tkn = getText(sel('word', tokenXml));
 			if (tkn.length > 1) {
 				let split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
@@ -399,7 +410,7 @@
 		const cells = [];
 		// Setup elements for fields
 		for (const field in COLS) {
-			const fieldValue = format('', sel(field, tokenXml));
+			const fieldValue = getText(sel(field, tokenXml));
 			let td = '';
 			switch (field) {
 				case 'word':
@@ -409,6 +420,7 @@
 					td = `<input type="text" name="${field}" class="input" value="${fieldValue}">`
 					break;
 				case 'meanings':
+					// TODO: check if commented code is needed, if not remove it
 					// const meaningsValue = format(field, sel(field, tokenXml));
 					// const meanings = `${format('', sel('primary', tokenXml))}\n${format('', sel('other', tokenXml))}`;
 					// td = meanings.replace(meaningsValue, `<strong>${meaningsValue}</strong>`).replaceAll('\n', '<br>');
@@ -447,17 +459,17 @@
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const headers = [];
 		const cells = [];
-		const hasMeanings = ['primary', 'other']
-			.some(field => sel(field, tokenXml)?.textContent.trim());
+		const hasMeanings = [MEANING_FIELD.PRIMARY, MEANING_FIELD.OTHER]
+			.some(field => getText(sel(field, tokenXml)));
 
 		for (const field in MEANING) {
-			const value = field === 'contextualIndex' && !hasMeanings
+			const value = field === MEANING_FIELD.CONTEXTUAL_INDEX && !hasMeanings
 				? ''
-				: format('', sel(field, tokenXml));
+				: getText(sel(field, tokenXml));
 			headers.push(`<th>${MEANING[field]}</th>`);
 			switch (field) {
-				case 'primary':
-				case 'other':
+				case MEANING_FIELD.PRIMARY:
+				case MEANING_FIELD.OTHER:
 					cells.push(`<td><textarea name="${field}" class="input">${encXml(value)}</textarea></td>`);
 					break;
 				default:
@@ -466,6 +478,7 @@
 		}
 		tt.innerHTML += `<table><tr>${headers.join('')}</tr><tr>${cells.join('')}</tr></table>
 			<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`;
+		// TODO: check if commented code is needed, if not remove it
 		// let tt = ttip(sentence, e);
 		// let value = format(field, sel(field, tokenXml));
 		// const meanings = `${format('', sel('primary', tokenXml))}\n${format('', sel('other', tokenXml))}`;
@@ -474,9 +487,9 @@
 
 	function handleEditReason(e, tokenXml, tokenId, sentence) {
 		let tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += `<textarea name="reasoning" class="input">${encXml(format('', sel('reasoning', tokenXml)))}</textarea>
+		tt.innerHTML += `<textarea name="reasoning" class="input">${encXml(getText(sel('reasoning', tokenXml)))}</textarea>
       <div class="center">${TOKEN.getLink(tokenId, 'btn reason save', 'Save')}</div>`;
-
+		// TODO: check if commented code is needed, if not remove it
 		// let tt = ttip(sentence, e);
 		// tt.innerHTML += format('', sel('reasoning', tokenXml)).replaceAll('\n', '<br>');
 	}
@@ -491,7 +504,7 @@
 			// Convert checkbox value
 			const value = i.type === 'checkbox' ? (i.checked ? 'True' : 'False') : (i.dataset.value || i.value).trim();
 			// Compare old and new value
-			if (value !== format('', paragraphXml).trim()) {
+			if (value !== getText(paragraphXml)) {
 				changed = true;
 				// Note the modification in the XML
 				paragraphXml.setAttribute('modified', 'True');
@@ -728,7 +741,7 @@
 
 		// Join text
 		keepWord.setAttribute('modified', 'True');
-		keepWord.textContent = format('', keepWord) + format('', removeWord);
+		keepWord.textContent = getText(keepWord) + getText(removeWord);
 
 		// TODO Investigate the ID generation
 		// Update IDs and remove second token
