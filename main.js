@@ -725,88 +725,8 @@ class TemplateManager {
 	}
 }
 
-class DocumentManager {
-	#db
-	#editor
-
-	constructor(db, editor) {
-		this.#db = db;
-		this.#editor = editor;
-	}
-
-	async #readFile(file) {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-
-			reader.onload = e => resolve(e.target.result);
-			reader.onerror = reject;
-
-			reader.readAsText(file, 'UTF-8');
-		});
-	}
-
-	async import(template) {
-		// Import file from disk
-		const file = await pickFile({extension: template.extension});
-		const text = await this.#readFile(file);
-		const document = ChunkProcessor.createDocument(file.name, text, template);
-
-		await this.#db.storeFile(file.name, document);
-
-		return document;
-	}
-
-	async open(id) {
-		// Open file from IndexedDB
-		const doc = await this.#db.retrieveFile(id);
-		if (!doc) throw new Error(_('Document not found: ') + id);
-
-		return doc;
-	}
-
-	async saveToIDB(chunks) {
-		const data = await this.#db.retrieveFile(this.#editor.id || 0);
-		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
-
-		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
-
-		// Store the data in IndexedDB with the correct fileName (data.id)
-		await this.#db.storeFile(data.id, data);
-
-		return data;
-	}
-
-	async store(filename, document) {
-		await this.#db.storeFile(filename, document);
-	}
-
-	#download(data) {
-		const blob = ChunkProcessor.createBlob(data.chunks);
-
-		// Create a temporary object URL to download
-		const url = URL.createObjectURL(blob);
-
-		// Create a temporary <a> element to trigger the download
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = this.#editor.id;  // Original file name
-		a.click();                     // Simulate click to download
-
-		// Clean up the temporary URL
-		URL.revokeObjectURL(url);
-		// Clean up the temporary <a> element
-		a.remove();
-
-		addMsg(_('Document Saved'), 'success');
-	}
-
-	async export() {
-		const data = await documents.saveToIDB(this.#editor.chunks);
-		documents.#download(data);
-	}
-}
-
 class ChunkProcessor {
+	// Static class used only inside of DocumentManager class
 	static #parse(content, splitter) {
 		const matches = [];
 
@@ -917,6 +837,94 @@ class ChunkProcessor {
 
 	static createBlob(chunks) {
 		return new Blob([this.#build(chunks)]);
+	}
+}
+
+class DocumentManager {
+	#db
+	#editor
+
+	constructor(db, editor) {
+		this.#db = db;
+		this.#editor = editor;
+	}
+
+	async #readFile(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+
+			reader.onload = e => resolve(e.target.result);
+			reader.onerror = reject;
+
+			reader.readAsText(file, 'UTF-8');
+		});
+	}
+
+	async import(template) {
+		// Import file from disk
+		const file = await pickFile({extension: template.extension});
+		const text = await this.#readFile(file);
+		const document = ChunkProcessor.createDocument(file.name, text, template);
+
+		await this.#db.storeFile(file.name, document);
+
+		return document;
+	}
+
+	async open(id) {
+		// Open file from IndexedDB
+		const doc = await this.#db.retrieveFile(id);
+		if (!doc) throw new Error(_('Document not found: ') + id);
+
+		return doc;
+	}
+
+	async saveToIDB(chunks) {
+		const data = await this.#db.retrieveFile(this.#editor.id || 0);
+		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
+
+		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
+
+		// Store the data in IndexedDB with the correct fileName (data.id)
+		await this.#db.storeFile(data.id, data);
+
+		return data;
+	}
+
+	async #store(filename, document) {
+		await this.#db.storeFile(filename, document);
+	}
+
+	#download(data) {
+		const blob = ChunkProcessor.createBlob(data.chunks);
+
+		// Create a temporary object URL to download
+		const url = URL.createObjectURL(blob);
+
+		// Create a temporary <a> element to trigger the download
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = this.#editor.id;  // Original file name
+		a.click();                     // Simulate click to download
+
+		// Clean up the temporary URL
+		URL.revokeObjectURL(url);
+		// Clean up the temporary <a> element
+		a.remove();
+
+		addMsg(_('Document Saved'), 'success');
+	}
+
+	async export() {
+		const data = await this.saveToIDB(this.#editor.chunks);
+		this.#download(data);
+	}
+
+	async createDocument(filename, data, template){
+		const newData = ChunkProcessor.createDocument(filename, data, template);
+		await this.#store(filename, newData);
+
+		return newData
 	}
 }
 
@@ -1178,8 +1186,7 @@ async function createNewDocument(templateInfo) {
 
 	// Process the source returned by the plug-in, then save and render the document.
 	const [filename, data] = result;
-	const newData = ChunkProcessor.createDocument(filename, data, template);
-	await documents.store(filename, newData);
+	const newData = await documents.createDocument(filename, data, template);
 	showDocument(newData);
 }
 
