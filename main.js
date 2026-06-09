@@ -1068,9 +1068,9 @@ class UndoManager {
 const hist = {
 	recent: new History('ed_recent'),
 	undo: new History('ed_undo', undefined,
-		h => disable('.ed-undo', !h.length)),
+		h => disable('.ed-undo', !!h.length)),
 	redo: new History('ed_redo', undefined,
-		h => disable('.ed-undo', !h.length))
+		h => disable('.ed-redo', !!h.length))
 };
 const editor = new Editor(sel('#editor'), (chunks, values) => {
 	// Store previous values in Undo history
