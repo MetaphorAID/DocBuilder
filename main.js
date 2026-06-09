@@ -306,8 +306,7 @@ class Editor {
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
 
-		// Load the required resources + finish loading
-		this.#loadResources(data, () => this.#finishLoad(onLoaded));
+		this.#finishLoad(onLoaded);
 	}
 
 	#finishLoad(onLoaded) {
@@ -322,25 +321,6 @@ class Editor {
 		this.render([0]);
 
 		onLoaded?.();
-	}
-
-	#loadResources(data, onSuccess) {
-		// Dynamically load the required CSS if not already loaded
-		for (const css of data.css || []) {
-			if (sel(`link[href="${css}"]`)) continue;
-
-			const e = document.createElement('link');
-			e.rel = 'stylesheet';
-			e.href = css;
-			document.head.appendChild(e);
-		}
-
-		// Dynamically load the required JS if not already loaded and wait for it to be loeaded
-		const scripts = data.js || [];
-
-		scripts.reduce((p, js) => p.then(() =>
-			loadScript(js).catch(err => addMsg(err.message, 'error'))), Promise.resolve())
-			.then(onSuccess);
 	}
 
 	#reset(data, store_filler) {
@@ -654,11 +634,66 @@ class History {
 	}
 }
 
+class ResourceLoader {
+	#scripts = new Map();
+	#styles = new Map();
+
+	#loadStyle(src) {
+		if (this.#styles.has(src)) return this.#styles.get(src);
+		if (sel(`link[href="${src}"]`)) return Promise.resolve();
+
+		const loading = new Promise((resolve, reject) => {
+			const e = document.createElement('link');
+			e.rel = 'stylesheet';
+			e.href = src;
+			e.onload = resolve;
+			e.onerror = () => {
+				e.remove();
+				reject(new Error(_('Failed to load ') + src));
+			};
+			document.head.appendChild(e);
+		});
+
+		this.#styles.set(src, loading);
+		loading.catch(() => this.#styles.delete(src));
+		return loading;
+	}
+
+	#loadScript(src) {
+		if (this.#scripts.has(src)) return this.#scripts.get(src);
+		if (sel(`script[src="${src}"]`)) return Promise.resolve();
+
+		const loading = new Promise((resolve, reject) => {
+			const e = document.createElement('script');
+			e.src = src;
+			e.onload = resolve;
+			e.onerror = () => {
+				e.remove();
+				reject(new Error(_('Failed to load ') + src));
+			};
+			document.body.appendChild(e);
+		});
+
+		this.#scripts.set(src, loading);
+		loading.catch(() => this.#scripts.delete(src));
+		return loading;
+	}
+
+	async load(resources) {
+		await Promise.all((resources.css || []).map(src => this.#loadStyle(src)));
+
+		// Preserve script order because template plug-ins may depend on earlier files.
+		for (const src of resources.js || []) await this.#loadScript(src);
+	}
+}
+
 class TemplateManager {
 	#templateDir
+	#resources
 
-	constructor(templateDir = 'templates') {
+	constructor(templateDir = 'templates', resources = new ResourceLoader()) {
 		this.#templateDir = templateDir;
+		this.#resources = resources;
 	}
 
 	async #loadJSON(url) {
@@ -693,6 +728,10 @@ class TemplateManager {
 		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
 
 		return template;
+	}
+
+	loadResources(template) {
+		return this.#resources.load(template);
 	}
 
 	async show(action, target, event) {
@@ -1096,7 +1135,9 @@ const templates = new TemplateManager();
 const documents = new DocumentManager(fileDB, editor);
 const undoManager = new UndoManager(editor, hist, save, open);
 
-function showDocument(data, onsuccess) {
+async function showDocument(data, onsuccess) {
+	await templates.loadResources(data);
+
 	editor.load(data, false, () => {
 		hist.recent.moveToTop(editor.id);
 
@@ -1111,7 +1152,7 @@ function showDocument(data, onsuccess) {
 async function open(id, onsuccess) {
 	try {
 		const data = await documents.open(id);
-		showDocument(data, onsuccess);
+		await showDocument(data, onsuccess);
 
 	} catch (err) {
 		console.error('Error during file open process:', err);
@@ -1140,7 +1181,7 @@ async function save(chunks) {
 async function createNewDocument(templateInfo) {
 	// Load the resources that register this template's creation handler.
 	const template = await templates.loadTemplate(templateInfo.path);
-	for (const src of template.js || []) await loadScript(src);
+	await templates.loadResources(template);
 
 	const handler = Editor.getNewDocumentType(templateInfo.id);
 	if (!handler) {
@@ -1154,7 +1195,7 @@ async function createNewDocument(templateInfo) {
 	// Process the source returned by the plug-in, then save and render the document.
 	const [filename, data] = result;
 	const newData = await documents.createDocument(filename, data, template);
-	showDocument(newData);
+	await showDocument(newData);
 }
 
 evt('.ed-open', 'click', e => {
@@ -1218,7 +1259,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 			editor.confirmDiscardChanges(() => {
 				templates.loadTemplate(templateInfo.path).then(loadedTemplate =>
 					documents.import(loadedTemplate).then(data => {
-						showDocument(data);
+						return showDocument(data);
 					}).catch(err => {
 						console.error('Error during file open process:', err);
 						addMsg(_('Error during file open process:') + err, 'error');

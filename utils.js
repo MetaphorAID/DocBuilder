@@ -6,7 +6,6 @@
 function sel(selector, dom = document, def = null) {
 	return dom.querySelector(selector) || def;
 }
-
 function find(selector, dom = document) {
 	return dom.querySelectorAll(selector);
 }
@@ -244,19 +243,5 @@ function pickFile({extension, multiple = false, accept} = {}) {
 		}, {once: true});
 
 		input.click();
-	});
-}
-
-function loadScript(src) {
-	// Load only if not already loaded
-	if (sel(`script[src="${src}"]`)) return Promise.resolve();
-
-	return new Promise((resolve, reject) => {
-		const e = document.createElement('script');
-		e.src = src;
-		e.onload = resolve;
-		e.onerror = () => reject(new Error(_('Failed to load ') + src));
-
-		document.body.appendChild(e);
 	});
 }
