@@ -82,6 +82,7 @@
 				break;
 			case 'meanings':
 				if (!el) break;
+				// Find the line whose numbering matches the contextual index
 				const primary = getText(sel(MEANING_FIELD.PRIMARY, el));
 				const other = getText(sel(MEANING_FIELD.OTHER, el));
 				const index = getText(sel(MEANING_FIELD.CONTEXTUAL_INDEX, el));

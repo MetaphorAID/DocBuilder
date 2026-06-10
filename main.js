@@ -77,18 +77,6 @@ window.addEventListener('DOMContentLoaded', () => {
 	});
 });
 
-window.addEventListener('DOMContentLoaded', async () => {
-	try {
-		await fileDB.init();
-		const keys = await fileDB.getAllKeys();
-
-		hist.recent.clear();
-		keys.forEach(key => hist.recent.add(key));
-	} catch (err) {
-		addMsg(_('Database error: ') + err, 'error');
-	}
-});
-
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
@@ -196,6 +184,342 @@ class AnnotationDB {
 			request.onsuccess = () => resolve();
 			request.onerror = e => reject(e.target.error);
 		});
+	}
+}
+
+class ChunkProcessor {
+	// Static class used only inside of DocumentManager class
+	static #parse(content, splitter) {
+		const matches = [];
+
+		// Collect all matches
+		for (const [patternStr, key] of Object.entries(splitter)) {
+			const regex = new RegExp(patternStr, 'gs');  // g = global, s = dotall
+
+			let match;
+			while ((match = regex.exec(content)) !== null) {
+				matches.push({
+					start: match.index,
+					end: regex.lastIndex,
+					chunk: {
+						id: null,
+						name: key,
+						value: match[0]
+					}
+				});
+			}
+		}
+
+		// Sort matches (Longer match first)
+		matches.sort((a, b) => a.start - b.start || b.end - a.end);
+
+		const chunks = [];
+		let pos = 0;
+		let id = 0;
+
+		for (const match of matches) {
+			const {start, end, chunk} = match;
+
+			if (pos > start) {
+				// Keep overlapping matches as non-owning views, without an id,
+				// so their source text is not included twice when saving.
+				chunks.push(chunk);
+				continue;
+			}
+
+			if (pos < start) {
+				// Add intermediate chunk
+				chunks.push({
+					id: ++id,
+					name: '',
+					value: content.substring(pos, start)
+				});
+			}
+
+			chunk.id = ++id;
+			chunks.push(chunk);
+			pos = end;
+		}
+
+		if (pos < content.length) {
+			chunks.push({
+				id: ++id,
+				name: '',
+				value: content.substring(pos)
+			});
+		}
+
+		return chunks;
+	}
+
+	static merge(changes, chunks) {
+		const changesById = new Map(changes.map(c => [c.id, c]));
+
+		// Go through chunks and update them
+		for (const chunk of chunks) {
+			const change = changesById.get(chunk.id);
+
+			// If no change for chunk, skip it
+			if (!change) continue;
+
+			// If both changes and chunks have the same id, merge them
+			if (change.append) {
+				chunk.value += change.value ?? '';
+			} else {
+				chunk.value = change.value ?? '';
+			}
+
+			// Remove applied change
+			changesById.delete(chunk.id);
+		}
+
+		if (changesById.size) {
+			// If there are non-applicable changes, list them
+			throw new Error(_('No matching chunk found for chunk with id: ') + [...changesById.keys()][0]);
+		}
+
+		return chunks;
+	}
+
+	static #build(chunks) {
+		return chunks
+			.filter(chunk => chunk.id !== null)
+			.map(chunk => chunk.value)
+			.join('');
+	}
+
+	static createDocument(fileName, text, template) {
+		return {
+			id: fileName,
+			chunks: this.#parse(text, template.chunks),
+			js: template.js,
+			css: template.css
+		};
+	}
+
+	static createBlob(chunks) {
+		return new Blob([this.#build(chunks)]);
+	}
+}
+
+class DocumentManager {
+	#editor
+	#db
+
+	constructor(editor, oninit, db = new AnnotationDB()) {
+		this.#editor = editor;
+		this.#db = db;
+		// Init the database
+		this.#db.init().then(async () => {
+			const keys = await this.#db.getAllKeys();
+			oninit(keys);
+		}).catch(err => addMsg(_('Database error: ') + err, 'error'));
+	}
+
+	async #readFile(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+
+			reader.onload = e => resolve(e.target.result);
+			reader.onerror = reject;
+
+			reader.readAsText(file, 'UTF-8');
+		});
+	}
+
+	async import(template) {
+		// Import file from disk
+		const file = await pickFile({extension: template.extension});
+		const text = await this.#readFile(file);
+		const document = ChunkProcessor.createDocument(file.name, text, template);
+
+		await this.#db.storeFile(file.name, document);
+
+		return document;
+	}
+
+	async open(id) {
+		// Open file from IndexedDB
+		const doc = await this.#db.retrieveFile(id);
+		if (!doc) throw new Error(_('Document not found: ') + id);
+
+		return doc;
+	}
+
+	async saveToIDB(chunks) {
+		const data = await this.#db.retrieveFile(this.#editor.id || 0);
+		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
+
+		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
+
+		// Store the data in IndexedDB with the correct fileName (data.id)
+		await this.#db.storeFile(data.id, data);
+
+		return data;
+	}
+
+	async #store(filename, document) {
+		await this.#db.storeFile(filename, document);
+	}
+
+	#download(data) {
+		const blob = ChunkProcessor.createBlob(data.chunks);
+
+		// Create a temporary object URL to download
+		const url = URL.createObjectURL(blob);
+
+		// Create a temporary <a> element to trigger the download
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = this.#editor.id;  // Original file name
+		a.click();                     // Simulate click to download
+
+		// Clean up the temporary URL
+		URL.revokeObjectURL(url);
+		// Clean up the temporary <a> element
+		a.remove();
+
+		addMsg(_('Document Saved'), 'success');
+	}
+
+	async export() {
+		const data = await this.saveToIDB(this.#editor.chunks);
+		this.#download(data);
+	}
+
+	async createDocument(filename, data, template) {
+		const newData = ChunkProcessor.createDocument(filename, data, template);
+		await this.#store(filename, newData);
+
+		return newData
+	}
+}
+
+class ResourceLoader {
+	#scripts = new Map();
+	#styles = new Map();
+
+	#loadStyle(src) {
+		if (this.#styles.has(src)) return this.#styles.get(src);
+		if (sel(`link[href="${src}"]`)) return Promise.resolve();
+
+		const loading = new Promise((resolve, reject) => {
+			const e = document.createElement('link');
+			e.rel = 'stylesheet';
+			e.href = src;
+			e.onload = resolve;
+			e.onerror = () => {
+				e.remove();
+				reject(new Error(_('Failed to load ') + src));
+			};
+			document.head.appendChild(e);
+		});
+
+		this.#styles.set(src, loading);
+		loading.catch(() => this.#styles.delete(src));
+		return loading;
+	}
+
+	#loadScript(src) {
+		if (this.#scripts.has(src)) return this.#scripts.get(src);
+		if (sel(`script[src="${src}"]`)) return Promise.resolve();
+
+		const loading = new Promise((resolve, reject) => {
+			const e = document.createElement('script');
+			e.src = src;
+			e.onload = resolve;
+			e.onerror = () => {
+				e.remove();
+				reject(new Error(_('Failed to load ') + src));
+			};
+			document.body.appendChild(e);
+		});
+
+		this.#scripts.set(src, loading);
+		loading.catch(() => this.#scripts.delete(src));
+		return loading;
+	}
+
+	async load(resources) {
+		await Promise.all((resources.css || []).map(src => this.#loadStyle(src)));
+
+		// Preserve script order because template plug-ins may depend on earlier files.
+		for (const src of resources.js || []) await this.#loadScript(src);
+	}
+}
+
+class TemplateManager {
+	#templateDir
+	#resources
+
+	constructor(templateDir = 'templates', resources = new ResourceLoader()) {
+		this.#templateDir = templateDir;
+		this.#resources = resources;
+	}
+
+	async #loadJSON(url) {
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			addMsg(_('Error fetching file: ') + url, 'error');
+			throw new Error(_('Failed to load ') + url);
+		}
+
+		return response.json();
+	}
+
+	async getTemplateById(templateId) {
+		const templates = await this.#getAvailableTemplates();
+		return templates.find(t => t.id === templateId);
+	}
+
+	async #getAvailableTemplates() {
+		// Cache loaded template list
+		if (!this._templates) this._templates = await this.#loadJSON(`./${this.#templateDir}/template_list.json`);
+		return this._templates;
+	}
+
+	async loadTemplate(path) {
+		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
+
+		if (typeof template.css === 'string') template.css = template.css.split(',');
+		if (typeof template.js === 'string') template.js = template.js.split(',');
+
+		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
+		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
+
+		return template;
+	}
+
+	loadResources(template) {
+		return this.#resources.load(template);
+	}
+
+	async show(action, target, event) {
+		try {
+			let templates = await this.#getAvailableTemplates();
+
+			const tt = ttip(target, event);
+			tt.classList.add('dropdown');
+
+			if (action === 'new') templates = templates.filter(t => t.new);
+
+			for (const template of templates) {
+				const a = document.createElement('a');
+				a.href = '#';
+				a.className = 'template-select';
+				a.dataset.template = template.id;
+				a.dataset.action = action;
+				a.innerHTML = template.name;
+
+				tt.appendChild(a);
+			}
+
+			return tt;
+
+		} catch (err) {
+			addMsg(_('Error loading templates: ') + err, 'error');
+		}
 	}
 }
 
@@ -647,337 +971,6 @@ class History {
 	}
 }
 
-class ResourceLoader {
-	#scripts = new Map();
-	#styles = new Map();
-
-	#loadStyle(src) {
-		if (this.#styles.has(src)) return this.#styles.get(src);
-		if (sel(`link[href="${src}"]`)) return Promise.resolve();
-
-		const loading = new Promise((resolve, reject) => {
-			const e = document.createElement('link');
-			e.rel = 'stylesheet';
-			e.href = src;
-			e.onload = resolve;
-			e.onerror = () => {
-				e.remove();
-				reject(new Error(_('Failed to load ') + src));
-			};
-			document.head.appendChild(e);
-		});
-
-		this.#styles.set(src, loading);
-		loading.catch(() => this.#styles.delete(src));
-		return loading;
-	}
-
-	#loadScript(src) {
-		if (this.#scripts.has(src)) return this.#scripts.get(src);
-		if (sel(`script[src="${src}"]`)) return Promise.resolve();
-
-		const loading = new Promise((resolve, reject) => {
-			const e = document.createElement('script');
-			e.src = src;
-			e.onload = resolve;
-			e.onerror = () => {
-				e.remove();
-				reject(new Error(_('Failed to load ') + src));
-			};
-			document.body.appendChild(e);
-		});
-
-		this.#scripts.set(src, loading);
-		loading.catch(() => this.#scripts.delete(src));
-		return loading;
-	}
-
-	async load(resources) {
-		await Promise.all((resources.css || []).map(src => this.#loadStyle(src)));
-
-		// Preserve script order because template plug-ins may depend on earlier files.
-		for (const src of resources.js || []) await this.#loadScript(src);
-	}
-}
-
-class TemplateManager {
-	#templateDir
-	#resources
-
-	constructor(templateDir = 'templates', resources = new ResourceLoader()) {
-		this.#templateDir = templateDir;
-		this.#resources = resources;
-	}
-
-	async #loadJSON(url) {
-		const response = await fetch(url);
-
-		if (!response.ok) {
-			addMsg(_('Error fetching file: ') + url, 'error');
-			throw new Error(_('Failed to load ') + url);
-		}
-
-		return response.json();
-	}
-
-	async getTemplateById(templateId) {
-		const templates = await this.#getAvailableTemplates();
-		return templates.find(t => t.id === templateId);
-	}
-
-	async #getAvailableTemplates() {
-		// Cache loaded template list
-		if (!this._templates) this._templates = await this.#loadJSON(`./${this.#templateDir}/template_list.json`);
-		return this._templates;
-	}
-
-	async loadTemplate(path) {
-		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
-
-		if (typeof template.css === 'string') template.css = template.css.split(',');
-		if (typeof template.js === 'string') template.js = template.js.split(',');
-
-		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
-		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
-
-		return template;
-	}
-
-	loadResources(template) {
-		return this.#resources.load(template);
-	}
-
-	async show(action, target, event) {
-		try {
-			let templates = await this.#getAvailableTemplates();
-
-			const tt = ttip(target, event);
-			tt.classList.add('dropdown');
-
-			if (action === 'new') templates = templates.filter(t => t.new);
-
-			for (const template of templates) {
-				const a = document.createElement('a');
-				a.href = '#';
-				a.className = 'template-select';
-				a.dataset.template = template.id;
-				a.dataset.action = action;
-				a.innerHTML = template.name;
-
-				tt.appendChild(a);
-			}
-
-			return tt;
-
-		} catch (err) {
-			addMsg(_('Error loading templates: ') + err, 'error');
-		}
-	}
-}
-
-class ChunkProcessor {
-	// Static class used only inside of DocumentManager class
-	static #parse(content, splitter) {
-		const matches = [];
-
-		// Collect all matches
-		for (const [patternStr, key] of Object.entries(splitter)) {
-			const regex = new RegExp(patternStr, 'gs');  // g = global, s = dotall
-
-			let match;
-			while ((match = regex.exec(content)) !== null) {
-				matches.push({
-					start: match.index,
-					end: regex.lastIndex,
-					chunk: {
-						id: null,
-						name: key,
-						value: match[0]
-					}
-				});
-			}
-		}
-
-		// Sort matches (Longer match first)
-		matches.sort((a, b) => a.start - b.start || b.end - a.end);
-
-		const chunks = [];
-		let pos = 0;
-		let id = 0;
-
-		for (const match of matches) {
-			const {start, end, chunk} = match;
-
-			if (pos > start) {
-				// Keep overlapping matches as non-owning views, without an id,
-				// so their source text is not included twice when saving.
-				chunks.push(chunk);
-				continue;
-			}
-
-			if (pos < start) {
-				// Add intermediate chunk
-				chunks.push({
-					id: ++id,
-					name: '',
-					value: content.substring(pos, start)
-				});
-			}
-
-			chunk.id = ++id;
-			chunks.push(chunk);
-			pos = end;
-		}
-
-		if (pos < content.length) {
-			chunks.push({
-				id: ++id,
-				name: '',
-				value: content.substring(pos)
-			});
-		}
-
-		return chunks;
-	}
-
-	static merge(changes, chunks) {
-		const changesById = new Map(changes.map(c => [c.id, c]));
-
-		// Go through chunks and update them
-		for (const chunk of chunks) {
-			const change = changesById.get(chunk.id);
-
-			// If no change for chunk, skip it
-			if (!change) continue;
-
-			// If both changes and chunks have the same id, merge them
-			if (change.append) {
-				chunk.value += change.value ?? '';
-			} else {
-				chunk.value = change.value ?? '';
-			}
-
-			// Remove applied change
-			changesById.delete(chunk.id);
-		}
-
-		if (changesById.size) {
-			// If there are non-applicable changes, list them
-			throw new Error(_('No matching chunk found for chunk with id: ') + [...changesById.keys()][0]);
-		}
-
-		return chunks;
-	}
-
-	static #build(chunks) {
-		return chunks
-			.filter(chunk => chunk.id !== null)
-			.map(chunk => chunk.value)
-			.join('');
-	}
-
-	static createDocument(fileName, text, template) {
-		return {
-			id: fileName,
-			chunks: this.#parse(text, template.chunks),
-			js: template.js,
-			css: template.css
-		};
-	}
-
-	static createBlob(chunks) {
-		return new Blob([this.#build(chunks)]);
-	}
-}
-
-class DocumentManager {
-	#db
-	#editor
-
-	constructor(db, editor) {
-		this.#db = db;
-		this.#editor = editor;
-	}
-
-	async #readFile(file) {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-
-			reader.onload = e => resolve(e.target.result);
-			reader.onerror = reject;
-
-			reader.readAsText(file, 'UTF-8');
-		});
-	}
-
-	async import(template) {
-		// Import file from disk
-		const file = await pickFile({extension: template.extension});
-		const text = await this.#readFile(file);
-		const document = ChunkProcessor.createDocument(file.name, text, template);
-
-		await this.#db.storeFile(file.name, document);
-
-		return document;
-	}
-
-	async open(id) {
-		// Open file from IndexedDB
-		const doc = await this.#db.retrieveFile(id);
-		if (!doc) throw new Error(_('Document not found: ') + id);
-
-		return doc;
-	}
-
-	async saveToIDB(chunks) {
-		const data = await this.#db.retrieveFile(this.#editor.id || 0);
-		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
-
-		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
-
-		// Store the data in IndexedDB with the correct fileName (data.id)
-		await this.#db.storeFile(data.id, data);
-
-		return data;
-	}
-
-	async #store(filename, document) {
-		await this.#db.storeFile(filename, document);
-	}
-
-	#download(data) {
-		const blob = ChunkProcessor.createBlob(data.chunks);
-
-		// Create a temporary object URL to download
-		const url = URL.createObjectURL(blob);
-
-		// Create a temporary <a> element to trigger the download
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = this.#editor.id;  // Original file name
-		a.click();                     // Simulate click to download
-
-		// Clean up the temporary URL
-		URL.revokeObjectURL(url);
-		// Clean up the temporary <a> element
-		a.remove();
-
-		addMsg(_('Document Saved'), 'success');
-	}
-
-	async export() {
-		const data = await this.saveToIDB(this.#editor.chunks);
-		this.#download(data);
-	}
-
-	async createDocument(filename, data, template) {
-		const newData = ChunkProcessor.createDocument(filename, data, template);
-		await this.#store(filename, newData);
-
-		return newData
-	}
-}
-
 class UndoManager {
 	#editor;
 	#hist;
@@ -1146,10 +1139,16 @@ const editor = new Editor(sel('#editor'), (chunks, values) => {
 	// Persist changes
 	save(tosave).catch(err => addMsg(err.message, 'error'));
 });
-const fileDB = new AnnotationDB();
-const templates = new TemplateManager();
-const documents = new DocumentManager(fileDB, editor);
+const documents = new DocumentManager(editor, async (keys) => {
+	try {
+		hist.recent.clear();
+		keys.forEach(key => hist.recent.add(key));
+	} catch (err) {
+		addMsg(_('Database error: ') + err, 'error');
+	}
+});
 const undoManager = new UndoManager(editor, hist, save, openDocument);
+const templates = new TemplateManager();
 
 async function displayDocument(data) {
 	await templates.loadResources(data);
