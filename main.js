@@ -395,9 +395,50 @@ class DocumentManager {
 	}
 }
 
-class ResourceLoader {
-	#scripts = new Map();
-	#styles = new Map();
+class TemplateManager {
+	#templateDir
+	#scripts;
+	#styles;
+
+	constructor(templateDir = 'templates') {
+		this.#templateDir = templateDir;
+		this.#scripts = new Map();
+		this.#styles = new Map();
+	}
+
+	async #loadJSON(url) {
+		const response = await fetch(url);
+
+		if (!response.ok) {
+			addMsg(_('Error fetching file: ') + url, 'error');
+			throw new Error(_('Failed to load ') + url);
+		}
+
+		return response.json();
+	}
+
+	async getTemplateById(templateId) {
+		const templates = await this.#getAvailableTemplates();
+		return templates.find(t => t.id === templateId);
+	}
+
+	async #getAvailableTemplates() {
+		// Cache loaded template list
+		if (!this._templates) this._templates = await this.#loadJSON(`./${this.#templateDir}/template_list.json`);
+		return this._templates;
+	}
+
+	async loadTemplate(path) {
+		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
+
+		if (typeof template.css === 'string') template.css = template.css.split(',');
+		if (typeof template.js === 'string') template.js = template.js.split(',');
+
+		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
+		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
+
+		return template;
+	}
 
 	#loadStyle(src) {
 		if (this.#styles.has(src)) return this.#styles.get(src);
@@ -440,59 +481,11 @@ class ResourceLoader {
 		return loading;
 	}
 
-	async load(resources) {
-		await Promise.all((resources.css || []).map(src => this.#loadStyle(src)));
+	async loadResources(template) {
+		await Promise.all((template.css || []).map(src => this.#loadStyle(src)));
 
 		// Preserve script order because template plug-ins may depend on earlier files.
-		for (const src of resources.js || []) await this.#loadScript(src);
-	}
-}
-
-class TemplateManager {
-	#templateDir
-	#resources
-
-	constructor(templateDir = 'templates', resources = new ResourceLoader()) {
-		this.#templateDir = templateDir;
-		this.#resources = resources;
-	}
-
-	async #loadJSON(url) {
-		const response = await fetch(url);
-
-		if (!response.ok) {
-			addMsg(_('Error fetching file: ') + url, 'error');
-			throw new Error(_('Failed to load ') + url);
-		}
-
-		return response.json();
-	}
-
-	async getTemplateById(templateId) {
-		const templates = await this.#getAvailableTemplates();
-		return templates.find(t => t.id === templateId);
-	}
-
-	async #getAvailableTemplates() {
-		// Cache loaded template list
-		if (!this._templates) this._templates = await this.#loadJSON(`./${this.#templateDir}/template_list.json`);
-		return this._templates;
-	}
-
-	async loadTemplate(path) {
-		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
-
-		if (typeof template.css === 'string') template.css = template.css.split(',');
-		if (typeof template.js === 'string') template.js = template.js.split(',');
-
-		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
-		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
-
-		return template;
-	}
-
-	loadResources(template) {
-		return this.#resources.load(template);
+		for (const src of template.js || []) await this.#loadScript(src);
 	}
 
 	async show(action, target, event) {
