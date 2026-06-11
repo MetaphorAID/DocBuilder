@@ -83,9 +83,9 @@
 			case 'meanings':
 				if (!el) break;
 				// Find the line whose numbering matches the contextual index
-				const primary = getText(sel(MEANING_FIELD.PRIMARY, el));
-				const other = getText(sel(MEANING_FIELD.OTHER, el));
-				const index = getText(sel(MEANING_FIELD.CONTEXTUAL_INDEX, el));
+				const primary = selToText(el, MEANING_FIELD.PRIMARY, true);
+				const other = selToText(el, MEANING_FIELD.OTHER, true);
+				const index = selToText(el, MEANING_FIELD.CONTEXTUAL_INDEX, true);
 				value = !index || index === PRIMARY_MEANING_INDEX
 					? primary
 					: other.split('\n').find(line => line.startsWith(`${index}.`));
@@ -327,6 +327,7 @@
 			sentence,
 			sentenceId,
 			sentenceXml,
+			tokens,
 			tokenId,
 			tokenXml
 		};
@@ -376,13 +377,13 @@
 			html += TOKEN.getLink(tokenId, 'show info', 'Edit');
 			html += TOKEN.getLink(tokenId, 'show meaning', 'Meanings');
 			// Show reasoning if there is any
-			if (getText(sel('reasoning', tokenXml))) {
+			if (selToText(tokenXml, 'reasoning', true)) {
 				html += TOKEN.getLink(tokenId, 'show reason', 'Reasoning');
 			}
 			// Setup possible token splittings
-			let tkn = getText(sel('word', tokenXml));
+			const tkn = selToText(tokenXml, 'word', true);
 			if (tkn.length > 1) {
-				let split = {};
+				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
 				html += TOKEN.getSelect(tokenId, 'split token', '', 'Split Token...', split);
 			}
@@ -400,7 +401,7 @@
 		}
 
 		// Show the tooltip a dropdown menu
-		let tt = ttip(target, e);
+		const tt = ttip(target, e);
 		tt.classList.add('dropdown');
 		tt.innerHTML = html;
 	}
@@ -411,7 +412,7 @@
 		const cells = [];
 		// Setup elements for fields
 		for (const field in COLS) {
-			const fieldValue = getText(sel(field, tokenXml));
+			const fieldValue = selToText(tokenXml, field, true);
 			let td = '';
 			switch (field) {
 				case 'word':
@@ -461,12 +462,12 @@
 		const headers = [];
 		const cells = [];
 		const hasMeanings = [MEANING_FIELD.PRIMARY, MEANING_FIELD.OTHER]
-			.some(field => getText(sel(field, tokenXml)));
+			.some(field => selToText(tokenXml, field, true));
 
 		for (const field in MEANING) {
 			const value = field === MEANING_FIELD.CONTEXTUAL_INDEX && !hasMeanings
 				? ''
-				: getText(sel(field, tokenXml));
+				: selToText(tokenXml, field, true);
 			headers.push(`<th>${MEANING[field]}</th>`);
 			switch (field) {
 				case MEANING_FIELD.PRIMARY:
@@ -488,7 +489,8 @@
 
 	function handleEditReason(e, tokenXml, tokenId, sentence) {
 		let tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += `<textarea name="reasoning" class="input">${encXml(getText(sel('reasoning', tokenXml)))}</textarea>
+		tt.innerHTML += `<textarea name="reasoning" class="input">${
+			encXml(selToText(tokenXml, 'reasoning', true))}</textarea>
       <div class="center">${TOKEN.getLink(tokenId, 'btn reason save', 'Save')}</div>`;
 		// TODO: check if commented code is needed, if not remove it
 		// let tt = ttip(sentence, e);
@@ -524,28 +526,29 @@
 		savePar([paragraphId]);
 	}
 
-	function handleInsertToken(e, sentence, tokenXml, tokenId) {
-		let tt = ttip(sel('.cfg', sentence), e, true);
+	function handleInsertToken(e, tokenXml, tokenId, sentence) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = selToText(tokenXml, 'form');
-		tt.innerHTML += `<input type="text" class="input" value="">
-			<div class="center">${TOKEN.getLink(tokenId, 'btn token ins-save left',
-			'Insert Before <b>%word%</b>').replace('%word%', form)}
-			${TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>')
-			.replace('%word%', form)}</div>`;
+		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
+			TOKEN.getLink(tokenId, 'btn token ins-save left', `Insert Before <b>${form}</b>`)}${
+			TOKEN.getLink(tokenId, 'btn token ins-save right', `Insert After <b>${form}</b>`)}</div>`;
 	}
 
-	function handleSaveInsertedToken(e, target, paragraphXml, paragraphId, sentenceXml, tokenXml) {
+	function handleSaveInsertedToken(target, tokenXml, sentenceXml, paragraphXml, paragraphId) {
 		// Get the new token and validate it
 		const input = sel('input', target.closest('.tooltip'));
 		const value = input.value.trim();
-		if (!value || value.includes(' ')) {
-			addMsg(_('Invalid Format'), null, input);
-			return;
-		}
+
+		// Validation
+		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
+
 		// Clone the original token XML
 		const newTokenXml = parseXml(tokenXml.outerHTML).documentElement;
+
 		// Create new unique ID, store value and note modified status
-		newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenXml.getAttribute('xml:id').split('_')[0]));
+		const baseId = tokenXml.getAttribute('xml:id').split('_')[0];
+		newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
+
 		const token = sel('word', newTokenXml);
 		token.textContent = value;
 		token.setAttribute('modified', 'True');
@@ -559,11 +562,6 @@
 		sentenceXml.insertBefore(newTokenXml, referenceNode);
 		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
 		// Save changes and refress the UI
-		savePar([paragraphId]);
-	}
-
-	function handleDeleteToken(paragraphId, tokenXml) {
-		delNode(tokenXml);
 		savePar([paragraphId]);
 	}
 
@@ -673,12 +671,16 @@
 		if (ctx.target.matches('.save.info,.save.meaning,.save.reason'))
 			return handleSaveTokenFields(e, ctx.target, ctx.tokenXml, ctx.paragraphId);
 
-		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml, ctx.tokenId);
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
 		if (ctx.target.matches('.ins-save.token'))
-			return handleSaveInsertedToken(e, ctx.target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml);
+			return handleSaveInsertedToken(ctx.target, ctx.tokenXml, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId);
 
-		if (ctx.target.matches('.del.token')) return handleDeleteToken(ctx.paragraphId, ctx.tokenXml);
+		if (ctx.target.matches('.del.token')) {
+			delNode(ctx.tokenXml);
+			savePar([ctx.paragraphId]);
+			return;
+		}
 
 		if (ctx.target.matches('.set.content')) return handleSetContent(e, ctx.sentence, ctx.tokenId);
 
