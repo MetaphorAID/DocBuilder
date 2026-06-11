@@ -7,6 +7,12 @@
 		CONTEXTUAL_INDEX: 'contextualIndex',
 	});
 
+	const MEANING = {
+		[MEANING_FIELD.PRIMARY]: 'elsődleges',
+		[MEANING_FIELD.OTHER]: 'többi',
+		[MEANING_FIELD.CONTEXTUAL_INDEX]: 'jelenleg',
+	}
+
 	const INDIRECT = {
 		'0': '-',
 		'1': 'metonímia',
@@ -23,12 +29,6 @@
 		'metaphor': 'metafora',
 		'otherIndirect': 'indirekt',
 		'comment': 'megjegyzés'
-	}
-
-	const MEANING = {
-		[MEANING_FIELD.PRIMARY]: 'elsődleges',
-		[MEANING_FIELD.OTHER]: 'többi',
-		[MEANING_FIELD.CONTEXTUAL_INDEX]: 'jelenleg',
 	}
 
 	Locale['Meanings'] = 'Jelentések';
@@ -121,8 +121,8 @@
 			for (const hidden of editor.hidden) {
 				const hiddenId = hidden.id || 0;
 
-				if ((hiddenId || 0) > currentId) break;
-				if ((hiddenId || 0) < previousId) continue;
+				if (hiddenId > currentId) break;
+				if (hiddenId < previousId) continue;
 
 				if (hidden.name === '.mm_head') header = hidden.value;
 			}
