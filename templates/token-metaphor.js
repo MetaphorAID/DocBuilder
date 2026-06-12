@@ -325,6 +325,7 @@
 			...paragraphCtx,
 			target,
 			sentence,
+			sentences,
 			sentenceId,
 			sentenceXml,
 			tokens,
@@ -688,12 +689,12 @@
 	});
 
 	function handleSplitToken(paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
-		const index = Number(value);
-		if (isNaN(index) || index < 0 || index > text.length) return;
-
 		// Select token to modify
 		const wordEl = sel('word', tokenXml);
 		const text = wordEl.textContent;
+
+		const index = Number(value);
+		if (isNaN(index) || index < 0 || index > text.length) return;
 
 		// Split text
 		const left = text.slice(0, index);
@@ -729,22 +730,19 @@
 		savePar([paragraphId]);
 	}
 
-	function handleJoinToken(paragraphXml, paragraphId, sentenceXml, tokenXml, tokenId, value) {
+	function handleJoinToken(tokens, paragraphXml, paragraphId, sentenceXml, tokenXml, tokenId, value) {
 		// Find neighbouring token
-		let offset = value === '0' ? -1 : 1;
-		let tokenXml2 = find('token', sentenceXml)[Number(tokenId) + offset];
-		if (!tokenXml2) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
+		const offset = value === '0' ? -1 : 1;
+		const tokenXml2 = tokens[Number(tokenId) + offset];
+		if (!tokenXml2) return addMsg(_('Invalid Action'));
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
-		const keepWord = sel('word', keepToken);
-		const removeWord = sel('word', removeToken);
+		const keepWord = selToText(keepToken, 'word');
+		const removeWord = selToText(removeToken, 'word');
 
 		// Join text
 		keepWord.setAttribute('modified', 'True');
-		keepWord.textContent = getText(keepWord) + getText(removeWord);
+		keepWord.textContent = keepWord + removeWord;
 
 		// TODO Investigate the ID generation
 		// Update IDs and remove second token
@@ -754,6 +752,8 @@
 
 		if (id1.length > 1) {
 			if (id2.length > 1) {
+				// Clear ID before creating a new unique ID
+				keepToken.setAttribute('xml:id', '');
 				keepToken.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
 			} else {
 				keepToken.setAttribute('xml:id', id2[0]);
@@ -764,18 +764,15 @@
 		savePar([paragraphId]);
 	}
 
-	function handleSplitSentence(paragraphXml, paragraphId, sentenceXml, tokenId, value) {
+	function handleSplitSentence(tokens, tokenId, sentenceXml, paragraphXml, paragraphId, value) {
 		// Determine split point
-		const tokenNodes = find('token', sentenceXml);
 		const offset = value === '0' ? 0 : 1;
-		const splitToken = tokenNodes[Number(tokenId) + offset];
-		if (!splitToken || splitToken === tokenNodes[0]) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
+		const splitToken = tokens[Number(tokenId) + offset];
+		if (!splitToken || splitToken === tokens[0]) return addMsg(_('Invalid Action'));
 
 		// Preserve indentation
 		const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+
 		// Mark sentence and insert split marker
 		sentenceXml.setAttribute('modified', 'True');
 		sentenceXml.insertBefore(paragraphXml.createElement('split'), splitToken);
@@ -793,12 +790,10 @@
 		savePar([paragraphId]);
 	}
 
-	function handleJoinSentence(paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+	function handleJoinSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
 		// Determine direction
-		const sentences = find('s,l', paragraphXml);
 		const joinRight = value !== '0';
 		const offset = joinRight ? 1 : -1;
-
 
 		let keepSentence;
 		let removeSentence;
@@ -812,27 +807,20 @@
 		} else {
 			const adjacentParagraphId = paragraphId + offset;
 			if (!_active[adjacentParagraphId]) {
-				let chunk = editor.renderChunk(adjacentParagraphId);
+				const chunk = editor.renderChunk(adjacentParagraphId);
 				if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
 			}
-			if (!_active[adjacentParagraphId]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
+			if (!_active[adjacentParagraphId]) return addMsg(_('Invalid Action'));
 
 			[keepSentence, removeSentence] = joinRight ? [sentenceXml, sel('s', _active[adjacentParagraphId])]
 				: [sel('s:last-of-type', _active[adjacentParagraphId]), sentenceXml];
 			paragraphIds = joinRight ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId];
 		}
-		if (!keepSentence || !removeSentence) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
+		if (!keepSentence || !removeSentence) return addMsg(_('Invalid Action'));
 
 		// Merge sentences
 		keepSentence.setAttribute('modified', 'True');
 		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
-
 
 		// Update IDs
 		const id1 = keepSentence.getAttribute('xml:id').split('_');
@@ -852,7 +840,7 @@
 		savePar(paragraphIds);
 	}
 
-	function handleMoveSentence(paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+	function handleMoveSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
 		// Determine destination paragraph
 		const moveToNextParagraph = value !== '0';
 		const offset = moveToNextParagraph ? 1 : -1;
@@ -865,12 +853,10 @@
 		}
 
 		// Validate move
-		const isLastSentence = sentenceId === find('s,l', paragraphXml).length - 1;
+		const isLastSentence = sentenceId === sentences.length - 1;
 		const isFirstSentence = sentenceId === 0;
-		if (!_active[adjacentParagraphId] || (moveToNextParagraph && !isLastSentence) || (offset < 0 && !isFirstSentence)) {
-			addMsg(_('Invalid Action'));
-			return;
-		}
+		if (!_active[adjacentParagraphId] || (moveToNextParagraph && !isLastSentence) || (offset < 0 && !isFirstSentence))
+			return addMsg(_('Invalid Action'));
 
 		// Move sentence
 		const targetParagraph = _active[adjacentParagraphId].documentElement
@@ -899,18 +885,20 @@
 			return handleSplitToken(target, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.value)
 
 		if (target.matches('.join.token'))
-			return handleJoinToken(ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId, ctx.value)
+			return handleJoinToken(ctx.tokens, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId,
+				ctx.value)
 
 		if (target.matches('.split.sent'))
-			return handleSplitSentence(ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenId, ctx.value);
+			return handleSplitSentence(ctx.tokens, ctx.tokenId, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId,
+				ctx.value);
 
 		if (target.matches('.join.sent'))
 			return handleJoinSentence(ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.sentenceId,
 				ctx.value);
 
 		if (target.matches('.move.sent'))
-			return handleMoveSentence(ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.sentenceId,
-				ctx.value);
+			return handleMoveSentence(ctx.sentences, ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml,
+				ctx.sentenceId, ctx.value);
 	});
 
 	function normalizeDocumentTitle(xml, filename) {

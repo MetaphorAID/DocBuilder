@@ -420,7 +420,7 @@
 		return {...tokenCtx, value};
 	}
 
-	function handleTokenContextMenu(e, target, tokenXml, tokenId, sentence, tokens) {
+	function handleTokenContextMenu(e, target, tokenXml, tokenId, sentence, sentenceXml, tokens) {
 		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
@@ -682,7 +682,8 @@
 
 		// Open tooltip
 		if (ctx.target.matches('.t, .cfg'))
-			return handleTokenContextMenu(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence, ctx.tokens);
+			return handleTokenContextMenu(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence, ctx.sentenceXml,
+				ctx.tokens);
 
 		if (ctx.target.matches('.edit.ana')) return handleEditAna(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
@@ -700,7 +701,7 @@
 		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
 
 		if (ctx.target.matches('.ins2.token'))
-			return handleSaveInsertedToken(ctx.target, ctx.tokenXml, ctx.sentenceXml,ctx. paragraphXml, ctx.paragraphId);
+			return handleSaveInsertedToken(ctx.target, ctx.tokenXml, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId);
 
 		if (ctx.target.matches('.del.token')) {
 			const id = ctx.tokenXml.getAttribute('xml:id');
@@ -711,6 +712,265 @@
 
 	});
 
+	function handleEditSticky(tokens, tokenXml, tokenId, paragraphId, value) {
+		tokenXml.setAttribute('join', value);
+
+		[tokenId - 1, tokenId + 1].forEach(i => {
+			if (i >= 0 && i < tokens.length) updJoin(i, tokens);
+		});
+
+		savePar([paragraphId]);
+	}
+
+	function handleSplitToken(paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
+		// Select token to modify
+		const wordEl = sel('form', tokenXml);
+		const text = wordEl.textContent;
+
+		const index = Number(value);
+		if (isNaN(index) || index < 0 || index > text.length) return;
+
+		const morph = sel('morph', tokenXml);
+		if (morph) {
+			morph.setAttribute('check', 'False');
+			morph.innerHTML = '';
+		}
+
+		// Split text
+		const left = text.slice(0, index);
+		const right = text.slice(index);
+
+		// Clone the original token XML
+		const newTokenXml = parseXml(tokenXml.outerHTML).documentElement;
+
+		// Create new unique ID, store value and note modified status
+		const baseId = tokenXml.getAttribute('xml:id')?.split('_')[0];
+		if (baseId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
+
+		const newWordEl = sel('form', newTokenXml);
+
+		// Update original + new token
+		wordEl.textContent = left;
+		wordEl.setAttribute('modified', 'True');
+
+		newWordEl.textContent = right;
+		newWordEl.setAttribute('modified', 'True');
+
+		// Insertion point (insert after current token)
+		const referenceNode = tokenXml.nextSibling;
+
+		// Preserve whitespace
+		const previousText = tokenXml.previousSibling?.nodeName === '#text' ? tokenXml.previousSibling.textContent : '';
+
+		// Insert new token and reinsert whitespace
+		sentenceXml.insertBefore(newTokenXml, referenceNode);
+		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
+
+		// Save changes and refresh UI
+		updAnnot([baseId], [tokenXml, newTokenXml]);
+		updAna([tokenXml, newTokenXml], paragraphId);
+	}
+
+	function handleJoinToken(tokens, paragraphXml, paragraphId, sentenceXml, tokenXml, tokenId, value) {
+		// Find neighbouring token
+		const offset = value === '0' ? -1 : 1;
+		const tokenXml2 = tokens[Number(tokenId) + offset];
+		if (!tokenXml2) return addMsg(_('Invalid Action'));
+
+		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
+		const keepWord = selToText(keepToken, 'form');
+		const removeWord = selToText(removeToken, 'form');
+
+		// Join text
+		const needsMorph = sel('morph', keepToken) || sel('morph', removeToken);
+		keepToken.innerHTML = `<form modified="True">${keepWord}${removeWord}</form>`
+			+ (needsMorph ? '<morph check="False"/>' : '');
+
+		// TODO Investigate the ID generation
+		// Update IDs and remove second token
+		const id1 = keepToken.getAttribute('xml:id').split('_');
+		const id2 = removeToken.getAttribute('xml:id').split('_');
+		delNode(removeToken);
+
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				// Clear ID before creating a new unique ID
+				keepToken.setAttribute('xml:id', '');
+				keepToken.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
+			} else {
+				keepToken.setAttribute('xml:id', id2[0]);
+			}
+		}
+
+		// Save changes and refresh UI
+		updAnnot([id1.join('_'), id2.join('_')], [keepToken]);
+		updAna([keepToken], paragraphId);
+	}
+
+	function handleEditSentence(sentenceXml, paragraphId) {
+		const value = value.join(';');
+		if ((sentenceXml.getAttribute('sent') || '') === value) return;
+		sentenceXml.setAttribute('sent', value);
+		savePar([paragraphId]);
+	}
+
+	function handleSplitSentence(tokens, tokenId, sentenceXml, paragraphXml, paragraphId, value) {
+		// Determine split point
+		const offset = value === '0' ? 0 : 1;
+		const splitToken = tokens[Number(tokenId) + offset];
+		if (!splitToken || splitToken === tokens[0]) return addMsg(_('Invalid Action'));
+
+		// Preserve indentation
+		const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+
+		// Mark sentence and insert split marker
+		sentenceXml.setAttribute('modified', 'True');
+		sentenceXml.insertBefore(paragraphXml.createElement('split'), splitToken);
+
+		// Create new sentence ID
+		const root = paragraphXml.documentElement;
+		const idBase = sentenceXml.getAttribute('xml:id').split('_')[0];
+		const newSentence = `</${sentenceXml.nodeName}>` + indent + `<${sentenceXml.nodeName}`
+			+ (idBase ? ` xml:id="${getUID(paragraphXml, idBase)}"` : '') + ' modified="True"> ';
+
+		// Replace marker with sentence boundary
+		root.innerHTML = root.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/, indent + newSentence + '$1');
+
+		// Save changes and refresh UI
+		savePar([paragraphId]);
+	}
+
+	function handleJoinSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+		// Determine direction
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
+
+		let keepSentence;
+		let removeSentence;
+		let paragraphIds;
+
+		// Determine survivor and removed node
+		const adjacentSentence = sentences[sentenceId + offset];
+		if (adjacentSentence) {
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, adjacentSentence] : [adjacentSentence, sentenceXml];
+			paragraphIds = [paragraphId];
+		} else {
+			const adjacentParagraphId = paragraphId + offset;
+			if (!_active[adjacentParagraphId]) {
+				const chunk = editor.renderChunk(adjacentParagraphId);
+				if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
+			}
+			if (!_active[adjacentParagraphId]) return addMsg(_('Invalid Action'));
+
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, sel('s', _active[adjacentParagraphId])]
+				: [sel('s:last-of-type', _active[adjacentParagraphId]), sentenceXml];
+			paragraphIds = joinRight ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId];
+		}
+		if (!keepSentence || !removeSentence) return addMsg(_('Invalid Action'));
+
+		// Merge sentences
+		keepSentence.setAttribute('modified', 'True');
+		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
+
+		// Update IDs
+		const id1 = keepSentence.getAttribute('xml:id').split('_');
+		const id2 = removeSentence.getAttribute('xml:id').split('_');
+
+		delNode(removeSentence);
+
+		if (id1.length > 1) {
+			if (id2.length > 1) {
+				keepSentence.setAttribute('xml:id', '');
+				keepSentence.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
+			} else {
+				keepSentence.setAttribute('xml:id', id2[0]);
+			}
+		}
+
+		savePar(paragraphIds);
+	}
+
+	function handleMoveSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+		// Determine destination paragraph
+		const moveToNextParagraph = value !== '0';
+		const offset = moveToNextParagraph ? 1 : -1;
+		const adjacentParagraphId = paragraphId + offset;
+
+		// Ensure target paragraph is loaded
+		if (!_active[adjacentParagraphId]) {
+			const chunk = editor.renderChunk(adjacentParagraphId);
+			if (chunk) paragraph.parentNode.insertBefore(chunk, moveToNextParagraph ? paragraph.nextSibling : paragraph);
+		}
+
+		// Validate move
+		const isLastSentence = sentenceId === sentences.length - 1;
+		const isFirstSentence = sentenceId === 0;
+		if (!_active[adjacentParagraphId] || (moveToNextParagraph && !isLastSentence) || (offset < 0 && !isFirstSentence))
+			return addMsg(_('Invalid Action'));
+
+		// Move sentence
+		const targetParagraph = _active[adjacentParagraphId].documentElement
+		if (moveToNextParagraph) {
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)</, '$1' + sentenceXml.outerHTML + '$1<');
+		} else {
+			const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)$/, indent + sentenceXml.outerHTML + '$1');
+		}
+		delNode(sentenceXml);
+
+		// Save changes
+		savePar(moveToNextParagraph ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId]);
+	}
+
+	function handleAddAnnotation(tokenXml, value) {
+		if (!_annots.xml) return;
+
+		const {xml} = _annots;
+
+		const target = xml.createElement(tokenXml.nodeName);
+		target.setAttribute('target', tokenXml.getAttribute('xml:id'));
+		target.textContent = sel('form', tokenXml).textContent;
+		const annotation = xml.createElement('annotation');
+		annotation.setAttribute('entity', value);
+		annotation.appendChild(target);
+
+		//TODO: sort?
+		xml.documentElement.appendChild(annotation);
+		_annots.changed = true;
+
+		savePar();
+	}
+
+	function handleAddToAnnotation(tokenXml, value) {
+		const xml = _annots.xml;
+		if (!xml) return;
+
+		const position = value[0];
+		const annotation = _annots.list[value.slice(1)];
+
+		const target = xml.createElement(tokenXml.nodeName);
+		target.setAttribute('target', tokenXml.getAttribute('xml:id'));
+		target.textContent = sel('form', tokenXml).textContent;
+		annotation.insertBefore(target, position === 'F' ? annotation.firstElementChild : null);
+
+		_annots.changed = true;
+		savePar();
+	}
+
+	function handleDeleteFromAnnotation(tokenXml, value) {
+		if (!_annots.xml) return;
+
+		const annotation = _annots.list[value];
+		const targetId = tokenXml.getAttribute('xml:id');
+		sel(`[target="${targetId}"]`, annotation).remove();
+		if (!sel('[target]', annotation)) annotation.remove();
+
+		_annots.changed = true;
+		savePar();
+	}
+
 	document.addEventListener('change', e => {
 		const target = e.target;
 		if (!target) return;
@@ -718,212 +978,52 @@
 		const ctx = resolveContext(target, {includeValue: true});
 		if (!ctx) return;
 
-		// Sentence stuff
-		if (target.matches('.edit.sent')) {
-			value = value.join(';');
-			if ((sentenceXml.getAttribute('sent') || '') === value) return;
-			sentenceXml.setAttribute('sent', value);
-			savePar([paragraphId]);
-			return;
-		}
-
-		if (target.matches('.split.sent')) {
-			if (value === '') return;
-			const xt2 = tokens[Number(tokenId) + (value === '0' ? 0 : 1)];
-			if (!xt2 || xt2 === tokens[0]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			const indent = sentenceXml.previousSibling && sentenceXml.previousSibling.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
-			sentenceXml.setAttribute('modified', 'True');
-			sentenceXml.insertBefore(paragraphXml.createElement('split'), xt2);
-			const xe = paragraphXml.documentElement;
-			const id = sentenceXml.getAttribute('xml:id').split('_')[0];
-			xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
-				, indent + '</' + sentenceXml.nodeName + '>' + indent + '<' + sentenceXml.nodeName
-				+ (id ? ' xml:id="' + getUID(paragraphXml, id) + '"' : '') + ' modified="True"> $1');
-			savePar([paragraphId]);
-			return;
-		}
-
-		if (target.matches('.join.sent')) {
-			if (value === '') return;
-			const off = value === '0' ? -1 : 1;
-			let u, cids;
-			if (sentences[sentenceId + off]) {
-				u = off > 0 ? [sentenceXml, sentences[sentenceId + off]] : [sentences[sentenceId + off], sentenceXml];
-				cids = [paragraphId];
-			} else {
-				if (!_active[paragraphId + off]) {
-					const e = editor.renderChunk(paragraphId + off);
-					if (e) paragraph.parentNode.insertBefore(e, off > 0 ? paragraph.nextSibling : paragraph);
-				}
-				if (!_active[paragraphId + off]) {
-					addMsg(_('Invalid Action'));
-					return;
-				}
-				u = off > 0 ? [sentenceXml, sel('s', _active[paragraphId + off])] : [sel('s:last-of-type', _active[paragraphId + off]), sentenceXml];
-				cids = off > 0 ? [paragraphId, paragraphId + off] : [paragraphId + off, paragraphId];
-			}
-			if (!u[0] || !u[1]) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			u[0].setAttribute('modified', 'True');
-			u[0].innerHTML = u[0].innerHTML.replace(/[ \r\n\t]+$/, '') + u[1].innerHTML;
-			const id2 = u[1].getAttribute('xml:id').split('_');
-			delNode(u[1]);
-			const id1 = u[0].getAttribute('xml:id').split('_');
-			if (id1.length > 1) {
-				if (id2.length > 1) {
-					u[0].setAttribute('xml:id', '');
-					u[0].setAttribute('xml:id', getUID(paragraphXml, id1[0]));
-				} else {
-					u[0].setAttribute('xml:id', id2[0]);
-				}
-			}
-			savePar(cids);
-			return;
-		}
-
-		if (target.matches('.move.sent')) {
-			if (value === '') return;
-			const off = value === '0' ? -1 : 1;
-			if (!_active[paragraphId + off]) {
-				const e = editor.renderChunk(paragraphId + off);
-				if (e) paragraph.parentNode.insertBefore(e, off > 0 ? paragraph.nextSibling : paragraph);
-			}
-			if (!_active[paragraphId + off] || (off > 0 && sentences.length > sentenceId + 1) || (off < 0 && sentenceId > 0)) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			const x2 = _active[paragraphId + off].documentElement
-			if (off > 0) {
-				x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)</, '$1' + sentenceXml.outerHTML + '$1<');
-			} else {
-				const indent = sentenceXml.previousSibling && sentenceXml.previousSibling.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
-				x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)$/, indent + sentenceXml.outerHTML + '$1');
-			}
-			delNode(sentenceXml);
-			savePar(off > 0 ? [paragraphId, paragraphId + off] : [paragraphId + off, paragraphId]);
-			return;
-		}
-
 		// Token stuff
-		if (target.matches('.edit.sticky')) {
-			tokenId = Number(tokenId);
-			tokenXml.setAttribute('join', value);
-			if (tokenId > 0) updJoin(tokenId - 1, tokens);
-			if (tokenId < tokens.length - 1) updJoin(tokenId + 1, tokens);
-			savePar([paragraphId]);
-			return;
-		}
+		if (target.matches('.edit.sticky'))
+			return handleEditSticky(ctx.tokens, ctx.tokenXml, ctx.tokenId, ctx.paragraphId, ctx.value);
 
-		if (target.matches('.join.token')) {
-			if (value === '') return;
-			const off = value === '0' ? -1 : 1;
-			const xt2 = tokens[Number(tokenId) + off];
-			if (!xt2) {
-				addMsg(_('Invalid Action'));
-				return;
-			}
-			const u = off > 0 ? [tokenXml, xt2] : [xt2, tokenXml];
-			let xml = '<form modified="True">' + selToText(u[0], 'form') + selToText(u[1], 'form') + '</form>';
-			if (sel('morph', u[0]) || sel('morph', u[1])) xml += '<morph check="False"/>';
-			const id2 = u[1].getAttribute('xml:id').split('_');
-			delNode(u[1]);
-			u[0].innerHTML = xml;
-			const id1 = u[0].getAttribute('xml:id').split('_');
-			if (id1.length > 1) {
-				if (id2.length > 1) {
-					u[0].setAttribute('xml:id', '');
-					u[0].setAttribute('xml:id', getUID(paragraphXml, id1[0]));
-				} else {
-					u[0].setAttribute('xml:id', id2[0]);
-				}
-			}
-			updAnnot([id1.join('_'), id2.join('_')], [u[0]]);
-			updAna([u[0]], paragraphId);
-			return;
-		}
+		if (target.matches('.split.token')) return handleSplitToken();
 
-		if (target.matches('.split.token')) {
-			if (value === '') return;
-			const tkn = sel('form', tokenXml);
-			tkn.setAttribute('modified', 'True');
-			const morph = sel('morph', tokenXml);
-			if (morph) {
-				morph.setAttribute('check', 'False');
-				morph.innerHTML = '';
-			}
-			const xt2 = parseXml(tokenXml.outerHTML).documentElement;
-			sel('form', xt2).textContent = tkn.innerHTML.slice(value);
-			const id1 = tokenXml.getAttribute('xml:id');
-			if (id1) xt2.setAttribute('xml:id', getUID(paragraphXml, id1.split('_')[0]));
-			tkn.textContent = tkn.textContent.slice(0, value);
-			sentenceXml.insertBefore(xt2, tokenXml.nextSibling);
-			if (tokenXml.previousSibling && tokenXml.previousSibling.nodeName === '#text') {
-				sentenceXml.insertBefore(paragraphXml.createTextNode(tokenXml.previousSibling.textContent), tokenXml.nextSibling);
-			}
-			updAnnot([id1], [tokenXml, xt2]);
-			updAna([tokenXml, xt2], paragraphId);
-			return;
-		}
+		if (target.matches('.join.token'))
+			return handleJoinToken(ctx.tokens, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId,
+				ctx.value);
 
-		// if (t.matches('.edit.tokentype')) {
-		// 	if (val == '' || val == xt.nodeName) return;
-		// 	const xt2 = x.createElement(val);
-		// 	xt2.innerHTML = xt.innerHTML;
-		// 	sel('form', xt2).setAttribute('modified', 'True');
-		// 	const id = x.documentElement.getAttribute('xml:id');
-		// 	if (id) {
-		// 		xt2.setAttribute('xml:id', getUID(x, val + id));
-		// 		updAnnot([xt.getAttribute('xml:id')], [xt2]);
+		// if (target.matches('.edit.tokentype')) {
+		// 	if (value == '' || value == tokenXml.nodeName) return;
+		// 	const tokenXml2 = paragraphXml.createElement(val);
+		// 	tokenXml2.innerHTML = tokenXml.innerHTML;
+		// 	sel('form', tokenXml2).setAttribute('modified', 'True');
+		// 	const baseId = x.documentElement.getAttribute('xml:id');
+		// 	if (baseId) {
+		// 		tokenXml2.setAttribute('xml:id', getUID(x, val + baseId));
+		// 		updAnnot([tokenXml.getAttribute('xml:id')], [tokenXml2]);
 		// 	}
-		// 	xs.insertBefore(xt2, xt);
-		// 	xt.remove();
-		// 	savePar([cid]);
+		// 	sentenceXml.insertBefore(tokenXml2, tokenXml);
+		// 	tokenXml.remove();
+		// 	savePar([paragraphId]);
 		// 	return;
 		// }
 
-		// annotation stuff
+		// Sentence stuff
+		if (target.matches('.edit.sent')) return handleEditSentence(ctx.sentenceXml, ctx.paragraphId);
 
-		if (target.matches('.add.annot')) {
-			if (value === '' || !_annots.xml) return;
-			const i = _annots.xml.createElement(tokenXml.nodeName);
-			i.setAttribute('target', tokenXml.getAttribute('xml:id'));
-			i.textContent = sel('form', tokenXml).textContent;
-			const a = _annots.xml.createElement('annotation');
-			a.setAttribute('entity', value);
-			a.appendChild(i);
-			//TODO: sort?
-			_annots.xml.documentElement.appendChild(a);
-			_annots.changed = true;
-			savePar();
-			return;
-		}
+		if (target.matches('.split.sent'))
+			return handleSplitSentence(ctx.tokens, ctx.tokenId, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId,
+				ctx.value);
 
-		if (target.matches('.addto.annot')) {
-			if (value === '' || !_annots.xml) return;
-			const an = _annots.list[value.slice(1)];
-			const i = _annots.xml.createElement(tokenXml.nodeName);
-			i.setAttribute('target', tokenXml.getAttribute('xml:id'));
-			i.textContent = sel('form', tokenXml).textContent;
-			an.insertBefore(i, value[0] === 'F' ? an.children[0] : null);
-			_annots.changed = true;
-			savePar();
-			return;
-		}
+		if (target.matches('.join.sent'))
+			return handleJoinSentence(ctx.sentences, ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml,
+				ctx.sentenceId, ctx.value);
 
-		if (target.matches('.delfrom.annot')) {
-			if (value === '' || !_annots.xml) return;
-			const an = _annots.list[value];
-			sel('[target="' + tokenXml.getAttribute('xml:id') + '"]', an).remove();
-			if (!sel('[target]', an)) an.remove();
-			_annots.changed = true;
-			savePar();
-		}
+		if (target.matches('.move.sent'))
+			return handleMoveSentence(ctx.sentences, ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml,
+				ctx.sentenceId, ctx.value);
 
+		// Annotation stuff
+		if (target.matches('.add.annot')) return handleAddAnnotation(ctx.tokenXml, ctx.value);
+
+		if (target.matches('.addto.annot')) return handleAddToAnnotation(ctx.tokenXml, ctx.value);
+
+		if (target.matches('.delfrom.annot')) return handleDeleteFromAnnotation(ctx.tokenXml, ctx.value);
 	});
-
 })();
