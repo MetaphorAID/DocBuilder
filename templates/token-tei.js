@@ -1,4 +1,6 @@
 (function () {
+	const EMTSV_URL = 'https://emtsv.elte-dh.hu/morph'; // TODO set as the metaphora API URL
+
 	const TOKEN_STICKY = {
 		'left': 'Sticks Left',
 		'right': 'Sticks Right',
@@ -39,38 +41,42 @@
 	Locale['Type: Punct'] = 'Típus: Punkt.';
 	Locale['Select Sentinence...'] = 'Érzelemtípus...';
 
-	const _active = {};
-	let _annots = {changed: false};
-
 	function renderAnnots(_annots, x) {
-		if (_annots.xml) {
-			each('token', function (i) {
-				const id = i.getAttribute('xml:id');
-				if (!_annots.ref[id]) return;
-				for (const j in _annots.ref[id]) {
-					if (sel('[data-aid="' + j + '"]')) return;
-					const annotEl = document.createElement('div');
-					annotEl.dataset.aid = j;
-					annotEl.className = 'annot';
-					annotEl.innerHTML = _annots.list[j].getAttribute('entity') + ': ' + xmlToText(_annots.list[j].innerHTML);
-					sel('#footer').appendChild(annotEl);
-				}
-			}, x);
-		}
+		// Create and display annotation elements associated with XML tokens
+		if (!_annots.xml) return;
+		each('token', token => {
+			const id = token.getAttribute('xml:id');
+			const refs = _annots.ref[id];
+			if (!refs) return;
+
+			for (const aid of Object.keys(refs)) {
+				if (sel(`[data-aid="${aid}"]`)) return;  // TODO return or continue?
+
+				const annot = _annots.list[aid];
+				const annotEl = document.createElement('div');
+
+				annotEl.dataset.aid = aid;
+				annotEl.className = 'annot';
+				annotEl.innerHTML = `${annot.getAttribute('entity')}: ${xmlToText(annot.innerHTML)}`;
+				sel('#footer').appendChild(annotEl);
+			}
+		}, x);
 	}
 
 	function removeAnnots(_annots, input) {
-		if (_annots.xml) {
-			each('token', function (i) {
-				const id = i.getAttribute('xml:id');
-				if (!_annots.ref[id]) return;
-				for (let j in _annots.ref[id]) {
-					j = sel('[data-aid="' + j + '"]');
-					if (j) j.remove();
-				}
-			}, _active[input.dataset.cid]);
-		}
+		// Removes annotation elements from the DOM for the current active token
+		if (!_annots.xml) return;
+		each('token', token => {
+			const id = token.getAttribute('xml:id');
+			const refs = _annots.ref[id];
+			if (!refs) return;
+
+			for (const aid of Object.keys(refs)) sel(`[data-aid="${aid}"]`)?.remove();
+		}, _active[input.dataset.cid]);
 	}
+
+	const _active = {};
+	let _annots = {changed: false};
 
 	Editor.TYPES.t_p = {
 		remove: function (input, chunk) {
@@ -117,30 +123,27 @@
 		},
 	}
 
-	evt(editor.dom, 'change-hidden', function (e) {
+	evt(editor.dom, 'change-hidden', e => {
 		// Find the header
 		// The value of hids is in e.detail
 		for (const hid of e.detail) {
 			const h = editor.hidden[hid];
 			if (h.name === '.t_header') {
-				let html = '';
 				const x = parseXml(h.value);
-				html = '<h2>' + selToText(x, 'title') + '</h2>'
-					+ '<h3>' + selToText(x, 'author') + '</h3>' + html;
-				sel('#header').innerHTML = html;
+				sel('#header').innerHTML = `<h2>${selToText(x, 'title')}</h2><h3>${selToText(x, 'author')}</h3>`;
+				continue
 			}
-			if (h.name === '.t_annotations') {
-				_annots = {id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false}
-				each('annotation', function (i, ii) {
-					_annots.list.push(i);
-					each('token', function (j) {
-						const t = j.getAttribute('target');
-						if (!_annots.ref[t]) _annots.ref[t] = {};
-						_annots.ref[t][ii] = (j.previousElementSibling ? 0 : 1) + (j.nextElementSibling ? 0 : 2);
-					}, i);
-				}, _annots.xml);
-				sel('#footer').innerHTML = '';
-			}
+			if (h.name !== '.t_annotations') continue
+			_annots = {id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false}
+			each('annotation', (annot, index) => {
+				_annots.list.push(annot);
+				each('token', token => {
+					const target = token.getAttribute('target');
+					(_annots.ref[target] ??= {})[index] = (token.previousElementSibling ? 0 : 1)
+						+ (token.nextElementSibling ? 0 : 2);
+				}, annot);
+			}, _annots.xml);
+			sel('#footer').innerHTML = '';
 		}
 	});
 
@@ -165,9 +168,17 @@
 	function createConfigRow(tableView) {
 		const row = document.createElement(tableView ? 'tr' : 'span');
 		row.className = 'cfg';
+		// TODO why colspan=5 while it is 42 in token-metaphor.js? Comment!
 		row.innerHTML = tableView ? '<td colspan="5" class="as-parent">⚙</td>' : '⚙';
 
 		return row;
+	}
+
+	function createTdElement(content = '&nbsp;', className = 'as-parent') {
+		const el = document.createElement('td');
+		el.className = className;
+		el.innerHTML = content;
+		return el;
 	}
 
 	function renderToken(token, tid, tableView) {
@@ -185,44 +196,39 @@
 		const word = sel('form', token);
 		if (!word) return null;
 
-		if (word.getAttribute('modified') === 'True') wordEl.classList.add(' modified');
+		const isModified = word.getAttribute('modified') === 'True';
+		if (isModified) wordEl.classList.add('modified');
+
 		let morph = sel('morph', token);
-		if (morph && morph.getAttribute('check') === 'False') {
-			wordEl.classList.add(' unchecked');
-			if (find('ana', morph).length === 1) wordEl.classList.add(' single');
-		} else {
+		if (!morph || morph.getAttribute('check') === 'True') {
 			morph = false;
+		} else {
+			wordEl.classList.add('unchecked');
+			if (find('ana', morph).length === 1) wordEl.classList.add('single');
 		}
 
 		if (tableView) {
-			let et = document.createElement('td');
-			et.innerHTML = word.innerHTML || '&nbsp;';
-			et.className = 'as-parent';
-			wordEl.appendChild(et);
 			const ana = sel('ana[correct="True"]', token);
-			et = document.createElement('td');
-			et.className = 'as-parent';
-			et.innerHTML = ana ? sel('lemma', ana).textContent : '&nbsp;';
-			wordEl.appendChild(et);
-			et = document.createElement('td');
-			et.className = 'as-parent';
-			et.innerHTML = ana ? sel('detailed', ana).textContent : '&nbsp;';
-			wordEl.appendChild(et);
-			et = document.createElement('td');
-			et.className = 'as-parent';
-			et.innerHTML = ana ? sel('simple', ana).textContent : '&nbsp;';
-			wordEl.appendChild(et);
-			et = document.createElement('td');
+			const wordVal = word.innerHTML || '&nbsp;';
+			const lemma = ana ? sel('lemma', ana).textContent : '&nbsp;';
+			const detailed = ana ? sel('detailed', ana).textContent : '&nbsp;';
+			const simple = ana ? sel('simple', ana).textContent : '&nbsp;';
+
+			wordEl.appendChild(createTdElement(wordVal));
+			wordEl.appendChild(createTdElement(lemma));
+			wordEl.appendChild(createTdElement(detailed));
+			wordEl.appendChild(createTdElement(simple));
+
 			if (morph && ana) {
-				et.className = 'selAna';
-				et.dataset.tid = tid;
-				et.dataset.ana = 'default';
-				et.innerHTML = '✓';
+				// Default selected
+				const tokenEl = createTdElement('✓', 'selAna');
+				tokenEl.dataset.tid = tid;
+				tokenEl.dataset.ana = 'default';
+				wordEl.appendChild(tokenEl);
 			} else {
-				et.className = 'as-parent';
-				et.innerHTML = '&nbsp;';
+				// Empty
+				wordEl.appendChild(createTdElement());
 			}
-			wordEl.appendChild(et);
 		} else {
 			wordEl.innerHTML = word.innerHTML || '&nbsp;';
 		}
@@ -235,8 +241,8 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			sentenceEl.innerHTML = '<tbody><tr><th>' + _('Token') + '</th><th>' + _('Lemma') + '</th><th>' + _('Detailed')
-				+ '</th><th>' + _('Simple') + '</th><th></th></tr></tbody>'
+			const headers = ['Token', 'Lemma', 'Detailed', 'Simple', ''];
+			sentenceEl.innerHTML = `<tbody><tr>${headers.map(h => `<th>${h ? _(h) : ''}</th>`).join('')}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
 		}
@@ -264,79 +270,82 @@
 
 		// Put sentences into the paragraph element
 		each('s,l', (sentence, sid) => root.appendChild(renderSentence(sentence, sid, tableView)), dom);
+
 		return root;
 	}
 
-	function savePar(cids) {
+	function savePar(paragraphId) {
+		// Annotations are considered hidden data, commit changes
 		const hdata = {};
 		if (_annots.changed) {
 			hdata[_annots.id] = _annots.xml.documentElement.outerHTML;
 			_annots.changed = false;
 		}
-		editor.onchange(cids, hdata);
+		editor.onchange(paragraphId, hdata);
 	}
 
 	function updAnnot(from, to) {
 		if (!_annots.xml) return;
-		const t1 = to[0].getAttribute('xml:id');
-		each('[target="' + from.join('"],[target="') + '"]', function (i) {
+		const firstTarget = to[0].getAttribute('xml:id');
+		const selector = from.map(id => `[target="${id}"]`).join(',');
+		each(selector, token => {
 			_annots.changed = true;
-			const a = i.closest('annotation');
-			if (!sel('[target="' + t1 + '"]', a) || t1 === i.getAttribute('target')) {
-				for (let t in to) {
-					t = to[t];
-					const d = _annots.xml.createElement('token');
-					d.setAttribute('target', t.getAttribute('xml:id'));
-					d.textContent = sel('form', t).textContent;
-					a.insertBefore(d, i);
+			const annot = token.closest('annotation');
+			const target = token.getAttribute('target');
+			if (!sel(`[target="${firstTarget}"]`, annot) || firstTarget === target) {
+				for (const dest of to) {
+					const newToken = _annots.xml.createElement('token');
+					newToken.setAttribute('target', dest.getAttribute('xml:id'));
+					newToken.textContent = sel('form', dest).textContent;
+					annot.insertBefore(newToken, token);
 				}
 			}
-			i.remove();
+			token.remove();
 		}, _annots.xml);
 	}
 
-	function updJoin(tid, xtl) {
-		const l = tid > 0 && ['right', 'both'].indexOf(xtl[tid - 1].getAttribute('join')) !== -1;
-		const r = tid < xtl.length - 1 && ['left', 'both'].indexOf(xtl[tid + 1].getAttribute('join')) !== -1;
-		xtl[tid].setAttribute('join', l ? (r ? 'both' : 'left') : (r ? 'right' : 'no'));
+	function updJoin(tokenId, tokens) {
+		const left = tokenId > 0 && ['right', 'both'].includes(tokens[tokenId - 1].getAttribute('join'));
+		const right = tokenId < tokens.length - 1 && ['left', 'both'].includes(tokens[tokenId + 1].getAttribute('join'));
+		let join = 'no';
+		if (left && right) join = 'both';
+		else if (left) join = 'left';
+		else if (right) join = 'right';
+
+		tokens[tokenId].setAttribute('join', join);
 	}
 
-	function updAna(tokens, cid) {
+	function updAna(tokens, paragraphId) {
+		// Recursively process (to force sequential processing) all tokens in the paragraph
 		const token = tokens.shift();
 		const formData = new FormData();
-		formData.append('file', new Blob(['form\n' + sel('form', token).textContent + '\n'], {type: 'text/plain'}),
-			'input.txt');
-		fetch('https://emtsv.elte-dh.hu/morph', {
-			method: 'POST',
-			body: formData
-		}).then(r => r.text()).then(function (data) {
-			data = data.replace(/^[^\r\n]*[\r\n]+[^\t]*\t/, '');
-			data = JSON.parse(data);
+		formData.append('file', new Blob([`form\n${sel('form', token).textContent}\n`], {type: 'text/plain'}), 'input.txt');
+		fetch(EMTSV_URL, {method: 'POST', body: formData})
+			.then(r => r.text()).then(data => {
+			const analyses = JSON.parse(data.replace(/^[^\r\n]*[\r\n]+[^\t]*\t/, ''));
+
+			// Remove existing analyses
 			const morph = sel('morph', token);
-			each('ana', i => {
-				delNode(i);
-			}, morph);
-			const tpl = sel('ana', _active[cid]);
-			for (let d in data) {
-				d = data[d];
-				const ana = parseXml(tpl.outerHTML).documentElement;
+			each('ana', delNode, morph);
+
+			// Based on a template analysis create a copy and fill the fields
+			const tpl = sel('ana', _active[paragraphId]);
+			for (const item of analyses) {
+				const ana = tpl.cloneNode(true);
 				ana.setAttribute('correct', 'False');
-				sel('lemma', ana).textContent = d.lemma;
-				sel('detailed', ana).textContent = d.readable;
-				sel('simple', ana).textContent = d.tag;
+				sel('lemma', ana).textContent = item.lemma;
+				sel('detailed', ana).textContent = item.readable;
+				sel('simple', ana).textContent = item.tag;
+				if (tpl.previousSibling?.nodeName === '#text')
+					morph.insertBefore(_active[paragraphId].createTextNode(tpl.previousSibling.textContent), ana);
 				morph.appendChild(ana);
-				if (ana.previousSibling && ana.previousSibling.nodeName === '#text') {
-					morph.appendChild(ana.previousSibling);
-				}
-				if (tpl.previousSibling && tpl.previousSibling.nodeName === '#text') {
-					morph.insertBefore(_active[cid].createTextNode(tpl.previousSibling.textContent), ana);
-				}
 			}
+			// Mark as unchecked
 			morph.setAttribute('check', 'False');
 			if (tokens.length) {
-				updAna(tokens, cid);
+				updAna(tokens, paragraphId);
 			} else {
-				savePar([cid]);
+				savePar([paragraphId]);
 			}
 		});
 	}
@@ -378,8 +387,9 @@
 		const tokenXml = tokenId ? tokens[Number(tokenId)] : null;
 
 		return {
-			...paragraphCtx,
 			target,
+			...paragraphCtx,
+			sentences,
 			sentence,
 			sentenceId,
 			sentenceXml,
@@ -420,7 +430,7 @@
 		return {...tokenCtx, value};
 	}
 
-	function handleTokenContextMenu(e, target, tokenXml, tokenId, sentence, sentenceXml, tokens) {
+	function handleTokenContextMenu(e, target, sentence, sentenceXml, tokens, tokenId, tokenXml) {
 		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
@@ -431,7 +441,7 @@
 
 			// Setup elements
 			if (sel('morph', tokenXml)) html += TOKEN.getLink(tokenId, 'edit ana', 'Select Ana.');
-			if (_annots.xml) {
+			if (_annots.xml) {  // TODO is this branch dead code?
 				html += TOKEN.getSelect(tokenId, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
 				const addIfHas = (lst, label) => {
 					if (Object.keys(lst).length) html += TOKEN.getSelect(tokenId, label.key, '', label.text, lst);
@@ -480,7 +490,7 @@
 			html += TOKEN.getLink(tokenId, 'del token', 'Delete Token');
 			html += TOKEN.getSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE);
 		} else {
-			// Setup elements for non-tokens (punctuations?)
+			// Setup elements for the cogwheel (sentence-wide) menu
 			sentence.classList.add('active');
 			html += TOKEN.getSelect(tokenId, 'edit sent', (sentenceXml.getAttribute('sent') || '').split(';'),
 				'Select Sentinence...', SENT_TYPE, true);
@@ -494,7 +504,7 @@
 		tt.innerHTML = html;
 	}
 
-	function handleEditAna(e, target, tokenXml, tokenId, sentence) {
+	function handleEditAna(e, target, sentence, tokenId, tokenXml) {
 		const form = selToText(tokenXml, 'form');
 		const row = (cols, btnHtml = '') => `<tr><td>${cols.join('</td><td>')}</td><td>${btnHtml}</td></tr>`;
 		const btn = (tid, anaId = '', selected = false) =>
@@ -504,10 +514,10 @@
 				<th>${_('Detailed')}</th><th>${_('Simple')}</th><th></th></tr>`;
 
 		// Existing analyses
-		each('ana', (i, ii) => {
-			if (i.getAttribute('modified') === 'True') return;
-			html += row([selToText(i, 'lemma'), selToText(i, 'detailed'), selToText(i, 'simple')],
-				btn(tokenId, ii, i.getAttribute('correct') === 'True'));
+		each('ana', (anaXml, anaId) => {
+			if (anaXml.getAttribute('modified') === 'True') return;
+			html += row([selToText(anaXml, 'lemma'), selToText(anaXml, 'detailed'), selToText(anaXml, 'simple')],
+				btn(tokenId, anaId, anaXml.getAttribute('correct') === 'True'));
 		}, tokenXml);
 
 		// Modified / Editable ana
@@ -529,7 +539,7 @@
 		}, tt);
 	}
 
-	function handleSelAna(target, tokenXml, paragraphId) {
+	function handleSelAna(target, paragraphId, tokenXml) {
 		// If default
 		if (target.dataset.ana === 'default') {
 
@@ -545,7 +555,7 @@
 		}
 
 		// Clear correct
-		each('ana', i => i.setAttribute('correct', 'False'), tokenXml);
+		each('ana', anaXml => anaXml.setAttribute('correct', 'False'), tokenXml);
 
 		// Remove existing selected
 		target.closest('table').querySelectorAll('.btn.selAna').forEach(b => b.classList.remove('selected'));
@@ -558,7 +568,7 @@
 		if (anaIndex != null) find('ana', tokenXml)[anaIndex]?.setAttribute('correct', 'True');
 	}
 
-	function handleSaveAna(target, tokenXml, paragraphXml, paragraphId) {
+	function handleSaveAna(target, paragraphId, paragraphXml, tokenXml) {
 		const morph = sel('morph', tokenXml);
 		const tooltip = target.closest('.tooltip');
 
@@ -575,6 +585,7 @@
 			const vals = inputs.map(i => i.value.trim());
 			if (!vals[0] || vals[0].includes(' ')) return addMsg(_('Invalid Format'), null, inputs[0]);
 
+			// Validate format of tags (emMorph format detailed and compact version)
 			// if (vals[1].length && !vals[1].match(/^\S+\[\/\S+\](=\S+)?(\s+\+\s+\S*\[[^\]]+\](=\S+)?)*$/))
 			// 	return addMsg(_('Invalid Format'), null, inputs[1]);
 			//
@@ -582,7 +593,7 @@
 			// 	return addMsg(_('Invalid Format'), null, inputs[2]);
 
 			const tpl = sel('ana', paragraphXml);
-			const ana = parseXml(tpl.outerHTML).documentElement;
+			const ana = tpl.cloneNode(true);
 			ana.setAttribute('correct', 'True');
 			ana.setAttribute('modified', 'True');
 
@@ -605,19 +616,19 @@
 		ttip(sel('.cfg', sentence), e, true).innerHTML += html;
 	}
 
-	function handleSaveToken(target, tokenXml, paragraphId) {
+	function handleSaveToken(target, paragraphId, tokenXml) {
 		const tooltip = target.closest('.tooltip');
 		const input = sel('input', tooltip);
-		const tkn = sel('form', tokenXml);
-		const val = input.value.trim();
+		const token = sel('form', tokenXml);
+		const value = input.value.trim();
 
-		// No change → just close
-		if (tkn.textContent === val) return trg(tooltip, 'close');
+		// No change -> just close
+		if (token.textContent === value) return trg(tooltip, 'close');
 
 		// Validation
-		if (!val || val.includes(' ')) return addMsg(_('Invalid Format'), null, input);
-		tkn.setAttribute('modified', 'True');
-		tkn.textContent = val;
+		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
+		token.setAttribute('modified', 'True');
+		token.textContent = value;
 
 		const morph = sel('morph', tokenXml);
 		if (morph) {
@@ -628,15 +639,15 @@
 		updAna([tokenXml], paragraphId);
 	}
 
-	function handleInsertToken(e, tokenXml, tokenId, sentence) {
+	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = selToText(tokenXml, 'form');
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins2 left', `Insert Before <b>${form}</b>`)}${
-			TOKEN.getLink(tokenId, 'btn token ins2 right', `Insert After <b>${form}</b>`)}</div>`;
+			TOKEN.getLink(tokenId, 'btn token ins-save left', `Insert Before <b>${form}</b>`)}${
+			TOKEN.getLink(tokenId, 'btn token ins-save right', `Insert After <b>${form}</b>`)}</div>`;
 	}
 
-	function handleSaveInsertedToken(target, tokenXml, sentenceXml, paragraphXml, paragraphId) {
+	function handleSaveInsertedToken(target, paragraphId, paragraphXml, sentenceXml, tokenXml) {
 		// Get the new token and validate it
 		const input = sel('input', target.closest('.tooltip'));
 		const value = input.value.trim();
@@ -645,7 +656,7 @@
 		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
 
 		// Clone the original token XML
-		const newTokenXml = parseXml(tokenXml.outerHTML).documentElement;
+		const newTokenXml = tokenXml.cloneNode(true);
 
 		// Create new unique ID, store value and note modified status
 		const baseId = tokenXml.getAttribute('xml:id').split('_')[0];
@@ -674,7 +685,7 @@
 	}
 
 	document.addEventListener('click', e => {
-		let target = e.target;
+		const target = e.target;
 		if (!target) return;
 
 		const ctx = resolveContext(target, {resolveTableCellParent: true});
@@ -682,29 +693,29 @@
 
 		// Open tooltip
 		if (ctx.target.matches('.t, .cfg'))
-			return handleTokenContextMenu(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence, ctx.sentenceXml,
-				ctx.tokens);
+			return handleTokenContextMenu(e, ctx.target, ctx.sentence, ctx.sentenceXml, ctx.tokens, ctx.tokenId,
+				ctx.tokenXml);
 
-		if (ctx.target.matches('.edit.ana')) return handleEditAna(e, ctx.target, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.edit.ana')) return handleEditAna(e, ctx.target, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
-		if (ctx.target.matches('.selAna')) return handleSelAna(ctx.target, ctx.tokenXml, ctx.paragraphId);
+		if (ctx.target.matches('.selAna')) return handleSelAna(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
 		if (ctx.target.matches('.save.ana'))
-			return handleSaveAna(ctx.target, ctx.tokenXml, ctx.paragraphXml, ctx.paragraphId);
+			return handleSaveAna(ctx.target, ctx.paragraphId, ctx.paragraphXml, ctx.tokenXml);
 
 		if (ctx.target.matches('.fetch.ana')) return updAna([ctx.tokenXml], ctx.paragraphId);
 
 		if (ctx.target.matches('.edit.token')) return handleEditToken(e, ctx.sentence, ctx.tokenXml);
 
-		if (ctx.target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.tokenXml, ctx.paragraphId);
+		if (ctx.target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
-		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.tokenXml, ctx.tokenId, ctx.sentence);
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
-		if (ctx.target.matches('.ins2.token'))
-			return handleSaveInsertedToken(ctx.target, ctx.tokenXml, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId);
+		if (ctx.target.matches('.ins-save.token'))
+			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml);
 
 		if (ctx.target.matches('.del.token')) {
-			const id = ctx.tokenXml.getAttribute('xml:id');
+			const id = ctx.tokenXml.getAttribute('xml:id'); // TODO replace ctx.tokenId?
 			delNode(ctx.tokenXml);
 			updAnnot([id], []);
 			savePar([ctx.paragraphId]);
@@ -712,7 +723,7 @@
 
 	});
 
-	function handleEditSticky(tokens, tokenXml, tokenId, paragraphId, value) {
+	function handleEditSticky(paragraphId, tokens, tokenId, tokenXml, value) {
 		tokenXml.setAttribute('join', value);
 
 		[tokenId - 1, tokenId + 1].forEach(i => {
@@ -722,7 +733,7 @@
 		savePar([paragraphId]);
 	}
 
-	function handleSplitToken(paragraphXml, paragraphId, sentenceXml, tokenXml, value) {
+	function handleSplitToken(paragraphId, paragraphXml, sentenceXml, tokenXml, value) {
 		// Select token to modify
 		const wordEl = sel('form', tokenXml);
 		const text = wordEl.textContent;
@@ -741,7 +752,7 @@
 		const right = text.slice(index);
 
 		// Clone the original token XML
-		const newTokenXml = parseXml(tokenXml.outerHTML).documentElement;
+		const newTokenXml = tokenXml.cloneNode(true);
 
 		// Create new unique ID, store value and note modified status
 		const baseId = tokenXml.getAttribute('xml:id')?.split('_')[0];
@@ -771,7 +782,7 @@
 		updAna([tokenXml, newTokenXml], paragraphId);
 	}
 
-	function handleJoinToken(tokens, paragraphXml, paragraphId, sentenceXml, tokenXml, tokenId, value) {
+	function handleJoinToken(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, tokenXml, value) {
 		// Find neighbouring token
 		const offset = value === '0' ? -1 : 1;
 		const tokenXml2 = tokens[Number(tokenId) + offset];
@@ -794,7 +805,7 @@
 
 		if (id1.length > 1) {
 			if (id2.length > 1) {
-				// Clear ID before creating a new unique ID
+				// Clear ID before creating a new unique ID (possibly reassigning old ID)
 				keepToken.setAttribute('xml:id', '');
 				keepToken.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
 			} else {
@@ -807,14 +818,15 @@
 		updAna([keepToken], paragraphId);
 	}
 
-	function handleEditSentence(sentenceXml, paragraphId) {
+	function handleEditSentinence(paragraphId, sentenceXml) {
+		// Edit sentiment value for sentence
 		const value = value.join(';');
 		if ((sentenceXml.getAttribute('sent') || '') === value) return;
 		sentenceXml.setAttribute('sent', value);
 		savePar([paragraphId]);
 	}
 
-	function handleSplitSentence(tokens, tokenId, sentenceXml, paragraphXml, paragraphId, value) {
+	function handleSplitSentence(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, value) {
 		// Determine split point
 		const offset = value === '0' ? 0 : 1;
 		const splitToken = tokens[Number(tokenId) + offset];
@@ -840,7 +852,7 @@
 		savePar([paragraphId]);
 	}
 
-	function handleJoinSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+	function handleJoinSentence(paragraph, paragraphId, paragraphXml, sentences, sentenceId, sentenceXml, value) {
 		// Determine direction
 		const joinRight = value !== '0';
 		const offset = joinRight ? 1 : -1;
@@ -880,6 +892,7 @@
 
 		if (id1.length > 1) {
 			if (id2.length > 1) {
+				// Clear ID before creating a new unique ID (possibly reassigning old ID)
 				keepSentence.setAttribute('xml:id', '');
 				keepSentence.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
 			} else {
@@ -890,7 +903,7 @@
 		savePar(paragraphIds);
 	}
 
-	function handleMoveSentence(sentences, paragraph, paragraphXml, paragraphId, sentenceXml, sentenceId, value) {
+	function handleMoveSentence(paragraph, paragraphId, paragraphXml, sentences, sentenceId, sentenceXml, value) {
 		// Determine destination paragraph
 		const moveToNextParagraph = value !== '0';
 		const offset = moveToNextParagraph ? 1 : -1;
@@ -980,12 +993,13 @@
 
 		// Token stuff
 		if (target.matches('.edit.sticky'))
-			return handleEditSticky(ctx.tokens, ctx.tokenXml, ctx.tokenId, ctx.paragraphId, ctx.value);
+			return handleEditSticky(ctx.paragraphId, ctx.tokens, ctx.tokenId, ctx.tokenXml, ctx.value);
 
-		if (target.matches('.split.token')) return handleSplitToken();
+		if (target.matches('.split.token'))
+			return handleSplitToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml, ctx.value);
 
 		if (target.matches('.join.token'))
-			return handleJoinToken(ctx.tokens, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml, ctx.tokenXml, ctx.tokenId,
+			return handleJoinToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokens, ctx.tokenId, ctx.tokenXml,
 				ctx.value);
 
 		// if (target.matches('.edit.tokentype')) {
@@ -993,9 +1007,9 @@
 		// 	const tokenXml2 = paragraphXml.createElement(val);
 		// 	tokenXml2.innerHTML = tokenXml.innerHTML;
 		// 	sel('form', tokenXml2).setAttribute('modified', 'True');
-		// 	const baseId = x.documentElement.getAttribute('xml:id');
+		// 	const baseId = paragraphXml.documentElement.getAttribute('xml:id');
 		// 	if (baseId) {
-		// 		tokenXml2.setAttribute('xml:id', getUID(x, val + baseId));
+		// 		tokenXml2.setAttribute('xml:id', getUID(paragraphXml, val + baseId));
 		// 		updAnnot([tokenXml.getAttribute('xml:id')], [tokenXml2]);
 		// 	}
 		// 	sentenceXml.insertBefore(tokenXml2, tokenXml);
@@ -1005,19 +1019,19 @@
 		// }
 
 		// Sentence stuff
-		if (target.matches('.edit.sent')) return handleEditSentence(ctx.sentenceXml, ctx.paragraphId);
+		if (target.matches('.edit.sent')) return handleEditSentinence(ctx.paragraphId, ctx.sentenceXml);
 
 		if (target.matches('.split.sent'))
-			return handleSplitSentence(ctx.tokens, ctx.tokenId, ctx.sentenceXml, ctx.paragraphXml, ctx.paragraphId,
+			return handleSplitSentence(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokens, ctx.tokenId,
 				ctx.value);
 
 		if (target.matches('.join.sent'))
-			return handleJoinSentence(ctx.sentences, ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml,
-				ctx.sentenceId, ctx.value);
+			return handleJoinSentence(ctx.paragraph, ctx.paragraphId, ctx.paragraphXml, ctx.sentences, ctx.sentenceId,
+				ctx.sentenceXml, ctx.value);
 
 		if (target.matches('.move.sent'))
-			return handleMoveSentence(ctx.sentences, ctx.paragraph, ctx.paragraphXml, ctx.paragraphId, ctx.sentenceXml,
-				ctx.sentenceId, ctx.value);
+			return handleMoveSentence(ctx.paragraph, ctx.paragraphId, ctx.paragraphXml, ctx.sentences, ctx.sentenceId,
+				ctx.sentenceXml, ctx.value);
 
 		// Annotation stuff
 		if (target.matches('.add.annot')) return handleAddAnnotation(ctx.tokenXml, ctx.value);
