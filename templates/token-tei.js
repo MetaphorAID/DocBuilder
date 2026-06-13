@@ -250,8 +250,7 @@
 		each('token', (token, tid) => {
 			const renderedToken = renderToken(token, tid, tableView);
 
-			if (renderedToken)
-				sentenceEl.appendChild(renderedToken);
+			if (renderedToken) sentenceEl.appendChild(renderedToken);
 		}, sentence);
 
 		// Create the config row for the sentence
@@ -274,14 +273,14 @@
 		return root;
 	}
 
-	function savePar(paragraphId) {
+	function savePar(paragraphIds) {
 		// Annotations are considered hidden data, commit changes
 		const hdata = {};
 		if (_annots.changed) {
 			hdata[_annots.id] = _annots.xml.documentElement.outerHTML;
 			_annots.changed = false;
 		}
-		editor.onchange(paragraphId, hdata);
+		editor.onchange(paragraphIds, hdata);
 	}
 
 	function updAnnot(from, to) {
@@ -510,8 +509,8 @@
 		const btn = (tid, anaId = '', selected = false) =>
 			`<a href="#" data-tid="${tid}" data-ana="${anaId}" class="btn selAna ${selected ? 'selected' : ''}">✓</a>`;
 
-		let html = `<h3 class="tkn">${_('Token')}: <strong>${form}</strong></h3><table><tr><th>${_('Lemma')}</th>
-				<th>${_('Detailed')}</th><th>${_('Simple')}</th><th></th></tr>`;
+		let html = `<h3 class="tkn">${_('Token')}: <strong>${form}</strong></h3><table><tr><th>${_('Lemma')
+		}</th><th>${_('Detailed')}</th><th>${_('Simple')}</th><th></th></tr>`;
 
 		// Existing analyses
 		each('ana', (anaXml, anaId) => {
@@ -784,7 +783,8 @@
 
 	function handleJoinToken(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, tokenXml, value) {
 		// Find neighbouring token
-		const offset = value === '0' ? -1 : 1;
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
 		const tokenXml2 = tokens[Number(tokenId) + offset];
 		if (!tokenXml2) return addMsg(_('Invalid Action'));
 

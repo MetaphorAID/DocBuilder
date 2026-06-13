@@ -730,7 +730,8 @@
 
 	function handleJoinToken(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, tokenXml, value) {
 		// Find neighbouring token
-		const offset = value === '0' ? -1 : 1;
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
 		const tokenXml2 = tokens[Number(tokenId) + offset];
 		if (!tokenXml2) return addMsg(_('Invalid Action'));
 
