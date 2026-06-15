@@ -81,11 +81,11 @@
 			case 'meanings':
 				if (!el) return '&nbsp;';
 				// Find the line whose numbering matches the contextual index
-				const primary = selToText(el, MEANING_FIELD.PRIMARY, true);
-				const other = selToText(el, MEANING_FIELD.OTHER, true);
-				const index = selToText(el, MEANING_FIELD.CONTEXTUAL_INDEX, true);
+				const primary = getText(sel(MEANING_FIELD.PRIMARY, el));
+				const other = getText(sel(MEANING_FIELD.OTHER, el));
+				const index = getText(sel(MEANING_FIELD.CONTEXTUAL_INDEX, el));
 				return (!index || index === PRIMARY_MEANING_INDEX ?
-					primary : other.split('\n').find(line => line.startsWith(`${index}.`))) || '&nbsp;';
+					primary : other.split('\n').find(line => line.trimStart().startsWith(`${index}.`))) || '&nbsp;';
 			default:
 				return value || '&nbsp;';
 		}
