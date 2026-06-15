@@ -968,13 +968,11 @@ class UndoManager {
 	#editor;
 	#hist;
 	#save;
-	#openDocument;
 
-	constructor(editor, hist, save, openDocument) {
+	constructor(editor, hist, save) {
 		this.#editor = editor;
 		this.#hist = hist;
 		this.#save = save;
-		this.#openDocument = openDocument;
 	}
 
 	#createReverseHistoryEntry(data) {
@@ -986,7 +984,7 @@ class UndoManager {
 			if (!valid) return;
 
 			// Verify that the document has not changed since the history entry was created
-			if (item.current.value !== item.expected) {
+			if (!item.current || item.current.value !== item.expected) {
 				valid = false;
 				return;
 			}
@@ -1041,7 +1039,8 @@ class UndoManager {
 		const reverseEntry = this.#createReverseHistoryEntry(data);
 
 		if (!reverseEntry) {
-			from.add(data);
+			from.clear();
+			to.clear();
 
 			addMsg(_('Document changed outside, history action is disabled'), 'error');
 
@@ -1085,7 +1084,9 @@ class UndoManager {
 
 		try {
 			if (data.id !== this.#editor.id) {
-				await this.#openDocument(data.id);
+				from.clear();
+				to.clear();
+				return;
 			}
 
 			const visible = this.#editor.getVisible();
@@ -1140,12 +1141,15 @@ const documents = new DocumentManager(editor, async (keys) => {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
-const undoManager = new UndoManager(editor, hist, save, openDocument);
+const undoManager = new UndoManager(editor, hist, save);
 const templates = new TemplateManager();
 
 async function displayDocument(data) {
 	await templates.loadResources(data);
 
+	// Undo and redo only apply to edits made since this document was loaded.
+	hist.undo.clear();
+	hist.redo.clear();
 	editor.load(data, false);
 	hist.recent.moveToTop(editor.id);
 
