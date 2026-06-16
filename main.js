@@ -1081,7 +1081,7 @@ class UndoManager {
 			await this.#save(tosave);
 		} catch (err) {
 			// Keep the editor consistent with storage if persistence fails.
-			this.#applyChunks({chunks: reverseEntry.chunks});
+			this.#applyChunks(reverseEntry);
 			this.#editor.render(visible);
 			throw err;
 		}
