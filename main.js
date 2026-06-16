@@ -77,7 +77,16 @@ window.addEventListener('DOMContentLoaded', () => {
 	});
 });
 
+let documentLoadInProgress = false;
+let documentLoadErrorShown = false;
+
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
+	if (documentLoadInProgress) {
+		documentLoadErrorShown = true;
+		showDocumentLoadError(error || new Error(errorMsg));
+		return true;
+	}
+
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
 
@@ -666,8 +675,6 @@ class Editor {
 	}
 
 	#finishLoad() {
-		addMsg(_('Document Loaded'), 'success');
-
 		// Notify others
 		trg(this.dom, 'document-loaded');
 
@@ -1173,20 +1180,64 @@ const templates = new TemplateManager();
 async function displayDocument(data) {
 	await templates.loadResources(data);
 
-	// Undo and redo only apply to edits made since this document was loaded.
-	hist.undo.clear();
-	hist.redo.clear();
-	editor.load(data, false);
-	hist.recent.moveToTop(editor.id);
+	documentLoadInProgress = true;
+	documentLoadErrorShown = false;
 
-	// Enable save button
-	disable('.ed-save', !!editor.id);
-	editor.restoreView()
+	try {
+		// Undo and redo only apply to edits made since this document was loaded.
+		hist.undo.clear();
+		hist.redo.clear();
+		editor.load(data, false);
+		if (documentLoadErrorShown) throw createReportedDocumentLoadError();
+		hist.recent.moveToTop(editor.id);
+
+		// Enable save button
+		disable('.ed-save', !!editor.id);
+		editor.restoreView();
+		if (documentLoadErrorShown) throw createReportedDocumentLoadError();
+	} finally {
+		documentLoadInProgress = false;
+	}
+
+	addMsg(_('Document Loaded'), 'success');
 }
 
 async function openDocument(id) {
 	const data = await documents.open(id);
 	await displayDocument(data);
+}
+
+async function importDocument(templateInfo) {
+	const loadedTemplate = await templates.loadTemplate(templateInfo.path);
+	const data = await documents.import(loadedTemplate);
+	await displayDocument(data);
+}
+
+function getDocumentLoadErrorMessage(err) {
+	const message = err?.message || String(err || '');
+
+	if (err?.documentLoadErrorReported) return null;
+	if (message === 'No file chosen' || message === _('No file chosen')) return null;
+	if (message.startsWith(_('Document not found: ')) || message.startsWith('Document not found: ')) return message;
+	if (message.startsWith(_('Failed to load ')) || message.startsWith('Failed to load ')) {
+		return _('Could not load the selected template. Please check that its files are available.');
+	}
+
+	return _('Could not open the document. The file content is invalid or does not match the selected template.');
+}
+
+function createReportedDocumentLoadError() {
+	const err = new Error('Document load error already reported');
+	err.documentLoadErrorReported = true;
+	return err;
+}
+
+function showDocumentLoadError(err) {
+	const message = getDocumentLoadErrorMessage(err);
+	if (!message) return;
+
+	console.error('Error during file open process:', err);
+	addMsg(message, 'error');
 }
 
 async function save(chunks) {
@@ -1271,10 +1322,7 @@ evt('.ed-exit', 'click', () => {
 evtDelegated(document, '[data-open]', 'click', function () {
 	editor.confirmDiscardChanges(() => {
 		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
-		openDocument(recentDocumentFilename).catch(err => {
-			console.error('Error during file open process:', err);
-			addMsg(_('Error during file open process:') + err, 'error');
-		});
+		openDocument(recentDocumentFilename).catch(showDocumentLoadError);
 	});
 });
 
@@ -1291,13 +1339,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		// Execute action on template
 		if (action === 'open') {
 			editor.confirmDiscardChanges(() => {
-				templates.loadTemplate(templateInfo.path).then(loadedTemplate =>
-					documents.import(loadedTemplate).then(data => {
-						return displayDocument(data);
-					}).catch(err => {
-						console.error('Error during file open process:', err);
-						addMsg(_('Error during file open process:') + err, 'error');
-					}));
+				importDocument(templateInfo).catch(showDocumentLoadError);
 			});
 		} else if (action === 'new') {
 			await createNewDocument(templateInfo);
