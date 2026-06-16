@@ -207,6 +207,11 @@ class ChunkProcessor {
 
 			let match;
 			while ((match = regex.exec(content)) !== null) {
+				if (match[0].length === 0) {
+					regex.lastIndex = match.index + 1;
+					continue;
+				}
+
 				matches.push({
 					start: match.index,
 					end: regex.lastIndex,
