@@ -43,7 +43,10 @@ class TOKEN {
 		evt(editor.dom, 'document-loaded', function () {
 			sel('#header').innerHTML = '';
 			sel('#footer').innerHTML = '';
+			sel('header .btn-view')?.remove();
+		});
 
+		evt(editor.dom, 'document-ready', function () {
 			// Add Normal/Table view swithcher button
 			if (!sel('header .btn-view')) {
 				const a = document.createElement('a');

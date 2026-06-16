@@ -1200,6 +1200,7 @@ async function displayDocument(data) {
 		documentLoadInProgress = false;
 	}
 
+	trg(editor.dom, 'document-ready');
 	addMsg(_('Document Loaded'), 'success');
 }
 
