@@ -66,7 +66,9 @@ function xmlToText(xml, decode) {
 	const t = (xml || '')
 		.replace(/<[^>]+>/gs, ' ')
 		.trim();
-	return decode ? decXml(t) : t.replace("'", '&apos;').replace('"', '&quot;');
+	return (decode ? decXml(t) : t.replace("'", '&apos;').replace('"', '&quot;'))
+		.replaceAll('\\n', '\n')
+		.replaceAll('\\t', '\t')
 }
 
 function selToText(dom, s, decode) {
