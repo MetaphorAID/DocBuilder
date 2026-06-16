@@ -559,6 +559,8 @@ class Editor {
 	#restore
 	#restoreHidden
 	#reloadRequested
+	#pendingSaves
+	#saveFailed
 
 	constructor(dom, onchange) {
 		this.dom = dom;
@@ -567,6 +569,8 @@ class Editor {
 		this.#restore = null;
 		this.#restoreHidden = null;
 		this.#reloadRequested = false;
+		this.#pendingSaves = 0;
+		this.#saveFailed = false;
 
 		// Mark the container as editor
 		dom.classList.add('editor');
@@ -618,6 +622,8 @@ class Editor {
 		// Load data
 		if (!data.id) return;
 
+		this.markAllSaved();
+
 		// Reset the editor
 		this.#reset(data, store_filler);
 
@@ -639,6 +645,24 @@ class Editor {
 		}
 
 		this.restoreView();
+	}
+
+	markSaveStarted() {
+		++this.#pendingSaves;
+	}
+
+	markSaveSucceeded() {
+		this.#pendingSaves = Math.max(0, this.#pendingSaves - 1);
+	}
+
+	markSaveFailed() {
+		this.#pendingSaves = Math.max(0, this.#pendingSaves - 1);
+		this.#saveFailed = true;
+	}
+
+	markAllSaved() {
+		this.#pendingSaves = 0;
+		this.#saveFailed = false;
 	}
 
 	#finishLoad() {
@@ -683,6 +707,8 @@ class Editor {
 	}
 
 	#hasChanges() {
+		if (this.#pendingSaves || this.#saveFailed) return true;
+
 		// Detect changes by comparing every visible chunk (and normalising line endings)
 		let changed = false;
 
@@ -1164,11 +1190,21 @@ async function openDocument(id) {
 }
 
 async function save(chunks) {
+	const documentId = editor.id;
+	let persisted = false;
+	editor.markSaveStarted();
+
 	try {
 		const data = await documents.saveToIDB(chunks);
-		addMsg(_('Document Saved'), 'success');
-		editor.applySavedDocument(data);
+		persisted = true;
+
+		if (editor.id === documentId) {
+			editor.markSaveSucceeded();
+			addMsg(_('Document Saved'), 'success');
+			editor.applySavedDocument(data);
+		}
 	} catch (err) {
+		if (!persisted && editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
 	}
 }
@@ -1216,7 +1252,9 @@ evt('.ed-recent', 'click', e => {
 });
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
-	documents.export().catch(err => addMsg(err.message, 'error'));
+	documents.export()
+		.then(() => editor.markAllSaved())
+		.catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', () => {
 	undoManager.undo().catch(err => addMsg(err.message, 'error'));
