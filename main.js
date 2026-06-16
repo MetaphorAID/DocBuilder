@@ -1349,7 +1349,9 @@ evtDelegated(document, '.template-select', 'click', async function () {
 				importDocument(templateInfo).catch(showDocumentLoadError);
 			});
 		} else if (action === 'new') {
-			await createNewDocument(templateInfo);
+			editor.confirmDiscardChanges(() => {
+				createNewDocument(templateInfo).catch(err => addMsg(_('Failed to load ') + err, 'error'));
+			});
 		}
 
 	} catch (err) {
