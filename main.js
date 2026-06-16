@@ -319,10 +319,12 @@ class ChunkProcessor {
 class DocumentManager {
 	#editor
 	#db
+	#saveQueue
 
 	constructor(editor, oninit, db = new AnnotationDB()) {
 		this.#editor = editor;
 		this.#db = db;
+		this.#saveQueue = Promise.resolve();
 		// Init the database
 		this.#db.init().then(async () => {
 			const keys = await this.#db.getAllKeys();
@@ -361,15 +363,23 @@ class DocumentManager {
 	}
 
 	async saveToIDB(chunks) {
-		const data = await this.#db.retrieveFile(this.#editor.id || 0);
-		if (!data) throw new Error(_('Document not found: ') + this.#editor.id);
+		const documentId = this.#editor.id || 0;
+		const changes = chunks.map(chunk => ({...chunk}));
 
-		data.chunks = ChunkProcessor.merge(chunks, data.chunks);
+		const saveOperation = async () => {
+			const data = await this.#db.retrieveFile(documentId);
+			if (!data) throw new Error(_('Document not found: ') + documentId);
 
-		// Store the data in IndexedDB with the correct fileName (data.id)
-		await this.#db.storeFile(data.id, data);
+			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
-		return data;
+			// Store the data in IndexedDB with the correct fileName (data.id)
+			await this.#db.storeFile(data.id, data);
+
+			return data;
+		};
+
+		this.#saveQueue = this.#saveQueue.then(saveOperation, saveOperation);
+		return this.#saveQueue;
 	}
 
 	async #store(filename, document) {
