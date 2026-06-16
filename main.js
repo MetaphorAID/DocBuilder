@@ -675,12 +675,11 @@ class Editor {
 		++this.#pendingSaves;
 	}
 
-	markSaveSucceeded() {
+	markSaveFinished() {
 		this.#pendingSaves = Math.max(0, this.#pendingSaves - 1);
 	}
 
 	markSaveFailed() {
-		this.#pendingSaves = Math.max(0, this.#pendingSaves - 1);
 		this.#saveFailed = true;
 	}
 
@@ -1267,13 +1266,14 @@ async function save(chunks) {
 		persisted = true;
 
 		if (editor.id === documentId) {
-			editor.markSaveSucceeded();
 			addMsg(_('Document Saved'), 'success');
 			editor.applySavedDocument(data);
 		}
 	} catch (err) {
 		if (!persisted && editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
+	} finally {
+		editor.markSaveFinished();
 	}
 }
 
