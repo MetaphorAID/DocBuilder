@@ -1141,7 +1141,8 @@ class UndoManager {
 }
 
 const hist = {
-	recent: new History('ed_recent'),
+	recent: new History('ed_recent', undefined,
+		h => disable('.ed-recent', !!h.length)),
 	undo: new History('ed_undo', undefined,
 		h => disable('.ed-undo', !!h.length)),
 	redo: new History('ed_redo', undefined,
