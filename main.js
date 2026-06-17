@@ -650,7 +650,7 @@ class Editor {
 		if (event.appErrors.length) throw event.appErrors[0];
 	}
 
-	load(data, store_filler, onready) {
+	load(data, store_filler) {
 		try {
 			// Load data
 			if (!data.id) throw new Error('Missing document id');
@@ -665,7 +665,7 @@ class Editor {
 			clean_ttip(this.dom);
 
 			this.#finishLoad();
-			onready?.();
+			this.#finishReady();
 		} catch (err) {
 			throw this.#createLoadError(err);
 		}
@@ -678,7 +678,7 @@ class Editor {
 	applySavedDocument(data) {
 		if (this.#reloadRequested) {
 			this.#reloadRequested = false;
-			this.load(data, false, () => this.restoreView());
+			this.load(data, false);
 			return;
 		}
 
@@ -712,7 +712,8 @@ class Editor {
 		this.render([0]);
 	}
 
-	documentReady() {
+	#finishReady() {
+		this.restoreView();
 		this.#dispatchEvent(new Event('document-ready', {bubbles: true}));
 	}
 
@@ -1216,10 +1217,7 @@ async function displayDocument(data) {
 	// Undo and redo only apply to edits made since this document was loaded.
 	hist.undo.clear();
 	hist.redo.clear();
-	editor.load(data, false, () => {
-		editor.restoreView();
-		editor.documentReady();
-	});
+	editor.load(data, false);
 	hist.recent.moveToTop(editor.id);
 
 	// Enable save button
