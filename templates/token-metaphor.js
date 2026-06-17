@@ -194,11 +194,10 @@
 
 	function getTokenClass(token) {
 		// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
-		// TODO use format() or at least getText() here?
-		let otherIndirect = sel('otherIndirect', token)?.textContent.trim();  // TODO format('metaphor', token) ?
+		let otherIndirect = getText(sel('otherIndirect', token));
 		if (['None', 'none'].includes(otherIndirect)) otherIndirect = '0';
 
-		const metaphor = sel('metaphor', token)?.textContent.trim(); // TODO format('metaphor', token) ?
+		const metaphor = getText(sel('metaphor', token));
 		if (metaphor === 'True') return 'metaphor-token';
 		if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') return 'indirect-token';
 
