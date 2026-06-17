@@ -19,7 +19,18 @@ function each(target, fn, dom) {
 function evt(target, types, fn, dom) {
 	each(target, el => {
 		types.split(' ').forEach(type => {
-			el.addEventListener(type, fn);
+			el.addEventListener(type, function (e) {
+				try {
+					return fn.call(this, e);
+				} catch (err) {
+					if (e.appErrors) {
+						e.appErrors.push(err);
+						e.stopImmediatePropagation();
+						return;
+					}
+					throw err;
+				}
+			});
 		});
 	}, dom);
 }

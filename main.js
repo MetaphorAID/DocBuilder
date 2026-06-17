@@ -77,16 +77,7 @@ window.addEventListener('DOMContentLoaded', () => {
 	});
 });
 
-let documentLoadInProgress = false;
-let documentLoadErrorShown = false;
-
 window.onerror = function (errorMsg, url, lineNum, colNum, error) {
-	if (documentLoadInProgress) {
-		documentLoadErrorShown = true;
-		showDocumentLoadError(error || new Error(errorMsg));
-		return true;
-	}
-
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
 };
 
@@ -430,15 +421,22 @@ class TemplateManager {
 		this.#styles = new Map();
 	}
 
+	#createLoadError(url, cause) {
+		const err = new Error(_('Could not load template file: ') + url);
+		err.cause = cause;
+		return err;
+	}
+
 	async #loadJSON(url) {
-		const response = await fetch(url);
+		try {
+			const response = await fetch(url);
 
-		if (!response.ok) {
-			addMsg(_('Error fetching file: ') + url, 'error');
-			throw new Error(_('Failed to load ') + url);
+			if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
+
+			return await response.json();
+		} catch (err) {
+			throw this.#createLoadError(url, err);
 		}
-
-		return response.json();
 	}
 
 	async getTemplateById(templateId) {
@@ -475,7 +473,7 @@ class TemplateManager {
 			e.onload = resolve;
 			e.onerror = () => {
 				e.remove();
-				reject(new Error(_('Failed to load ') + src));
+				reject(this.#createLoadError(src));
 			};
 			document.head.appendChild(e);
 		});
@@ -495,7 +493,7 @@ class TemplateManager {
 			e.onload = resolve;
 			e.onerror = () => {
 				e.remove();
-				reject(new Error(_('Failed to load ') + src));
+				reject(this.#createLoadError(src));
 			};
 			document.body.appendChild(e);
 		});
@@ -513,30 +511,25 @@ class TemplateManager {
 	}
 
 	async show(action, target, event) {
-		try {
-			let templates = await this.#getAvailableTemplates();
+		let templates = await this.#getAvailableTemplates();
 
-			const tt = ttip(target, event);
-			tt.classList.add('dropdown');
+		const tt = ttip(target, event);
+		tt.classList.add('dropdown');
 
-			if (action === 'new') templates = templates.filter(t => t.new);
+		if (action === 'new') templates = templates.filter(t => t.new);
 
-			for (const template of templates) {
-				const a = document.createElement('a');
-				a.href = '#';
-				a.className = 'template-select';
-				a.dataset.template = template.id;
-				a.dataset.action = action;
-				a.innerHTML = template.name;
+		for (const template of templates) {
+			const a = document.createElement('a');
+			a.href = '#';
+			a.className = 'template-select';
+			a.dataset.template = template.id;
+			a.dataset.action = action;
+			a.innerHTML = template.name;
 
-				tt.appendChild(a);
-			}
-
-			return tt;
-
-		} catch (err) {
-			addMsg(_('Error loading templates: ') + err, 'error');
+			tt.appendChild(a);
 		}
+
+		return tt;
 	}
 }
 
@@ -642,20 +635,40 @@ class Editor {
 		});
 	}
 
-	load(data, store_filler) {
-		// Load data
-		if (!data.id) return;
+	#createLoadError(cause) {
+		if (cause?.documentLoadError) return cause;
 
-		this.markAllSaved();
+		const err = new Error(_('Could not open the document. The file content is invalid or does not match the selected template.'));
+		err.cause = cause;
+		err.documentLoadError = true;
+		return err;
+	}
 
-		// Reset the editor
-		this.#reset(data, store_filler);
+	#dispatchEvent(event) {
+		event.appErrors = [];
+		this.dom.dispatchEvent(event);
+		if (event.appErrors.length) throw event.appErrors[0];
+	}
 
-		// Clear the UI
-		this.dom.innerHTML = '';
-		clean_ttip(this.dom);
+	load(data, store_filler, onready) {
+		try {
+			// Load data
+			if (!data.id) throw new Error('Missing document id');
 
-		this.#finishLoad();
+			this.markAllSaved();
+
+			// Reset the editor
+			this.#reset(data, store_filler);
+
+			// Clear the UI
+			this.dom.innerHTML = '';
+			clean_ttip(this.dom);
+
+			this.#finishLoad();
+			onready?.();
+		} catch (err) {
+			throw this.#createLoadError(err);
+		}
 	}
 
 	requestReload() {
@@ -665,7 +678,8 @@ class Editor {
 	applySavedDocument(data) {
 		if (this.#reloadRequested) {
 			this.#reloadRequested = false;
-			this.load(data, false);
+			this.load(data, false, () => this.restoreView());
+			return;
 		}
 
 		this.restoreView();
@@ -690,12 +704,16 @@ class Editor {
 
 	#finishLoad() {
 		// Notify others
-		trg(this.dom, 'document-loaded');
+		this.#dispatchEvent(new Event('document-loaded', {bubbles: true}));
 
 		// Render the UI
 		const hids = Object.keys(this.hidden);
 		this.renderHidden(hids);
 		this.render([0]);
+	}
+
+	documentReady() {
+		this.#dispatchEvent(new Event('document-ready', {bubbles: true}));
 	}
 
 	#reset(data, store_filler) {
@@ -836,7 +854,7 @@ class Editor {
 
 	renderHidden(hids) {
 		// Tell the templates to render the hidden chunks in hids
-		this.dom.dispatchEvent(new CustomEvent('change-hidden', {detail: hids}));
+		this.#dispatchEvent(new CustomEvent('change-hidden', {detail: hids}));
 	}
 
 	renderChunk(cid) {
@@ -1195,26 +1213,18 @@ const templates = new TemplateManager();
 async function displayDocument(data) {
 	await templates.loadResources(data);
 
-	documentLoadInProgress = true;
-	documentLoadErrorShown = false;
-
-	try {
-		// Undo and redo only apply to edits made since this document was loaded.
-		hist.undo.clear();
-		hist.redo.clear();
-		editor.load(data, false);
-		if (documentLoadErrorShown) throw createReportedDocumentLoadError();
-		hist.recent.moveToTop(editor.id);
-
-		// Enable save button
-		disable('.ed-save', !!editor.id);
+	// Undo and redo only apply to edits made since this document was loaded.
+	hist.undo.clear();
+	hist.redo.clear();
+	editor.load(data, false, () => {
 		editor.restoreView();
-		if (documentLoadErrorShown) throw createReportedDocumentLoadError();
-	} finally {
-		documentLoadInProgress = false;
-	}
+		editor.documentReady();
+	});
+	hist.recent.moveToTop(editor.id);
 
-	trg(editor.dom, 'document-ready');
+	// Enable save button
+	disable('.ed-save', !!editor.id);
+
 	addMsg(_('Document Loaded'), 'success');
 }
 
@@ -1229,28 +1239,9 @@ async function importDocument(templateInfo) {
 	await displayDocument(data);
 }
 
-function getDocumentLoadErrorMessage(err) {
-	const message = err?.message || String(err || '');
-
-	if (err?.documentLoadErrorReported) return null;
-	if (message === 'No file chosen' || message === _('No file chosen')) return null;
-	if (message.startsWith(_('Document not found: ')) || message.startsWith('Document not found: ')) return message;
-	if (message.startsWith(_('Failed to load ')) || message.startsWith('Failed to load ')) {
-		return _('Could not load the selected template. Please check that its files are available.');
-	}
-
-	return _('Could not open the document. The file content is invalid or does not match the selected template.');
-}
-
-function createReportedDocumentLoadError() {
-	const err = new Error('Document load error already reported');
-	err.documentLoadErrorReported = true;
-	return err;
-}
-
 function showDocumentLoadError(err) {
-	const message = getDocumentLoadErrorMessage(err);
-	if (!message) return;
+	const message = err?.message || String(err || '');
+	if (!message || message === 'No file chosen' || message === _('No file chosen')) return;
 
 	console.error('Error during file open process:', err);
 	addMsg(message, 'error');
@@ -1360,11 +1351,11 @@ evtDelegated(document, '.template-select', 'click', async function () {
 			});
 		} else if (action === 'new') {
 			editor.confirmDiscardChanges(() => {
-				createNewDocument(templateInfo).catch(err => addMsg(_('Failed to load ') + err, 'error'));
+				createNewDocument(templateInfo).catch(showDocumentLoadError);
 			});
 		}
 
 	} catch (err) {
-		addMsg(_('Failed to load ') + err, 'error');
+		showDocumentLoadError(err);
 	}
 });
