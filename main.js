@@ -1348,13 +1348,11 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 		// Execute action on template
 		if (action === 'open') {
-			editor.confirmDiscardChanges(() => {
-				importDocument(templateInfo).catch(showDocumentLoadError);
-			});
+			editor.confirmDiscardChanges(() =>
+				importDocument(templateInfo).catch(showDocumentLoadError));
 		} else if (action === 'new') {
-			editor.confirmDiscardChanges(() => {
-				createNewDocument(templateInfo).catch(showDocumentLoadError);
-			});
+			editor.confirmDiscardChanges(() =>
+				createNewDocument(templateInfo).catch(showDocumentLoadError));
 		}
 
 	} catch (err) {
