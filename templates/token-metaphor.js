@@ -432,11 +432,7 @@
 					td = `<input type="text" name="${field}" class="input" value="${fieldValue}">`
 					break;
 				case 'meanings':
-					// TODO: check if commented code is needed, if not remove it
-					//  Meanings are currently handled elsewhere. Unneeded. Can this case be safely deleted?
-					// const meaningsValue = format(field, sel(field, tokenXml));
-					// const meanings = `${format('', sel('primary', tokenXml))}\n${format('', sel('other', tokenXml))}`;
-					// td = meanings.replace(meaningsValue, `<strong>${meaningsValue}</strong>`).replaceAll('\n', '<br>');
+					// Meanings are edited in the dedicated Meanings tooltip.
 					break;
 				case 'comment':
 					const commentValue = encXml(fieldValue);
@@ -488,12 +484,6 @@
 		}
 		tt.innerHTML += `<table><tr>${headers.join('')}</tr><tr>${cells.join('')}</tr></table>
 			<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`;
-		// TODO: check if commented code is needed, if not remove it
-		//  same code as in handleEditTokenInfo() propably safe to delete
-		// const tt = ttip(sentence, e);
-		// const meaningsValue = format(field, sel(field, tokenXml));
-		// const meanings = `${format('', sel('primary', tokenXml))}\n${format('', sel('other', tokenXml))}`;
-		// tt.innerHTML += meanings.replace(meaningsValue, `<strong>${meaningsValue}</strong>`).replaceAll('\n', '<br>');
 	}
 
 	function handleEditReason(e, sentence, tokenId, tokenXml) {
@@ -501,10 +491,6 @@
 		tt.innerHTML += `<textarea name="reasoning" class="input">${
 			encXml(selToText(tokenXml, 'reasoning', true))}</textarea>
       <div class="center">${TOKEN.getLink(tokenId, 'btn reason save', 'Save')}</div>`;
-		// TODO: check if commented code is needed, if not remove it
-		//  reasoning is now editable no newline conversion is needed
-		// const tt = ttip(sentence, e);
-		// tt.innerHTML += format('', sel('reasoning', tokenXml)).replaceAll('\n', '<br>');
 	}
 
 	function handleSaveTokenFields(e, target, paragraphId, tokenXml) {
