@@ -199,8 +199,12 @@ class ChunkProcessor {
 			let match;
 			while ((match = regex.exec(content)) !== null) {
 				if (match[0].length === 0) {
-					regex.lastIndex = match.index + 1;
-					continue;
+					// Chunk splitters must consume source text. Advancing past an
+					// empty match avoids an exec() loop, but can also skip a real
+					// chunk starting at the same offset, so fail loudly instead.
+					const err = new Error(_('The selected template could not split this file into editable sections. Check that you chose the right template and that the file is not empty or missing required content.'));
+					err.cause = new Error(`Chunk splitter matched an empty string at offset ${match.index}: ${patternStr}`);
+					throw err;
 				}
 
 				matches.push({
