@@ -273,14 +273,14 @@
 		return root;
 	}
 
-	function savePar(paragraphIds) {
+	function savePar(paragraphIds = []) {
 		// Annotations are considered hidden data, commit changes
 		const hdata = {};
 		if (_annots.changed) {
 			hdata[_annots.id] = _annots.xml.documentElement.outerHTML;
 			_annots.changed = false;
 		}
-		editor.onchange(paragraphIds, hdata);
+		return editor.onchange(paragraphIds, hdata);
 	}
 
 	function updAnnot(from, to) {

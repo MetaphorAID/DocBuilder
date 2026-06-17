@@ -130,6 +130,12 @@ class AnnotationDB {
 		return this.#db.transaction(this.#storeName, mode).objectStore(this.#storeName);
 	}
 
+	async #storeTransaction(mode = 'readonly') {
+		await this.init();
+
+		return this.#db.transaction(this.#storeName, mode);
+	}
+
 	async retrieveFile(fileName) {
 		const store = await this.#transaction('readonly');
 
@@ -150,6 +156,41 @@ class AnnotationDB {
 
 			request.onsuccess = () => resolve(data);
 			request.onerror = e => reject(e.target.error);
+		});
+	}
+
+	async updateFile(fileName, updater) {
+		const transaction = await this.#storeTransaction('readwrite');
+		const store = transaction.objectStore(this.#storeName);
+
+		return new Promise((resolve, reject) => {
+			let updatedData;
+			let settled = false;
+			const fail = err => {
+				if (settled) return;
+				settled = true;
+				reject(err);
+			};
+
+			transaction.oncomplete = () => {
+				if (settled) return;
+				settled = true;
+				resolve(updatedData);
+			};
+			transaction.onerror = e => fail(transaction.error || e.target.error);
+			transaction.onabort = e => fail(transaction.error || e.target.error);
+
+			const request = store.get(fileName);
+			request.onsuccess = () => {
+				try {
+					updatedData = updater(request.result?.data ?? null);
+					store.put({name: fileName, data: updatedData});
+				} catch (err) {
+					fail(err);
+					transaction.abort();
+				}
+			};
+			request.onerror = e => fail(e.target.error);
 		});
 	}
 
@@ -314,12 +355,10 @@ class ChunkProcessor {
 class DocumentManager {
 	#editor
 	#db
-	#saveQueue
 
 	constructor(editor, oninit, db = new AnnotationDB()) {
 		this.#editor = editor;
 		this.#db = db;
-		this.#saveQueue = Promise.resolve();
 		// Init the database
 		this.#db.init().then(async () => {
 			const keys = await this.#db.getAllKeys();
@@ -359,22 +398,18 @@ class DocumentManager {
 
 	async saveToIDB(chunks) {
 		const documentId = this.#editor.id || 0;
+		// Snapshot mutable editor chunks before this save waits behind any
+		// already-running IndexedDB transaction. merge() only reads top-level
+		// chunk fields, so a shallow copy is enough.
 		const changes = chunks.map(chunk => ({...chunk}));
 
-		const saveOperation = async () => {
-			const data = await this.#db.retrieveFile(documentId);
+		return this.#db.updateFile(documentId, data => {
 			if (!data) throw new Error(_('Document not found: ') + documentId);
 
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
-			// Store the data in IndexedDB with the correct fileName (data.id)
-			await this.#db.storeFile(data.id, data);
-
 			return data;
-		};
-
-		this.#saveQueue = this.#saveQueue.then(saveOperation, saveOperation);
-		return this.#saveQueue;
+		});
 	}
 
 	async #store(filename, document) {
@@ -816,7 +851,7 @@ class Editor {
 		}
 
 		// If there were changes commit them
-		if (Object.keys(chunks).length > 0) this.#onchange_callback(chunks, values);
+		if (Object.keys(chunks).length > 0) return this.#onchange_callback(chunks, values);
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
@@ -1185,7 +1220,7 @@ const hist = {
 	redo: new History('ed_redo', undefined,
 		h => disable('.ed-redo', !!h.length))
 };
-const editor = new Editor(sel('#editor'), (chunks, values) => {
+const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// Store previous values in Undo history
 	hist.undo.add({
 		id: editor.id,
@@ -1202,7 +1237,11 @@ const editor = new Editor(sel('#editor'), (chunks, values) => {
 		tosave.push(chunks[cid]);
 	}
 	// Persist changes
-	save(tosave).catch(err => addMsg(err.message, 'error'));
+	try {
+		await save(tosave);
+	} catch (err) {
+		addMsg(err.message, 'error');
+	}
 });
 const documents = new DocumentManager(editor, async (keys) => {
 	try {

@@ -196,7 +196,7 @@
 		const hdata = {};
 		const hidden = editor.hidden[0];
 		if (hidden && (hidden.value !== _cols._header)) hdata[0] = _cols._header;
-		editor.onchange(paragraphIds, hdata);
+		return editor.onchange(paragraphIds, hdata);
 	}
 
 	// function updJoin(tokenId, tokens) {

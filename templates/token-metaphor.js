@@ -294,7 +294,7 @@
 	function savePar(paragraphId) {
 		// No hidden data to change
 		const hdata = {};
-		editor.onchange(paragraphId, hdata);
+		return editor.onchange(paragraphId, hdata);
 	}
 
 	function resolveParagraphContext(target) {
@@ -635,7 +635,7 @@
 				const xml = sel('body', parseXml(data));
 				_content[paragraphId] = xml.innerHTML;
 				editor.requestReload();
-				savePar([paragraphId]);
+				return savePar([paragraphId]);
 			} catch {
 				addMsg(_('API response format is incorrect'), false, contentInput);
 			}
