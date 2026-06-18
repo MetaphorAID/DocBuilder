@@ -127,17 +127,12 @@ class AnnotationDB {
 		await this.init();
 
 		// Create a transaction
-		return this.#db.transaction(this.#storeName, mode).objectStore(this.#storeName);
-	}
-
-	async #storeTransaction(mode = 'readonly') {
-		await this.init();
-
 		return this.#db.transaction(this.#storeName, mode);
 	}
 
 	async retrieveFile(fileName) {
-		const store = await this.#transaction('readonly');
+		const transaction = await this.#transaction('readonly');
+		const store = transaction.objectStore(this.#storeName);
 
 		return new Promise((resolve, reject) => {
 			const request = store.get(fileName);
@@ -149,7 +144,8 @@ class AnnotationDB {
 	}
 
 	async storeFile(fileName, data) {
-		const store = await this.#transaction('readwrite');
+		const transaction = await this.#transaction('readwrite');
+		const store = transaction.objectStore(this.#storeName);
 
 		return new Promise((resolve, reject) => {
 			const request = store.put({name: fileName, data});
@@ -159,43 +155,50 @@ class AnnotationDB {
 		});
 	}
 
-	async updateFile(fileName, updater) {
-		const transaction = await this.#storeTransaction('readwrite');
-		const store = transaction.objectStore(this.#storeName);
-
+	#waitForTransaction(transaction, state) {
 		return new Promise((resolve, reject) => {
-			let updatedData;
-			let settled = false;
-			const fail = err => {
-				if (settled) return;
-				settled = true;
-				reject(err);
-			};
+			const fail = e => reject(state.error || transaction.error || e.target.error);
 
-			transaction.oncomplete = () => {
-				if (settled) return;
-				settled = true;
-				resolve(updatedData);
-			};
-			transaction.onerror = e => fail(transaction.error || e.target.error);
-			transaction.onabort = e => fail(transaction.error || e.target.error);
-
-			const request = store.get(fileName);
-			request.onsuccess = () => {
-				try {
-					updatedData = updater(request.result?.data ?? null);
-					store.put({name: fileName, data: updatedData});
-				} catch (err) {
-					fail(err);
-					transaction.abort();
-				}
-			};
-			request.onerror = e => fail(e.target.error);
+			transaction.oncomplete = () => resolve(state.result);
+			transaction.onerror = fail;
+			transaction.onabort = fail;
 		});
 	}
 
+	#applyUpdate(fileName, record, updater) {
+		if (!record) throw new Error(_('Document not found: ') + fileName);
+
+		return updater(record.data);
+	}
+
+	async updateFile(fileName, updater) {
+		const transaction = await this.#transaction('readwrite');
+		const store = transaction.objectStore(this.#storeName);
+		const state = {result: null, error: null};
+		const done = this.#waitForTransaction(transaction, state);
+
+		// The transaction setup above is generic; this is the update-specific
+		// work: read the current record, transform it, and write it back.
+		const request = store.get(fileName);
+		request.onsuccess = () => {
+			try {
+				state.result = this.#applyUpdate(fileName, request.result, updater);
+				store.put({name: fileName, data: state.result});
+			} catch (err) {
+				state.error = err;
+				transaction.abort();
+			}
+		};
+		request.onerror = e => {
+			state.error = e.target.error;
+		};
+
+		return done;
+	}
+
 	async getAllKeys() {
-		const store = await this.#transaction('readonly');
+		const transaction = await this.#transaction('readonly');
+		const store = transaction.objectStore(this.#storeName);
 
 		return new Promise((resolve, reject) => {
 			const request = store.getAllKeys();
@@ -206,7 +209,8 @@ class AnnotationDB {
 	}
 
 	async delete(fileName) {
-		const store = await this.#transaction('readwrite');
+		const transaction = await this.#transaction('readwrite');
+		const store = transaction.objectStore(this.#storeName);
 
 		return new Promise((resolve, reject) => {
 			const request = store.delete(fileName);
@@ -217,7 +221,8 @@ class AnnotationDB {
 	}
 
 	async clear() {
-		const store = await this.#transaction('readwrite');
+		const transaction = await this.#transaction('readwrite');
+		const store = transaction.objectStore(this.#storeName);
 
 		return new Promise((resolve, reject) => {
 			const request = store.clear();
@@ -396,16 +401,13 @@ class DocumentManager {
 		return doc;
 	}
 
-	async saveToIDB(chunks) {
-		const documentId = this.#editor.id || 0;
+	async saveToIDB(chunks, documentId = this.#editor.id || 0) {
 		// Snapshot mutable editor chunks before this save waits behind any
 		// already-running IndexedDB transaction. merge() only reads top-level
 		// chunk fields, so a shallow copy is enough.
 		const changes = chunks.map(chunk => ({...chunk}));
 
 		return this.#db.updateFile(documentId, data => {
-			if (!data) throw new Error(_('Document not found: ') + documentId);
-
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
 			return data;
@@ -416,7 +418,7 @@ class DocumentManager {
 		await this.#db.storeFile(filename, document);
 	}
 
-	#download(data) {
+	download(data) {
 		const blob = ChunkProcessor.createBlob(data.chunks);
 
 		// Create a temporary object URL to download
@@ -425,20 +427,13 @@ class DocumentManager {
 		// Create a temporary <a> element to trigger the download
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = this.#editor.id;  // Original file name
+		a.download = data.id || this.#editor.id;  // Original file name
 		a.click();                     // Simulate click to download
 
 		// Clean up the temporary URL
 		URL.revokeObjectURL(url);
 		// Clean up the temporary <a> element
 		a.remove();
-
-		addMsg(_('Document Saved'), 'success');
-	}
-
-	async export() {
-		const data = await this.saveToIDB(this.#editor.chunks);
-		this.#download(data);
 	}
 
 	async createDocument(filename, data, template) {
@@ -1292,19 +1287,34 @@ function showDocumentLoadError(err) {
 	addMsg(message, 'error');
 }
 
+let saveQueue = Promise.resolve();
+
 async function save(chunks) {
 	const documentId = editor.id;
+	const changes = chunks.map(chunk => ({...chunk}));
+
+	saveQueue = saveQueue.then(
+		() => persistChanges(documentId, changes),
+		() => persistChanges(documentId, changes)
+	);
+
+	return saveQueue;
+}
+
+async function persistChanges(documentId, chunks) {
 	let persisted = false;
 	editor.markSaveStarted();
 
 	try {
-		const data = await documents.saveToIDB(chunks);
+		const data = await documents.saveToIDB(chunks, documentId);
 		persisted = true;
 
 		if (editor.id === documentId) {
 			addMsg(_('Document Saved'), 'success');
 			editor.applySavedDocument(data);
 		}
+
+		return data;
 	} catch (err) {
 		if (!persisted && editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
@@ -1356,8 +1366,13 @@ evt('.ed-recent', 'click', e => {
 });
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
-	documents.export()
-		.then(() => editor.markAllSaved())
+	const documentId = editor.id;
+	save(editor.chunks)
+		.then(data => {
+			if (editor.id !== documentId) return;
+			documents.download(data);
+			editor.markAllSaved();
+		})
 		.catch(err => addMsg(err.message, 'error'));
 });
 evt('.ed-undo', 'click', () => {
