@@ -40,7 +40,7 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
-		evt(editor.dom, 'document-loaded', function () {
+		evt(editor.dom, 'document-before-render', function () {
 			sel('#header').innerHTML = '';
 			sel('#footer').innerHTML = '';
 			sel('header .btn-view')?.remove();

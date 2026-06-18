@@ -705,7 +705,7 @@ class Editor {
 			this.dom.innerHTML = '';
 			clean_ttip(this.dom);
 
-			this.#finishLoad();
+			this.#renderDocument();
 			this.#finishReady();
 		} catch (err) {
 			throw this.#createLoadError(err);
@@ -743,9 +743,10 @@ class Editor {
 		this.#saveFailed = false;
 	}
 
-	#finishLoad() {
-		// Notify others
-		dispatchAppEvent(this.dom, new Event('document-loaded', {bubbles: true}));
+	#renderDocument() {
+		// The document model is loaded and the editor DOM is empty here.
+		// Plug-ins can clear per-document UI before the new document is rendered.
+		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 
 		// Render the UI
 		const hids = Object.keys(this.hidden);
@@ -755,6 +756,7 @@ class Editor {
 
 	#finishReady() {
 		this.restoreView();
+		// The editor UI is rendered and the previous view has been restored.
 		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 	}
 
