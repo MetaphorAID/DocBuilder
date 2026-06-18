@@ -467,11 +467,19 @@ class TemplateManager {
 	}
 
 	async #loadJSON(url) {
+		let response;
 		try {
-			const response = await fetch(url);
+			response = await fetch(url);
+		} catch (err) {
+			throw this.#createLoadError(url, err);
+		}
 
-			if (!response.ok) throw new Error(response.status + ' ' + response.statusText);
+		if (!response.ok) {
+			const message = `${response.status} ${response.statusText}`.trim();
+			throw this.#createLoadError(url, new Error(message));
+		}
 
+		try {
 			return await response.json();
 		} catch (err) {
 			throw this.#createLoadError(url, err);
@@ -510,9 +518,9 @@ class TemplateManager {
 			e.rel = 'stylesheet';
 			e.href = src;
 			e.onload = resolve;
-			e.onerror = () => {
+			e.onerror = event => {
 				e.remove();
-				reject(this.#createLoadError(src));
+				reject(this.#createLoadError(src, event));
 			};
 			document.head.appendChild(e);
 		});
@@ -530,9 +538,9 @@ class TemplateManager {
 			const e = document.createElement('script');
 			e.src = src;
 			e.onload = resolve;
-			e.onerror = () => {
+			e.onerror = event => {
 				e.remove();
-				reject(this.#createLoadError(src));
+				reject(this.#createLoadError(src, event));
 			};
 			document.body.appendChild(e);
 		});
@@ -683,12 +691,6 @@ class Editor {
 		return err;
 	}
 
-	#dispatchEvent(event) {
-		event.appErrors = [];
-		this.dom.dispatchEvent(event);
-		if (event.appErrors.length) throw event.appErrors[0];
-	}
-
 	load(data, store_filler) {
 		try {
 			// Load data
@@ -743,7 +745,7 @@ class Editor {
 
 	#finishLoad() {
 		// Notify others
-		this.#dispatchEvent(new Event('document-loaded', {bubbles: true}));
+		dispatchAppEvent(this.dom, new Event('document-loaded', {bubbles: true}));
 
 		// Render the UI
 		const hids = Object.keys(this.hidden);
@@ -753,7 +755,7 @@ class Editor {
 
 	#finishReady() {
 		this.restoreView();
-		this.#dispatchEvent(new Event('document-ready', {bubbles: true}));
+		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 	}
 
 	#reset(data, store_filler) {
@@ -894,7 +896,7 @@ class Editor {
 
 	renderHidden(hids) {
 		// Tell the templates to render the hidden chunks in hids
-		this.#dispatchEvent(new CustomEvent('change-hidden', {detail: hids}));
+		dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
 	}
 
 	renderChunk(cid) {

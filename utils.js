@@ -51,6 +51,15 @@ function trg(target, eventName, dom) {
 	}, dom);
 }
 
+function dispatchAppEvent(target, event, dom) {
+	event.appErrors = [];
+	each(target, el => {
+		el.dispatchEvent(event);
+		return !event.appErrors.length;
+	}, dom);
+	if (event.appErrors.length) throw event.appErrors[0];
+}
+
 function parseXml(xml) {
 	return (new DOMParser()).parseFromString(xml, 'text/xml');
 }
