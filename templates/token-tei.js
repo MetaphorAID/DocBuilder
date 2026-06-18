@@ -32,6 +32,8 @@
 		'Int\u00e9zm\u00e9nyn\u00e9v': 'Intézménynév'
 	}
 
+	const TABLE_HEADERS = ['Token', 'Lemma', 'Detailed', 'Simple', ''];
+
 	Locale['Detailed'] = 'Részletes';
 	Locale['Simple'] = 'Egyszerű';
 	Locale['Re-Analyze'] = 'Új elemzés';
@@ -165,15 +167,6 @@
 		if (prev?.nodeName === '#text') prev.remove();
 	}
 
-	function createConfigRow(tableView) {
-		const row = document.createElement(tableView ? 'tr' : 'span');
-		row.className = 'cfg';
-		// TODO why colspan=5 while it is 42 in token-metaphor.js? Comment!
-		row.innerHTML = tableView ? '<td colspan="5" class="as-parent">⚙</td>' : '⚙';
-
-		return row;
-	}
-
 	function createTdElement(content = '&nbsp;', className = 'as-parent') {
 		const el = document.createElement('td');
 		el.className = className;
@@ -241,8 +234,8 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = ['Token', 'Lemma', 'Detailed', 'Simple', ''];
-			sentenceEl.innerHTML = `<tbody><tr>${headers.map(h => `<th>${h ? _(h) : ''}</th>`).join('')}</tr></tbody>`;
+			const headers = TABLE_HEADERS.map(h => `<th>${h ? _(h) : ''}</th>`).join('');
+			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
 		}
@@ -254,7 +247,7 @@
 		}, sentence);
 
 		// Create the config row for the sentence
-		const row = createConfigRow(tableView);
+		const row = TOKEN.createSettingsRow(tableView, TABLE_HEADERS.length);
 		if (!sentence.getAttribute('sent')) row.classList.add(' unchecked');
 		sentenceEl.appendChild(row);
 

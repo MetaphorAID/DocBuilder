@@ -218,15 +218,6 @@
 		return 'direct-token';
 	}
 
-	function createConfigRow(tableView) {
-		const row = document.createElement(tableView ? 'tr' : 'span');
-		row.className = 'cfg';
-		// TODO why colspan=42 while it is 5 in token-tei.js? Comment!
-		row.innerHTML = tableView ? '<td colspan="42" class="as-parent">⚙</td>' : '⚙';
-
-		return row;
-	}
-
 	function createTdElement(content = '&nbsp;', className = 'as-parent') {
 		const el = document.createElement('td');
 		el.className = className;
@@ -287,7 +278,7 @@
 		}, sentence);
 
 		// Create the config row for the sentence
-		const row = createConfigRow(tableView);
+		const row = TOKEN.createSettingsRow(tableView, TOKEN_FIELDS.length);
 		sentenceEl.appendChild(row);
 
 		return tableView ? sentenceEl.parentNode : sentenceEl;

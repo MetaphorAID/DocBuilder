@@ -71,6 +71,23 @@ class TOKEN {
 		});
 	}
 
+	static createSettingsRow(tableView, columnCount) {
+		const row = document.createElement(tableView ? 'tr' : 'span');
+		row.className = 'cfg';
+
+		if (tableView) {
+			const cell = document.createElement('td');
+			cell.colSpan = columnCount;
+			cell.className = 'as-parent';
+			cell.textContent = '⚙';
+			row.appendChild(cell);
+		} else {
+			row.textContent = '⚙';
+		}
+
+		return row;
+	}
+
 	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {
 		const s = select(val, emptyOpt, opts, multiple);
 		s.className += ' ' + cls;
