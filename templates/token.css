@@ -127,8 +127,7 @@ table.s td {
   vertical-align: middle;
 }
 
-table.s td:nth-child(5),
-table.s th:nth-child(5) {
+table.s td:nth-child(5) {
   text-align: left;
 }
 
