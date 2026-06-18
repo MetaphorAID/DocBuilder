@@ -6,31 +6,44 @@
 		CONTEXTUAL_INDEX: 'contextualIndex',
 	});
 
-	const MEANING = {
-		[MEANING_FIELD.PRIMARY]: 'elsődleges',
-		[MEANING_FIELD.OTHER]: 'többi',
-		[MEANING_FIELD.CONTEXTUAL_INDEX]: 'jelenleg',
-	}
+	const MEANING_FIELDS = Object.freeze([
+		MEANING_FIELD.PRIMARY,
+		MEANING_FIELD.OTHER,
+		MEANING_FIELD.CONTEXTUAL_INDEX,
+	]);
 
 	const INDIRECT = {
 		'0': '-',
-		'1': 'metonímia',
-		'2': 'generalizáció',
-		'3': 'specifikáció'
+		'1': 'Metonymy',
+		'2': 'Generalization',
+		'3': 'Specification'
 	}
 
-	// TODO this is implicit localisation?
-	const COLS = {
-		'word': 'szó',
-		'lemma': 'lemma',
-		'pos': 'szófaj',
-		'nerTag': 'névelem',
-		'meanings': 'jelentés',
-		'metaphor': 'metafora',
-		'otherIndirect': 'indirekt',
-		'comment': 'megjegyzés'
-	}
+	const TOKEN_FIELDS = Object.freeze([
+		'word',
+		'lemma',
+		'pos',
+		'nerTag',
+		'meanings',
+		'metaphor',
+		'otherIndirect',
+		'comment',
+	]);
 
+	Locale['word'] = 'szó';
+	Locale['lemma'] = 'lemma';
+	Locale['pos'] = 'szófaj';
+	Locale['nerTag'] = 'névelem';
+	Locale['meanings'] = 'jelentés';
+	Locale['metaphor'] = 'metafora';
+	Locale['otherIndirect'] = 'indirekt';
+	Locale['comment'] = 'megjegyzés';
+	Locale[MEANING_FIELD.PRIMARY] = 'elsődleges';
+	Locale[MEANING_FIELD.OTHER] = 'többi';
+	Locale[MEANING_FIELD.CONTEXTUAL_INDEX] = 'jelenleg';
+	Locale['Metonymy'] = 'metonímia';
+	Locale['Generalization'] = 'generalizáció';
+	Locale['Specification'] = 'specifikáció';
 	Locale['Meanings'] = 'Jelentések';
 	Locale['Reasoning'] = 'Érvelés';
 	Locale['Content'] = 'Tartalom (szöveges)';
@@ -77,7 +90,8 @@
 			case 'metaphor':
 				return TOKEN.SEL_BOOL[value] ? _(TOKEN.SEL_BOOL[value]) : '&nbsp;';
 			case 'otherIndirect':
-				return INDIRECT[['None', 'none'].includes(value) ? '0' : value] || '&nbsp;';
+				const indirect = INDIRECT[['None', 'none'].includes(value) ? '0' : value];
+				return indirect ? _(indirect) : '&nbsp;';
 			case 'meanings':
 				if (!el) return '&nbsp;';
 				// Find the line whose numbering matches the contextual index
@@ -240,7 +254,7 @@
 		// if (isModified) wordEl.classList.add('modified');
 
 		if (tableView) {
-			for (const field in COLS) {
+			for (const field of TOKEN_FIELDS) {
 				const content = format(field, sel(field, token)).replaceAll('\n', '<br>');
 				wordEl.appendChild(createTdElement(content));
 			}
@@ -259,7 +273,8 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			sentenceEl.innerHTML = '<tbody><tr><th>' + Object.values(COLS).join('</th><th>') + '</th></tr></tbody>'
+			const headers = TOKEN_FIELDS.map(field => `<th>${_(field)}</th>`).join('');
+			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
 		}
@@ -421,7 +436,7 @@
 		const headers = [];
 		const cells = [];
 		// Setup elements for fields
-		for (const field in COLS) {
+		for (const field of TOKEN_FIELDS) {
 			const fieldValue = selToText(tokenXml, field, true);
 			let td = '';
 			switch (field) {
@@ -456,7 +471,7 @@
 			}
 			// Collect header value cell pairs
 			if (td) {
-				headers.push(`<th>${COLS[field]}</th>`);
+				headers.push(`<th>${_(field)}</th>`);
 				cells.push(`<td>${td}</td>`);
 			}
 		}
@@ -470,9 +485,9 @@
 		const cells = [];
 		const hasMeanings = [MEANING_FIELD.PRIMARY, MEANING_FIELD.OTHER].some(field => selToText(tokenXml, field, true));
 
-		for (const field in MEANING) {
+		for (const field of MEANING_FIELDS) {
 			const value = field === MEANING_FIELD.CONTEXTUAL_INDEX && !hasMeanings ? '' : selToText(tokenXml, field, true);
-			headers.push(`<th>${MEANING[field]}</th>`);
+			headers.push(`<th>${_(field)}</th>`);
 			switch (field) {
 				case MEANING_FIELD.PRIMARY:
 				case MEANING_FIELD.OTHER:
