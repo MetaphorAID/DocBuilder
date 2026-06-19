@@ -448,7 +448,8 @@
 
 			// Setup elements
 			if (sel('morph', tokenXml)) html += TOKEN.getLink(tokenId, 'edit ana', 'Select Ana.');
-			if (_annots.xml) {  // TODO is this branch dead code?
+			// Annotation features are available only when the document has an <annotations> section
+			if (_annots.xml) {
 				html += TOKEN.getSelect(tokenId, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
 				const addIfHas = (lst, label) => {
 					if (Object.keys(lst).length) html += TOKEN.getSelect(tokenId, label.key, '', label.text, lst);
