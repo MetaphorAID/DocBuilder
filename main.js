@@ -167,22 +167,18 @@ class AnnotationDB {
 		});
 	}
 
-	#applyUpdate(fileName, record, updater) {
-		if (!record) throw new Error(_('Document not found: ') + fileName);
-
-		return updater(record.data);
-	}
-
 	async updateFile(fileName, updater) {
 		const {transaction, store, done} = await this.#transaction('readwrite');
-		let result = null;
+		let updatedData;
 		let updateError = null;
 
 		const request = store.get(fileName);
 		request.onsuccess = () => {
 			try {
-				result = this.#applyUpdate(fileName, request.result, updater);
-				store.put({name: fileName, data: result});
+				if (!request.result) throw new Error(_('Document not found: ') + fileName);
+
+				updatedData = updater(request.result.data);
+				store.put({name: fileName, data: updatedData});
 			} catch (err) {
 				updateError = err;
 				transaction.abort();
@@ -195,7 +191,7 @@ class AnnotationDB {
 			throw updateError || err;
 		}
 
-		return result;
+		return updatedData;
 	}
 
 	async getAllKeys() {
