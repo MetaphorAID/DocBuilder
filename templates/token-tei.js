@@ -50,7 +50,7 @@
 			if (!refs) return;
 
 			for (const aid of Object.keys(refs)) {
-				if (sel(`[data-aid="${aid}"]`)) return;  // TODO return or continue?
+				if (sel(`[data-aid="${aid}"]`)) continue; // Already rendered
 
 				const annot = _annots.list[aid];
 				const annotEl = document.createElement('div');
