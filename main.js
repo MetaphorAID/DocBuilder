@@ -408,12 +408,7 @@ class DocumentManager {
 		return doc;
 	}
 
-	async saveToIDB(chunks, documentId = this.#editor.id || 0) {
-		// Snapshot mutable editor chunks before this save waits behind any
-		// already-running IndexedDB transaction. merge() only reads top-level
-		// chunk fields, so a shallow copy is enough.
-		const changes = chunks.map(chunk => ({...chunk}));
-
+	async saveToIDB(changes, documentId) {
 		return this.#db.updateFile(documentId, data => {
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
@@ -1295,6 +1290,8 @@ let saveQueue = Promise.resolve();
 
 async function save(chunks) {
 	const documentId = editor.id;
+	// Capture the requested values before this save enters the queue. The editor
+	// may mutate its chunk objects while earlier saves are still running.
 	const changes = chunks.map(chunk => ({...chunk}));
 
 	saveQueue = saveQueue.then(
@@ -1305,12 +1302,12 @@ async function save(chunks) {
 	return saveQueue;
 }
 
-async function persistChanges(documentId, chunks) {
+async function persistChanges(documentId, changes) {
 	editor.markSaveStarted();
 	let data;
 
 	try {
-		data = await documents.saveToIDB(chunks, documentId);
+		data = await documents.saveToIDB(changes, documentId);
 	} catch (err) {
 		if (editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
