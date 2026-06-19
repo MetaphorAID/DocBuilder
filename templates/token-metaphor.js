@@ -1,5 +1,6 @@
 (function () {
 	const PRIMARY_MEANING_INDEX = '1';
+	const REASONING_PREVIEW_WORDS = 15;
 	const MEANING_FIELD = Object.freeze({
 		PRIMARY: 'primary',
 		OTHER: 'other',
@@ -29,6 +30,7 @@
 		'otherIndirect',
 		'comment',
 	]);
+	const TABLE_FIELDS = Object.freeze([...TOKEN_FIELDS.slice(0, -1), 'reasoning', 'comment']);
 
 	Locale['word'] = 'szó';
 	Locale['lemma'] = 'lemma';
@@ -38,6 +40,7 @@
 	Locale['metaphor'] = 'metafora';
 	Locale['otherIndirect'] = 'indirekt';
 	Locale['comment'] = 'megjegyzés';
+	Locale['reasoning'] = 'érvelés';
 	Locale[MEANING_FIELD.PRIMARY] = 'elsődleges';
 	Locale[MEANING_FIELD.OTHER] = 'többi';
 	Locale[MEANING_FIELD.CONTEXTUAL_INDEX] = 'jelenleg';
@@ -56,7 +59,7 @@
 	Locale['Network error'] = 'Hálózati hiba';
 	Locale['New document creation not supported for this template'] = 'Új dokumentum létrehozása nem támogatott' +
 		' ennél a sablonnál';
-	Locale['Token Color Legend'] = 'Token szín jelmagyarázat';
+	Locale['Token Legend'] = 'Tokenek jelmagyarázata';
 	Locale['Metaphor'] = 'Metafora';
 	Locale['Other Indirect Meaning'] = 'Egyéb indirekt jelentés';
 	Locale['Direct meaning'] = 'Közvetlen jelentés';
@@ -72,15 +75,19 @@
 	Locale['Request timeout'] = 'Kérés időtúllépése';
 	Locale['Network error:'] = 'Hálózati hiba:';
 
-	function getText(el) {
-		if (!el) return '';
+	Locale['Manually modified'] = 'Kézzel módosítva';
 
-		return el.textContent
+	function normalizeText(value) {
+		return value
 			.replaceAll('\\n', '\n')
 			.replaceAll('\\t', '\t')
 			.trim()
 			.replace(/[\t ]+/g, ' ')
 			.replace(/ *\n */g, '\n');
+	}
+
+	function getText(el) {
+		return el ? normalizeText(el.textContent) : '';
 	}
 
 	function format(name, el) {
@@ -164,7 +171,7 @@
 		const x = parseXml(headerChunk.value);
 		const legend = `
 				<div class="legend">
-						<h4>${_('Token Color Legend')}</h4>
+						<h4>${_('Token Legend')}</h4>
 						<div class="legend-item">
 								<span class="legend-color metaphor-token"></span>
 								${_('Metaphor')}
@@ -176,6 +183,10 @@
 						<div class="legend-item">
 								<span class="legend-color direct-token"></span>
 								${_('Direct meaning')}
+						</div>
+						<div class="legend-item">
+								<span class="legend-modified" aria-hidden="true"></span>
+								${_('Manually modified')}
 						</div>
 				</div>
 		`;
@@ -227,6 +238,22 @@
 		return el;
 	}
 
+	function isModified(node) {
+		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
+	}
+
+	function formatReasoningPreview(reasoning, tid) {
+		const text = getText(reasoning);
+		if (!text) return '&nbsp;';
+
+		const words = text.split(/\s+/);
+		const preview = encXml(words.slice(0, REASONING_PREVIEW_WORDS).join(' '));
+		if (words.length <= REASONING_PREVIEW_WORDS) return preview;
+
+		return `${preview} <a href="#" class="show reason" data-tid="${tid}"
+			title="${_('Reasoning')}">&hellip;</a>`;
+	}
+
 	function renderToken(token, tid, tableView) {
 		// Create word element
 		const wordEl = document.createElement(tableView ? 'tr' : 'span');
@@ -242,14 +269,19 @@
 		const word = sel('word', token); // TODO consider using 'form' for 'word' form in XML
 		if (!word) return null;
 
-		// TODO consider adding modified attribute for token to signal manual change
-		// const isModified = word.getAttribute('modified') === 'True';
-		// if (isModified) wordEl.classList.add('modified');
+		// Highlight the token when it or any of its fields was changed manually.
+		if (isModified(token)) wordEl.classList.add('modified');
 
 		if (tableView) {
-			for (const field of TOKEN_FIELDS) {
-				const content = format(field, sel(field, token)).replaceAll('\n', '<br>');
-				wordEl.appendChild(createTdElement(content));
+			for (const field of TABLE_FIELDS) {
+				const fieldXml = sel(field, token);
+				const content = field === 'reasoning'
+					? formatReasoningPreview(fieldXml, tid)
+					: format(field, fieldXml).replaceAll('\n', '<br>');
+				const fieldEl = createTdElement(content);
+				if (field === 'reasoning') fieldEl.classList.add('reasoning-preview');
+				if (isModified(fieldXml)) fieldEl.classList.add('modified');
+				wordEl.appendChild(fieldEl);
 			}
 		} else {
 			wordEl.innerHTML = word.innerHTML || '&nbsp;';
@@ -266,7 +298,7 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = TOKEN.renderHeaderCells(TOKEN_FIELDS);
+			const headers = TOKEN.renderHeaderCells(TABLE_FIELDS);
 			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
@@ -280,7 +312,7 @@
 		}, sentence);
 
 		// Create the config row for the sentence
-		const row = TOKEN.createSettingsRow(tableView, TOKEN_FIELDS.length);
+		const row = TOKEN.createSettingsRow(tableView, TABLE_FIELDS.length);
 		sentenceEl.appendChild(row);
 
 		return tableView ? sentenceEl.parentNode : sentenceEl;
@@ -511,7 +543,7 @@
 			// Convert checkbox value if it is checkbox type
 			const value = i.type === 'checkbox' ? (i.checked ? 'True' : 'False') : (i.dataset.value || i.value).trim();
 			// Compare old and new value
-			if (value !== getText(paragraphXml)) {
+			if (normalizeText(value) !== getText(paragraphXml)) {
 				changed = true;
 				// Note the modification in the XML
 				paragraphXml.setAttribute('modified', 'True');
