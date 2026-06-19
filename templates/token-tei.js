@@ -724,9 +724,9 @@
 			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml);
 
 		if (ctx.target.matches('.del.token')) {
-			const id = ctx.tokenXml.getAttribute('xml:id'); // TODO replace ctx.tokenId?
+			const xmlId = ctx.tokenXml.getAttribute('xml:id');
 			delNode(ctx.tokenXml);
-			updAnnot([id], []);
+			updAnnot([xmlId], []);
 			savePar([ctx.paragraphId]);
 		}
 
