@@ -32,8 +32,6 @@
 		'Int\u00e9zm\u00e9nyn\u00e9v': 'Intézménynév'
 	}
 
-	const TABLE_HEADERS = ['Token', 'Lemma', 'Detailed', 'Simple', ''];
-
 	Locale['Detailed'] = 'Részletes';
 	Locale['Simple'] = 'Egyszerű';
 	Locale['Re-Analyze'] = 'Új elemzés';
@@ -234,7 +232,7 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = TABLE_HEADERS.map(h => `<th>${h ? _(h) : ''}</th>`).join('');
+			const headers = TOKEN.renderHeaderCells(TOKEN.MORPH_HEADERS);
 			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
@@ -247,7 +245,7 @@
 		}, sentence);
 
 		// Create the config row for the sentence
-		const row = TOKEN.createSettingsRow(tableView, TABLE_HEADERS.length);
+		const row = TOKEN.createSettingsRow(tableView, TOKEN.MORPH_HEADERS.length);
 		if (!sentence.getAttribute('sent')) row.classList.add(' unchecked');
 		sentenceEl.appendChild(row);
 
@@ -501,9 +499,10 @@
 		const row = (cols, btnHtml = '') => `<tr><td>${cols.join('</td><td>')}</td><td>${btnHtml}</td></tr>`;
 		const btn = (tid, anaId = '', selected = false) =>
 			`<a href="#" data-tid="${tid}" data-ana="${anaId}" class="btn selAna ${selected ? 'selected' : ''}">✓</a>`;
+		const headers = TOKEN.MORPH_HEADERS;
 
-		let html = `<h3 class="tkn">${_('Token')}: <strong>${form}</strong></h3><table><tr><th>${_('Lemma')
-		}</th><th>${_('Detailed')}</th><th>${_('Simple')}</th><th></th></tr>`;
+		let html = `<h3 class="tkn">${_(headers[0])}: <strong>${form}</strong></h3><table><tr>${
+			TOKEN.renderHeaderCells(headers.slice(1))}</tr>`;
 
 		// Existing analyses
 		each('ana', (anaXml, anaId) => {

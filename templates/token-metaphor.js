@@ -266,7 +266,7 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = TOKEN_FIELDS.map(field => `<th>${_(field)}</th>`).join('');
+			const headers = TOKEN.renderHeaderCells(TOKEN_FIELDS);
 			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
@@ -464,11 +464,11 @@
 			}
 			// Collect header value cell pairs
 			if (td) {
-				headers.push(`<th>${_(field)}</th>`);
+				headers.push(field);
 				cells.push(`<td>${td}</td>`);
 			}
 		}
-		tt.innerHTML += `<table><tr>${headers.join('')}</tr><tr>${cells.join('')}</tr></table>
+		tt.innerHTML += `<table><tr>${TOKEN.renderHeaderCells(headers)}</tr><tr>${cells.join('')}</tr></table>
 			<div class="center">${TOKEN.getLink(tokenId, 'btn info save', 'Save')}</div>`;
 	}
 
@@ -480,7 +480,7 @@
 
 		for (const field of MEANING_FIELDS) {
 			const value = field === MEANING_FIELD.CONTEXTUAL_INDEX && !hasMeanings ? '' : selToText(tokenXml, field, true);
-			headers.push(`<th>${_(field)}</th>`);
+			headers.push(field);
 			switch (field) {
 				case MEANING_FIELD.PRIMARY:
 				case MEANING_FIELD.OTHER:
@@ -490,7 +490,7 @@
 					cells.push(`<td><input type="text" name="${field}" class="input" value="${value}"></td>`);
 			}
 		}
-		tt.innerHTML += `<table><tr>${headers.join('')}</tr><tr>${cells.join('')}</tr></table>
+		tt.innerHTML += `<table><tr>${TOKEN.renderHeaderCells(headers)}</tr><tr>${cells.join('')}</tr></table>
 			<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`;
 	}
 

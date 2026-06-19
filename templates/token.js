@@ -9,6 +9,8 @@ class TOKEN {
 		'1': 'After',
 	}
 
+	static MORPH_HEADERS = Object.freeze(['Token', 'Lemma', 'Detailed', 'Simple', ''])
+
 	static initalize() {
 		// Common
 		Locale['EMPTY'] = 'ÜRES';
@@ -86,6 +88,10 @@ class TOKEN {
 		}
 
 		return row;
+	}
+
+	static renderHeaderCells(headers) {
+		return headers.map(header => `<th>${header ? _(header) : ''}</th>`).join('');
 	}
 
 	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {
