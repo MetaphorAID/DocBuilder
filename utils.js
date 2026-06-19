@@ -6,6 +6,7 @@
 function sel(selector, dom = document, def = null) {
 	return dom.querySelector(selector) || def;
 }
+
 function find(selector, dom = document) {
 	return dom.querySelectorAll(selector);
 }
