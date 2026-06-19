@@ -389,11 +389,15 @@ class DocumentManager {
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
 		const text = await this.#readFile(file);
-		const document = ChunkProcessor.createDocument(file.name, text, template);
 
-		await this.#db.storeFile(file.name, document);
+		return this.createDocument(file.name, text, template);
+	}
 
-		return document;
+	async createDocument(filename, data, template) {
+		const newData = ChunkProcessor.createDocument(filename, data, template);
+		await this.#store(filename, newData);
+
+		return newData;
 	}
 
 	async open(id) {
@@ -437,13 +441,6 @@ class DocumentManager {
 		URL.revokeObjectURL(url);
 		// Clean up the temporary <a> element
 		a.remove();
-	}
-
-	async createDocument(filename, data, template) {
-		const newData = ChunkProcessor.createDocument(filename, data, template);
-		await this.#store(filename, newData);
-
-		return newData
 	}
 }
 
