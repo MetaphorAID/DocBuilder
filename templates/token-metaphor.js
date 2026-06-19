@@ -200,14 +200,27 @@
 	});
 
 	function getUID(xml, prefix) {
-		// Find an exisiting Uniquie ID or generate one
-		let n = 0;
-		let id = `${prefix}_${++n}`;
+		// IDs are document-wide even though the editor stores the XML in chunks.
+		const ids = new Set();
+		const collectIds = documentXml => {
+			for (const element of documentXml.getElementsByTagName('*')) {
+				const id = element.getAttribute('xml:id');
+				if (id) ids.add(id);
+			}
+		};
 
-		// Using namespace-aware CSS selector
-		while (sel(`[*|id="${id}"]`, xml)) {
-			id = `${prefix}_${++n}`;
+		collectIds(xml);
+		for (const activeXml of Object.values(_active)) {
+			if (activeXml !== xml) collectIds(activeXml);
 		}
+		for (let cid = 0; cid < editor.chunks.length; ++cid) {
+			if (!_active[cid]) collectIds(parseXml(editor.chunks[cid].value));
+		}
+		for (const hidden of editor.hidden) collectIds(parseXml(hidden.value));
+
+		let n = 1;
+		let id = `${prefix}_${n}`;
+		while (ids.has(id)) id = `${prefix}_${++n}`;
 
 		return id;
 	}
@@ -215,6 +228,7 @@
 	function delNode(node) {
 		const prev = node.previousSibling;
 		if (prev?.nodeName === '#text') prev.remove();
+		node.remove();
 	}
 
 	function getTokenClass(token) {
@@ -582,8 +596,8 @@
 		const newTokenXml = tokenXml.cloneNode(true);
 
 		// Create new unique ID, store value and note modified status
-		const baseId = tokenXml.getAttribute('xml:id').split('_')[0];
-		newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
+		const tokenId = tokenXml.getAttribute('xml:id');
+		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
 
 		const token = sel('word', newTokenXml);
 		token.textContent = value;
@@ -727,7 +741,7 @@
 		const newTokenXml = tokenXml.cloneNode(true);
 
 		// Create new unique ID, store value and note modified status
-		const baseId = tokenXml.getAttribute('xml:id')?.split('_')[0];
+		const baseId = tokenXml.getAttribute('xml:id');
 		if (baseId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
 
 		const newWordEl = sel('word', newTokenXml);
@@ -761,28 +775,19 @@
 		if (!tokenXml2) return addMsg(_('Invalid Action'));
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
-		const keepWord = selToText(keepToken, 'word');
-		const removeWord = selToText(removeToken, 'word');
+		const keepWord = sel('word', keepToken);
+		const joinedWord = selToText(keepToken, 'word') + selToText(removeToken, 'word');
+		if (!keepWord) return addMsg(_('Invalid Action'));
 
 		// Join text
 		keepWord.setAttribute('modified', 'True');
-		keepWord.textContent = keepWord + removeWord;
+		keepWord.textContent = joinedWord;
 
-		// TODO Investigate the ID generation
-		// Update IDs and remove second token
-		const id1 = keepToken.getAttribute('xml:id').split('_');
-		const id2 = removeToken.getAttribute('xml:id').split('_');
+		// Keep the surviving token's complete ID; only the removed token loses its identity.
+		const keepId = keepToken.getAttribute('xml:id');
+		const removeId = removeToken.getAttribute('xml:id');
 		delNode(removeToken);
-
-		if (id1.length > 1) {
-			if (id2.length > 1) {
-				// Clear ID before creating a new unique ID (possibly reassigning old ID)
-				keepToken.setAttribute('xml:id', '');
-				keepToken.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
-			} else {
-				keepToken.setAttribute('xml:id', id2[0]);
-			}
-		}
+		if (!keepId && removeId) keepToken.setAttribute('xml:id', removeId);
 
 		// Save changes and refresh UI
 		savePar([paragraphId]);
@@ -803,7 +808,7 @@
 
 		// Create new sentence ID
 		const root = paragraphXml.documentElement;
-		const idBase = sentenceXml.getAttribute('xml:id').split('_')[0];
+		const idBase = sentenceXml.getAttribute('xml:id');
 		const newSentence = `</${sentenceXml.nodeName}>` + indent + `<${sentenceXml.nodeName}`
 			+ (idBase ? ` xml:id="${getUID(paragraphXml, idBase)}"` : '') + ' modified="True"> ';
 
@@ -846,21 +851,11 @@
 		keepSentence.setAttribute('modified', 'True');
 		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
 
-		// Update IDs
-		const id1 = keepSentence.getAttribute('xml:id').split('_');
-		const id2 = removeSentence.getAttribute('xml:id').split('_');
-
+		// Keep the surviving sentence's complete ID.
+		const keepId = keepSentence.getAttribute('xml:id');
+		const removeId = removeSentence.getAttribute('xml:id');
 		delNode(removeSentence);
-
-		if (id1.length > 1) {
-			if (id2.length > 1) {
-				// Clear ID before creating a new unique ID (possibly reassigning old ID)
-				keepSentence.setAttribute('xml:id', '');
-				keepSentence.setAttribute('xml:id', getUID(paragraphXml, id1[0]));
-			} else {
-				keepSentence.setAttribute('xml:id', id2[0]);
-			}
-		}
+		if (!keepId && removeId) keepSentence.setAttribute('xml:id', removeId);
 
 		savePar(paragraphIds);
 	}
