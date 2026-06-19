@@ -280,7 +280,7 @@
 		if (['right', 'both'].includes(joinType)) wordEl.classList.add('right');
 
 		// Construct tableView for word
-		const word = sel('word', token); // TODO consider using 'form' for 'word' form in XML
+		const word = sel('word', token); // The metaphor API schema stores the token surface form in <word>, not <form>
 		if (!word) return null;
 
 		// Highlight the token when it or any of its fields was changed manually.
