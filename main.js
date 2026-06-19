@@ -693,10 +693,11 @@ class Editor {
 	}
 
 	load(data, store_filler) {
-		try {
-			// Load data
-			if (!data.id) throw new Error('Missing document id');
+		if (!data?.id) {
+			throw this.#createLoadError(new Error('Missing document id'));
+		}
 
+		try {
 			this.markAllSaved();
 
 			// Reset the editor
@@ -1308,25 +1309,24 @@ async function save(chunks) {
 }
 
 async function persistChanges(documentId, chunks) {
-	let persisted = false;
 	editor.markSaveStarted();
+	let data;
 
 	try {
-		const data = await documents.saveToIDB(chunks, documentId);
-		persisted = true;
-
-		if (editor.id === documentId) {
-			addMsg(_('Document Saved'), 'success');
-			editor.applySavedDocument(data);
-		}
-
-		return data;
+		data = await documents.saveToIDB(chunks, documentId);
 	} catch (err) {
-		if (!persisted && editor.id === documentId) editor.markSaveFailed();
+		if (editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
 	} finally {
 		editor.markSaveFinished();
 	}
+
+	if (editor.id === documentId) {
+		addMsg(_('Document Saved'), 'success');
+		editor.applySavedDocument(data);
+	}
+
+	return data;
 }
 
 async function createNewDocument(templateInfo) {
