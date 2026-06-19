@@ -208,6 +208,8 @@
 
 	function getTokenClass(token) {
 		// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
+		// Use getText() instead of format(): these checks need the raw True/False and numeric values,
+		// while format() converts them to localized display labels.
 		let otherIndirect = getText(sel('otherIndirect', token));
 		if (['None', 'none'].includes(otherIndirect)) otherIndirect = '0';
 
