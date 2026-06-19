@@ -939,16 +939,18 @@
 		if (!_annots.xml) return;
 
 		const {xml} = _annots;
+		const targetId = tokenXml.getAttribute('xml:id');
 
 		const target = xml.createElement(tokenXml.nodeName);
-		target.setAttribute('target', tokenXml.getAttribute('xml:id'));
+		target.setAttribute('target', targetId);
 		target.textContent = sel('form', tokenXml).textContent;
 		const annotation = xml.createElement('annotation');
 		annotation.setAttribute('entity', value);
 		annotation.appendChild(target);
 
-		//TODO: sort?
 		xml.documentElement.appendChild(annotation);
+		const annotationId = _annots.list.push(annotation) - 1;
+		(_annots.ref[targetId] ??= {})[annotationId] = 3;
 		_annots.changed = true;
 
 		savePar();
