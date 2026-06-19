@@ -127,39 +127,41 @@ class AnnotationDB {
 		await this.init();
 
 		// Create a transaction
-		return this.#db.transaction(this.#storeName, mode);
+		const transaction = this.#db.transaction(this.#storeName, mode);
+
+		return {
+			transaction,
+			store: transaction.objectStore(this.#storeName),
+			done: this.#waitForTransaction(transaction)
+		};
 	}
 
 	async retrieveFile(fileName) {
-		const transaction = await this.#transaction('readonly');
-		const store = transaction.objectStore(this.#storeName);
+		const {store, done} = await this.#transaction();
+		const request = store.get(fileName);
 
-		return new Promise((resolve, reject) => {
-			const request = store.get(fileName);
+		await done;
 
-			// Return the result or null if not found
-			request.onsuccess = () => resolve(request.result?.data ?? null);
-			request.onerror = e => reject(e.target.error);
-		});
+		// Return the result or null if not found
+		return request.result?.data ?? null;
 	}
 
 	async storeFile(fileName, data) {
-		const transaction = await this.#transaction('readwrite');
-		const store = transaction.objectStore(this.#storeName);
+		const {store, done} = await this.#transaction('readwrite');
+		store.put({name: fileName, data});
 
-		return new Promise((resolve, reject) => {
-			const request = store.put({name: fileName, data});
+		await done;
 
-			request.onsuccess = () => resolve(data);
-			request.onerror = e => reject(e.target.error);
-		});
+		return data;
 	}
 
-	#waitForTransaction(transaction, state) {
+	#waitForTransaction(transaction) {
 		return new Promise((resolve, reject) => {
-			const fail = e => reject(state.error || transaction.error || e.target.error);
+			const fail = e => reject(
+				transaction.error || e.target.error || new DOMException('Transaction aborted', 'AbortError')
+			);
 
-			transaction.oncomplete = () => resolve(state.result);
+			transaction.oncomplete = () => resolve();
 			transaction.onerror = fail;
 			transaction.onabort = fail;
 		});
@@ -172,64 +174,51 @@ class AnnotationDB {
 	}
 
 	async updateFile(fileName, updater) {
-		const transaction = await this.#transaction('readwrite');
-		const store = transaction.objectStore(this.#storeName);
-		const state = {result: null, error: null};
-		const done = this.#waitForTransaction(transaction, state);
+		const {transaction, store, done} = await this.#transaction('readwrite');
+		let result = null;
+		let updateError = null;
 
-		// The transaction setup above is generic; this is the update-specific
-		// work: read the current record, transform it, and write it back.
 		const request = store.get(fileName);
 		request.onsuccess = () => {
 			try {
-				state.result = this.#applyUpdate(fileName, request.result, updater);
-				store.put({name: fileName, data: state.result});
+				result = this.#applyUpdate(fileName, request.result, updater);
+				store.put({name: fileName, data: result});
 			} catch (err) {
-				state.error = err;
+				updateError = err;
 				transaction.abort();
 			}
 		};
-		request.onerror = e => {
-			state.error = e.target.error;
-		};
+
+		try {
+			await done;
+		} catch (err) {
+			throw updateError || err;
+		}
+
+		return result;
+	}
+
+	async getAllKeys() {
+		const {store, done} = await this.#transaction();
+		const request = store.getAllKeys();
+
+		await done;
+
+		return request.result;
+	}
+
+	async delete(fileName) {
+		const {store, done} = await this.#transaction('readwrite');
+		store.delete(fileName);
 
 		return done;
 	}
 
-	async getAllKeys() {
-		const transaction = await this.#transaction('readonly');
-		const store = transaction.objectStore(this.#storeName);
-
-		return new Promise((resolve, reject) => {
-			const request = store.getAllKeys();
-
-			request.onsuccess = () => resolve(request.result);
-			request.onerror = e => reject(e.target.error);
-		});
-	}
-
-	async delete(fileName) {
-		const transaction = await this.#transaction('readwrite');
-		const store = transaction.objectStore(this.#storeName);
-
-		return new Promise((resolve, reject) => {
-			const request = store.delete(fileName);
-
-			request.onsuccess = () => resolve();
-			request.onerror = e => reject(e.target.error);
-		});
-	}
-
 	async clear() {
-		const transaction = await this.#transaction('readwrite');
-		const store = transaction.objectStore(this.#storeName);
+		const {store, done} = await this.#transaction('readwrite');
+		store.clear();
 
-		return new Promise((resolve, reject) => {
-			const request = store.clear();
-
-			request.onsuccess = () => resolve();
-			request.onerror = e => reject(e.target.error);
-		});
+		return done;
 	}
 }
 
