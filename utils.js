@@ -268,3 +268,30 @@ function pickFile({extension, multiple = false, accept} = {}) {
 		input.click();
 	});
 }
+
+function readFile(file) {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+
+		reader.onload = e => resolve(e.target.result);
+		reader.onerror = reject;
+
+		reader.readAsText(file, 'UTF-8');
+	});
+}
+
+function downloadAsFile(fileName, blob) {
+	// Create a temporary object URL to download
+	const url = URL.createObjectURL(blob);
+
+	// Create a temporary <a> element to trigger the download
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = fileName;  // Original file name
+	a.click();              // Simulate click to download
+
+	// Clean up the temporary URL
+	URL.revokeObjectURL(url);
+	// Clean up the temporary <a> element
+	a.remove();
+}

@@ -7,9 +7,7 @@ function handleSelectOption(e, t) {
 	}
 
 	if (!t.classList.contains('no-value')) {
-		if (!s.classList.contains('multiple')) {
-			each('.selected', i => i.classList.remove('selected'), s);
-		}
+		if (!s.classList.contains('multiple')) each('.selected', i => i.classList.remove('selected'), s);
 		t.classList.toggle('selected');
 	}
 
@@ -20,9 +18,7 @@ function handleSelectOption(e, t) {
 
 	s.dataset.value = s.classList.contains('multiple') ? JSON.stringify(values) : (values[0] || '');
 
-	if (s.classList.contains('multiple') && !t.classList.contains('no-value')) {
-		return true;
-	}
+	if (s.classList.contains('multiple') && !t.classList.contains('no-value')) return true;
 
 	trg(s, 'change');
 	s.classList.remove('open');
@@ -35,10 +31,7 @@ document.addEventListener('click', e => {
 	if (!t) return;
 
 	// Handle disabled
-	if (t.matches('.disabled')) {
-		e.preventDefault();
-		return;
-	}
+	if (t.matches('.disabled')) return e.preventDefault();
 
 	// Handle anchor
 	if (t.matches('a[href="#"]')) e.preventDefault();
@@ -46,7 +39,7 @@ document.addEventListener('click', e => {
 	// Handle tooltip close
 	if (t.matches('.tooltip .close')) trg(t.closest('.tooltip'), 'close');
 
-	// Handle exidental clicks inside input
+	// Handle accidental clicks inside input
 	if (t.matches('.dropdown .input') && !t.matches('.select')) return;
 
 	// Handle select togle
@@ -56,10 +49,7 @@ document.addEventListener('click', e => {
 	}
 
 	// Handle select option
-	if (t.matches('.select > a')) {
-		const shouldStop = handleSelectOption(e, t);
-		if (shouldStop) return;
-	}
+	if (t.matches('.select > a') && handleSelectOption(e, t)) return;
 
 	clean_ttip(t.closest('.tooltip:not(.dropdown)'));
 });
@@ -71,15 +61,10 @@ document.addEventListener('close', ({target}) => {
 	requestAnimationFrame(() => target.remove());
 });
 
-window.addEventListener('DOMContentLoaded', () => {
-	each('.locale', el => {
-		el.innerHTML = _(el.innerHTML.trim());
-	});
-});
+window.addEventListener('DOMContentLoaded', () => each('.locale', el => el.innerHTML = _(el.innerHTML.trim())));
 
-window.onerror = function (errorMsg, url, lineNum, colNum, error) {
+window.onerror = (errorMsg, url, lineNum, colNum, error) =>
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
-};
 
 class AnnotationDB {
 	// An IndexedDB-based storage backend storing (filename, data) pairs
@@ -100,9 +85,7 @@ class AnnotationDB {
 	}
 
 	async init() {
-		if (this.#db) {
-			return this.#db;
-		}
+		if (this.#db) return this.#db;
 
 		return new Promise((resolve, reject) => {
 			const request = indexedDB.open(this.#dbName, this.#version);
@@ -136,6 +119,18 @@ class AnnotationDB {
 		};
 	}
 
+	#waitForTransaction(transaction) {
+		return new Promise((resolve, reject) => {
+			const fail = e => reject(
+				transaction.error || e.target.error || new DOMException('Transaction aborted', 'AbortError')
+			);
+
+			transaction.oncomplete = () => resolve();
+			transaction.onerror = fail;
+			transaction.onabort = fail;
+		});
+	}
+
 	async retrieveFile(fileName) {
 		const {store, done} = await this.#transaction();
 		const request = store.get(fileName);
@@ -155,18 +150,6 @@ class AnnotationDB {
 		return data;
 	}
 
-	#waitForTransaction(transaction) {
-		return new Promise((resolve, reject) => {
-			const fail = e => reject(
-				transaction.error || e.target.error || new DOMException('Transaction aborted', 'AbortError')
-			);
-
-			transaction.oncomplete = () => resolve();
-			transaction.onerror = fail;
-			transaction.onabort = fail;
-		});
-	}
-
 	async updateFile(fileName, updater) {
 		const {transaction, store, done} = await this.#transaction('readwrite');
 		let updatedData;
@@ -175,6 +158,7 @@ class AnnotationDB {
 		const request = store.get(fileName);
 		request.onsuccess = () => {
 			try {
+				// Throw inside of try for uniform handling of errors
 				if (!request.result) throw new Error(_('Document not found: ') + fileName);
 
 				updatedData = updater(request.result.data);
@@ -359,68 +343,40 @@ class DocumentManager {
 		}).catch(err => addMsg(_('Database error: ') + err, 'error'));
 	}
 
-	async #readFile(file) {
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-
-			reader.onload = e => resolve(e.target.result);
-			reader.onerror = reject;
-
-			reader.readAsText(file, 'UTF-8');
-		});
-	}
-
 	async import(template) {
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
-		const text = await this.#readFile(file);
+		const text = readFile(file);
 
 		return this.createDocument(file.name, text, template);
 	}
 
 	async createDocument(filename, data, template) {
 		const newData = ChunkProcessor.createDocument(filename, data, template);
-		await this.#store(filename, newData);
+		await this.#db.storeFile(filename, newData);
 
 		return newData;
 	}
 
-	async open(id) {
+	async openFromIDB(fileName) {
 		// Open file from IndexedDB
-		const doc = await this.#db.retrieveFile(id);
-		if (!doc) throw new Error(_('Document not found: ') + id);
+		const doc = await this.#db.retrieveFile(fileName);
+		if (!doc) throw new Error(_('Document not found: ') + fileName);
 
 		return doc;
 	}
 
-	async saveToIDB(changes, documentId) {
-		return this.#db.updateFile(documentId, data => {
+	async saveToIDB(changes, fileName) {
+		return this.#db.updateFile(fileName, data => {
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
 			return data;
 		});
 	}
 
-	async #store(filename, document) {
-		await this.#db.storeFile(filename, document);
-	}
-
 	download(data) {
 		const blob = ChunkProcessor.createBlob(data.chunks);
-
-		// Create a temporary object URL to download
-		const url = URL.createObjectURL(blob);
-
-		// Create a temporary <a> element to trigger the download
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = data.id || this.#editor.id;  // Original file name
-		a.click();                     // Simulate click to download
-
-		// Clean up the temporary URL
-		URL.revokeObjectURL(url);
-		// Clean up the temporary <a> element
-		a.remove();
+		downloadAsFile(data.id || this.#editor.id, blob);
 	}
 }
 
@@ -528,7 +484,7 @@ class TemplateManager {
 	async loadResources(template) {
 		await Promise.all((template.css || []).map(src => this.#loadStyle(src)));
 
-		// Preserve script order because template plug-ins may depend on earlier files.
+		// Preserve script order because template plug-ins may depend on earlier files
 		for (const src of template.js || []) await this.#loadScript(src);
 	}
 
@@ -627,10 +583,7 @@ class Editor {
 			if (!t) return;
 
 			// Render the actual page identified by pagenumber
-			if (t.matches('[data-render]')) {
-				this.render([Number(t.dataset.render)]);
-				return;
-			}
+			if (t.matches('[data-render]')) return this.render([Number(t.dataset.render)]);
 
 			// Plus one behaviour
 			if (t.matches('.plus-one')) {
@@ -660,10 +613,8 @@ class Editor {
 	#createLoadError(cause) {
 		if (cause?.documentLoadError) return cause;
 
-		const err = new Error(_(
-			'Could not open the document. ' +
-			'The file content is invalid or does not match the selected template.'
-		));
+		const err =
+			new Error(_('Could not open the document. The file content is invalid or does not match the selected template.'));
 		err.cause = cause;
 		err.documentLoadError = true;
 		return err;
@@ -735,7 +686,7 @@ class Editor {
 
 	#finishReady() {
 		this.restoreView();
-		// The editor UI is rendered and the previous view has been restored.
+		// The editor UI is rendered and the previous view has been restored
 		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 	}
 
@@ -1253,7 +1204,7 @@ async function displayDocument(data) {
 }
 
 async function openDocument(id) {
-	const data = await documents.open(id);
+	const data = await documents.openFromIDB(id);
 	await displayDocument(data);
 }
 

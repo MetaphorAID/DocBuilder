@@ -18,7 +18,7 @@ Locale = {
 	'Error saving:': 'Hiba mentés közben: ',
 	'Exception:': 'Kivétel:',
 	'No file chosen': 'Nincs fájl kiválasztva',
-	'No matching mChunk found for chunk with id: ': 'Nincs egyező mChunk azonosító: ',
+	'No matching chunk found for chunk with id: ': 'Nincs egyező chunk azonosító: ',
 	'Document Loaded': 'Dokumentum betöltve',
 	'Document Saved': 'Dokumentum mentve',
 	'Document changed outside, history action is disabled': 'A dokumentum megváltozott, az előre/hátra lépés le lett tiltva',
