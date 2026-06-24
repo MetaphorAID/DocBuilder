@@ -782,8 +782,8 @@
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
 		const keepWord = sel('word', keepToken);
-		const joinedWord = selToText(keepToken, 'word') + selToText(removeToken, 'word');
 		if (!keepWord) return addMsg(_('Invalid Action'));
+		const joinedWord = selToText(keepToken, 'word') + selToText(removeToken, 'word');
 
 		// Join text
 		keepWord.setAttribute('modified', 'True');
