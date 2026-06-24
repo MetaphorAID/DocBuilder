@@ -491,7 +491,6 @@
 				html += TOKEN.getSelect(tokenId, 'split token', '', 'Split Token...', split);
 			}
 			// Setup other elements
-			//html += TOKEN.getSelect(tid, 'edit tokentype', xt.nodeName, '', { w: 'Type: Word', pc: 'Type: Punct' });
 			html += TOKEN.getLink(tokenId, 'edit token', 'Fix Token'); // Change the value freely
 			html += TOKEN.getSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
 			html += TOKEN.getLink(tokenId, 'ins token', 'Insert Token');
@@ -1001,22 +1000,6 @@
 		if (target.matches('.join.token'))
 			return handleJoinToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokens, ctx.tokenId, ctx.tokenXml,
 				ctx.value);
-
-		// if (target.matches('.edit.tokentype')) {
-		// 	if (value == '' || value == tokenXml.nodeName) return;
-		// 	const tokenXml2 = paragraphXml.createElement(val);
-		// 	tokenXml2.innerHTML = tokenXml.innerHTML;
-		// 	sel('form', tokenXml2).setAttribute('modified', 'True');
-		// 	const baseId = paragraphXml.documentElement.getAttribute('xml:id');
-		// 	if (baseId) {
-		// 		tokenXml2.setAttribute('xml:id', getUID(paragraphXml, val + baseId));
-		// 		updAnnot([tokenXml.getAttribute('xml:id')], [tokenXml2]);
-		// 	}
-		// 	sentenceXml.insertBefore(tokenXml2, tokenXml);
-		// 	tokenXml.remove();
-		// 	savePar([paragraphId]);
-		// 	return;
-		// }
 
 		// Sentence stuff
 		if (target.matches('.edit.sent')) return handleEditSentinence(ctx.paragraphId, ctx.sentenceXml);

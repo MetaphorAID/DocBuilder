@@ -741,8 +741,8 @@
 		const newTokenXml = tokenXml.cloneNode(true);
 
 		// Create new unique ID, store value and note modified status
-		const baseId = tokenXml.getAttribute('xml:id');
-		if (baseId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, baseId));
+		const tokenId = tokenXml.getAttribute('xml:id');
+		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
 
 		const newWordEl = sel('word', newTokenXml);
 
