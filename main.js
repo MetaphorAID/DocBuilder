@@ -484,7 +484,7 @@ class TemplateManager {
 	async loadResources(template) {
 		await Promise.all((template.css || []).map(src => this.#loadStyle(src)));
 
-		// Preserve script order because template plug-ins may depend on earlier files
+		// Preserve script order because template templates may depend on earlier files
 		for (const src of template.js || []) await this.#loadScript(src);
 	}
 
@@ -513,7 +513,7 @@ class TemplateManager {
 
 class Editor {
 	static TYPES = {
-		// This is the default editor type interface to be overloaded in plug-ins (see strategy pattern)
+		// This is the default editor type interface to be overloaded in templates (see strategy pattern)
 		_default_: {
 			remove(input, chunk) {
 			},
@@ -537,8 +537,8 @@ class Editor {
 	};
 	static NEW_DOCUMENT_TYPES = {};
 
-	static getType(type) {
-		// Select editor type (defined by plug-ins) fallback to the default type
+	static #getType(type) {
+		// Select editor type (defined by templates) fallback to the default type
 		return (type ? Editor.TYPES[type] : false) || Editor.TYPES._default_;
 	}
 
@@ -610,7 +610,7 @@ class Editor {
 		});
 	}
 
-	#createLoadError(cause) {
+	#createDocumentLoadError(cause) {
 		if (cause?.documentLoadError) return cause;
 
 		const err =
@@ -621,9 +621,7 @@ class Editor {
 	}
 
 	load(data, store_filler) {
-		if (!data?.id) {
-			throw this.#createLoadError(new Error('Missing document id'));
-		}
+		if (!data?.id) throw this.#createDocumentLoadError(new Error('Missing document id'));
 
 		try {
 			this.markAllSaved();
@@ -638,7 +636,7 @@ class Editor {
 			this.#renderDocument();
 			this.#finishReady();
 		} catch (err) {
-			throw this.#createLoadError(err);
+			throw this.#createDocumentLoadError(err);
 		}
 	}
 
@@ -675,7 +673,7 @@ class Editor {
 
 	#renderDocument() {
 		// The document model is loaded and the editor DOM is empty here.
-		// Plug-ins can clear per-document UI before the new document is rendered.
+		// Templates can clear per-document UI before the new document is rendered.
 		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 
 		// Render the UI
@@ -688,6 +686,67 @@ class Editor {
 		this.restoreView();
 		// The editor UI is rendered and the previous view has been restored
 		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
+	}
+
+	restoreView() {
+		// Restore visible and hidden chunks if a saved state exists and clear the state
+		if (this.#restore) {
+			this.render(this.#restore);
+			this.#restore = null;
+		}
+
+		if (this.#restoreHidden) {
+			this.renderHidden(this.#restoreHidden);
+			this.#restoreHidden = null;
+		}
+	}
+
+	render(cids) {
+		// Clear the current view
+		this.dom.innerHTML = '';
+		clean_ttip(this.dom);
+
+		if (!cids.length) return;
+
+		// Render the paginator
+		this.dom.appendChild(this.#renderPaginator(cids[0]));
+
+		// Render the chunks
+		for (const cid of cids) this.dom.appendChild(this.renderChunk(cid));
+
+		// Create +1 sentence button
+		const lastCid = cids[cids.length - 1];
+		if (this.chunks.length > lastCid + 1) {
+			const a = document.createElement('a');
+			a.href = '#';
+			a.className = 'btn plus-one';
+			a.dataset.next = String(lastCid + 1);
+			a.innerHTML = _('Show +1 sentence');
+
+			this.dom.appendChild(a);
+		}
+	}
+
+	renderChunk(cid) {
+		// Delegates rendering to the specific editor type's render() function
+		const chunk = this.chunks[cid];
+		if (!chunk) return null;
+
+		const e = Editor.#getType(chunk.name).render(chunk, cid);
+		// Note which chunk this DOM element represents
+		if (e) e.dataset.cid = cid;
+
+		return e;
+	}
+
+	renderHidden(hids) {
+		// Tell the templates to render the hidden chunks in hids
+		dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
+	}
+
+	getVisible() {
+		// Get visible chunk indices
+		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
 	#reset(data, store_filler) {
@@ -724,10 +783,9 @@ class Editor {
 
 		// Detect changes by comparing every visible chunk (and normalising line endings)
 		let changed = false;
-
 		each('[data-cid]', i => {
 			const chunk = this.chunks[i.dataset.cid];
-			const c_type = Editor.getType(chunk.name);
+			const c_type = Editor.#getType(chunk.name);
 
 			if (chunk.id && c_type.getValue && chunk.value !== c_type.getValue(i, chunk).replace(/(\r?\n|\r)/g, this.eol))
 				changed = true;
@@ -740,7 +798,7 @@ class Editor {
 		const cleanupChunks = () => {
 			each('[data-cid]', i => {
 				const c = this.chunks[i.dataset.cid];
-				const t = Editor.getType(c.name);
+				const t = Editor.#getType(c.name);
 
 				t.remove?.(i, c);
 			}, this.dom);
@@ -771,7 +829,7 @@ class Editor {
 		const values = {};
 		for (const cid of cids) {
 			const chunk = this.chunks[cid];
-			const chunk_type = Editor.getType(chunk.name);
+			const chunk_type = Editor.#getType(chunk.name);
 
 			if (chunk_type.getValue) {
 				const chunk_value = chunk_type.getValue(sel(`[data-cid="${cid}"]`, this.dom), chunk);
@@ -780,9 +838,8 @@ class Editor {
 		}
 
 		// Collect changed hidden chunks by change id (derived from chunk index)
-		for (const hid in hiddenData) {
+		for (const hid in hiddenData)
 			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
-		}
 
 		// If there were changes commit them
 		if (Object.keys(chunks).length > 0) return this.#onchange_callback(chunks, values);
@@ -790,6 +847,7 @@ class Editor {
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
 		if (!chunk.id) return;
+
 		// Normalise the line ending to ensure comparison isn't affected
 		const value = chunk_value.replace(/(\r?\n|\r)/g, this.eol);
 
@@ -798,49 +856,6 @@ class Editor {
 			chunks[key] = chunk;
 			values[key] = value;
 		}
-	}
-
-	render(cids) {
-		// Clear the current view
-		this.dom.innerHTML = '';
-		clean_ttip(this.dom);
-
-		if (!cids.length) return;
-
-		// Render the paginator
-		this.dom.appendChild(this.#renderPaginator(cids[0]));
-
-		// Render the chunks
-		for (const cid of cids) this.dom.appendChild(this.renderChunk(cid));
-
-		// Create +1 sentence button
-		const lastCid = cids[cids.length - 1];
-		if (this.chunks.length > lastCid + 1) {
-			const a = document.createElement('a');
-			a.href = '#';
-			a.className = 'btn plus-one';
-			a.dataset.next = String(lastCid + 1);
-			a.innerHTML = _('Show +1 sentence');
-
-			this.dom.appendChild(a);
-		}
-	}
-
-	renderHidden(hids) {
-		// Tell the templates to render the hidden chunks in hids
-		dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
-	}
-
-	renderChunk(cid) {
-		// Delegates rendering to the specific editor type's render() function
-		const chunk = this.chunks[cid];
-		if (!chunk) return null;
-
-		const e = Editor.getType(chunk.name).render(chunk, cid);
-		// Note which chunk this DOM element represents
-		if (e) e.dataset.cid = cid;
-
-		return e;
 	}
 
 	#getPaginationItems(current, max) {
@@ -853,13 +868,12 @@ class Editor {
 
 		if (current > 4) items.push({label: '...', disabled: true});
 
-		for (let p = Math.max(1, current - 3); p <= Math.min(max, current + 3); ++p) {
+		for (let p = Math.max(1, current - 3); p <= Math.min(max, current + 3); ++p)
 			items.push({
 				label: String(p),
 				page: p - 1,
 				active: p === current
 			});
-		}
 
 		if (max > current + 3) items.push({label: '...', disabled: true});
 
@@ -902,24 +916,6 @@ class Editor {
 		}
 
 		return ul;
-	}
-
-	getVisible() {
-		// Get visible chunk indices
-		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
-	}
-
-	restoreView() {
-		// Restore visible and hidden chunks if a saved state exists and clear the state
-		if (this.#restore) {
-			this.render(this.#restore);
-			this.#restore = null;
-		}
-
-		if (this.#restoreHidden) {
-			this.renderHidden(this.#restoreHidden);
-			this.#restoreHidden = null;
-		}
 	}
 }
 
@@ -1178,6 +1174,7 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	}
 });
 const documents = new DocumentManager(editor, async (keys) => {
+	// Setup initial history (if there is any)
 	try {
 		hist.recent.clear();
 		keys.forEach(key => hist.recent.add(key));
@@ -1273,7 +1270,7 @@ async function createNewDocument(templateInfo) {
 	const result = await handler();
 	if (!result) return;
 
-	// Process the source returned by the plug-in, then save and render the document.
+	// Process the source returned by the template, then save and render the document.
 	const [filename, data] = result;
 	const newData = await documents.createDocument(filename, data, template);
 	await displayDocument(newData);
@@ -1324,6 +1321,7 @@ evt('.ed-exit', 'click', () => {
 });
 
 evtDelegated(document, '[data-open]', 'click', function () {
+	// Open recent document
 	editor.confirmDiscardChanges(() => {
 		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
 		openDocument(recentDocumentFilename).catch(showDocumentLoadError);
