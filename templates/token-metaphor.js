@@ -1,6 +1,8 @@
 (function () {
 	const PRIMARY_MEANING_INDEX = '1';
 	const REASONING_PREVIEW_WORDS = 15;
+	const TOKEN_SURFACE_FIELD = 'form';
+	const LEGACY_TOKEN_SURFACE_FIELD = 'word';
 	const MEANING_FIELD = Object.freeze({
 		PRIMARY: 'primary',
 		OTHER: 'other',
@@ -21,7 +23,7 @@
 	}
 
 	const TOKEN_FIELDS = Object.freeze([
-		'word',
+		TOKEN_SURFACE_FIELD,
 		'lemma',
 		'pos',
 		'nerTag',
@@ -32,7 +34,7 @@
 	]);
 	const TABLE_FIELDS = Object.freeze([...TOKEN_FIELDS.slice(0, -1), 'reasoning', 'comment']);
 
-	Locale['word'] = 'szó';
+	Locale[TOKEN_SURFACE_FIELD] = 'szó';
 	Locale['lemma'] = 'lemma';
 	Locale['pos'] = 'szófaj';
 	Locale['nerTag'] = 'névelem';
@@ -88,6 +90,18 @@
 
 	function getText(el) {
 		return el ? normalizeText(el.textContent) : '';
+	}
+
+	function getTokenSurface(token) {
+		return sel(TOKEN_SURFACE_FIELD, token) || sel(LEGACY_TOKEN_SURFACE_FIELD, token);
+	}
+
+	function getTokenField(token, field) {
+		return field === TOKEN_SURFACE_FIELD ? getTokenSurface(token) : sel(field, token);
+	}
+
+	function getTokenFieldText(token, field, decode) {
+		return xmlToText(getTokenField(token, field)?.innerHTML, decode);
 	}
 
 	function format(name, el) {
@@ -285,7 +299,7 @@
 		if (['right', 'both'].includes(joinType)) wordEl.classList.add('right');
 
 		// Construct tableView for word
-		const word = sel('word', token); // The metaphor API schema stores the token surface form in <word>, not <form>
+		const word = getTokenSurface(token);
 		if (!word) return null;
 
 		// Highlight the token when it or any of its fields was changed manually.
@@ -293,7 +307,7 @@
 
 		if (tableView) {
 			for (const field of TABLE_FIELDS) {
-				const fieldXml = sel(field, token);
+				const fieldXml = getTokenField(token, field);
 				const content = field === 'reasoning'
 					? formatReasoningPreview(fieldXml, tid)
 					: format(field, fieldXml).replaceAll('\n', '<br>');
@@ -450,7 +464,7 @@
 			// Show reasoning if there is any
 			if (selToText(tokenXml, 'reasoning', true)) html += TOKEN.getLink(tokenId, 'show reason', 'Reasoning');
 			// Setup possible token splittings
-			const tkn = selToText(tokenXml, 'word', true);
+			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
 			if (tkn.length > 1) {
 				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
@@ -481,10 +495,10 @@
 		const cells = [];
 		// Setup elements for fields
 		for (const field of TOKEN_FIELDS) {
-			const fieldValue = selToText(tokenXml, field, true);
+			const fieldValue = getTokenFieldText(tokenXml, field, true);
 			let td = '';
 			switch (field) {
-				case 'word':
+				case TOKEN_SURFACE_FIELD:
 				case 'lemma':
 				case 'pos':
 				case 'nerTag':
@@ -559,7 +573,8 @@
 		each('[name],[data-name]', i => {
 			const field = i.dataset.name || i.name;
 			// Get the old value
-			const paragraphXml = sel(field, tokenXml);
+			const paragraphXml = getTokenField(tokenXml, field);
+			if (!paragraphXml) return;
 			// Convert checkbox value if it is checkbox type
 			const value = i.type === 'checkbox' ? (i.checked ? 'True' : 'False') : (i.dataset.value || i.value).trim();
 			// Compare old and new value
@@ -584,7 +599,7 @@
 
 	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		const form = selToText(tokenXml, 'form');
+		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
 			TOKEN.getLink(tokenId, 'btn token ins-save left', `Insert Before <b>${form}</b>`)}${
 			TOKEN.getLink(tokenId, 'btn token ins-save right', `Insert After <b>${form}</b>`)}</div>`;
@@ -605,7 +620,7 @@
 		const tokenId = tokenXml.getAttribute('xml:id');
 		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
 
-		const token = sel('word', newTokenXml);
+		const token = getTokenSurface(newTokenXml);
 		token.textContent = value;
 		token.setAttribute('modified', 'True');
 
@@ -733,7 +748,7 @@
 
 	function handleSplitToken(paragraphId, paragraphXml, sentenceXml, tokenXml, value) {
 		// Select token to modify
-		const wordEl = sel('word', tokenXml);
+		const wordEl = getTokenSurface(tokenXml);
 		const text = wordEl.textContent;
 
 		const index = Number(value);
@@ -750,7 +765,7 @@
 		const tokenId = tokenXml.getAttribute('xml:id');
 		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
 
-		const newWordEl = sel('word', newTokenXml);
+		const newWordEl = getTokenSurface(newTokenXml);
 
 		// Update original + new token
 		wordEl.textContent = left;
@@ -781,9 +796,10 @@
 		if (!tokenXml2) return addMsg(_('Invalid Action'));
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
-		const keepWord = sel('word', keepToken);
+		const keepWord = getTokenSurface(keepToken);
 		if (!keepWord) return addMsg(_('Invalid Action'));
-		const joinedWord = selToText(keepToken, 'word') + selToText(removeToken, 'word');
+		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
+			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);
 
 		// Join text
 		keepWord.setAttribute('modified', 'True');
