@@ -56,8 +56,11 @@ document.addEventListener('click', e => {
 
 document.addEventListener('close', ({target}) => {
 	if (!target?.matches('.tooltip')) return;
-	// Save the value before close
+
+	// Trigger open multi-select change handlers before removing the tooltip.
 	each('.select.multiple.open', el => trg(el, 'change'), target);
+
+	// Let the close event finish while the tooltip is still in the DOM.
 	requestAnimationFrame(() => target.remove());
 });
 
