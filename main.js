@@ -315,12 +315,10 @@ class ChunkProcessor {
 			.join('');
 	}
 
-	static createDocument(fileName, text, template) {
+	static createDocument(fileName, text, chunks) {
 		return {
 			id: fileName,
-			chunks: this.#parse(text, template.chunks),
-			js: template.js,
-			css: template.css
+			chunks: this.#parse(text, chunks),
 		};
 	}
 
@@ -352,7 +350,10 @@ class DocumentManager {
 	}
 
 	async createDocument(filename, data, template) {
-		const newData = ChunkProcessor.createDocument(filename, data, template);
+		const newData = ChunkProcessor.createDocument(filename, data, template.chunks);
+		// Inject template information to be able to display the document later
+		newData.js = template.js;
+		newData.css = template.css;
 		await this.#db.storeFile(filename, newData);
 
 		return newData;
@@ -1185,15 +1186,13 @@ const undoManager = new UndoManager(editor, hist, save);
 const templates = new TemplateManager();
 
 async function displayDocument(data) {
-	await templates.loadResources(data);
-
-	// Undo and redo only apply to edits made since this document was loaded.
+	// Undo and redo only apply to edits made since this document was loaded
 	hist.undo.clear();
 	hist.redo.clear();
 	editor.load(data, false);
 	hist.recent.moveToTop(editor.id);
 
-	// Enable save button
+	// Enable export button
 	disable('.ed-save', !!editor.id);
 
 	addMsg(_('Document Loaded'), 'success');
@@ -1201,13 +1200,33 @@ async function displayDocument(data) {
 
 async function openDocument(id) {
 	const data = await documents.openFromIDB(id);
+	// Information on the required template resources must be stored along the data
+	await templates.loadResources(data);
 	await displayDocument(data);
 }
 
 async function importDocument(templateInfo) {
 	const loadedTemplate = await templates.loadTemplate(templateInfo.path);
+	await templates.loadResources(loadedTemplate);
 	const data = await documents.import(loadedTemplate);
 	await displayDocument(data);
+}
+
+async function createNewDocument(templateInfo) {
+	// Load the resources that register this template's creation handler
+	const template = await templates.loadTemplate(templateInfo.path);
+	await templates.loadResources(template);
+
+	const creationHandler = Editor.getNewDocumentType(templateInfo.id);
+	if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
+
+	const result = await creationHandler();
+	if (!result) return;
+
+	// Process the source returned by the template, then save and render the document
+	const [filename, data] = result;
+	const newData = await documents.createDocument(filename, data, template);
+	await displayDocument(newData);
 }
 
 function showDocumentLoadError(err) {
@@ -1253,26 +1272,6 @@ async function persistChanges(documentId, changes) {
 	}
 
 	return data;
-}
-
-async function createNewDocument(templateInfo) {
-	// Load the resources that register this template's creation handler.
-	const template = await templates.loadTemplate(templateInfo.path);
-	await templates.loadResources(template);
-
-	const handler = Editor.getNewDocumentType(templateInfo.id);
-	if (!handler) {
-		addMsg(_('New document creation not supported for this template'), 'error');
-		return;
-	}
-
-	const result = await handler();
-	if (!result) return;
-
-	// Process the source returned by the template, then save and render the document.
-	const [filename, data] = result;
-	const newData = await documents.createDocument(filename, data, template);
-	await displayDocument(newData);
 }
 
 evt('.ed-open', 'click', e => {
