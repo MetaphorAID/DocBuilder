@@ -367,7 +367,7 @@ class DocumentManager {
 		return doc;
 	}
 
-	async saveToIDB(changes, fileName) {
+	async saveToIDB(fileName, changes) {
 		return this.#db.updateFile(fileName, data => {
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
@@ -1168,7 +1168,7 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	}
 	// Persist changes
 	try {
-		await save(tosave);
+		await save(editor.id, tosave);
 	} catch (err) {
 		addMsg(err.message, 'error');
 	}
@@ -1239,10 +1239,9 @@ function showDocumentLoadError(err) {
 
 let saveQueue = Promise.resolve();
 
-async function save(chunks) {
-	const documentId = editor.id;
-	// Capture the requested values before this save enters the queue. The editor
-	// may mutate its chunk objects while earlier saves are still running.
+async function save(documentId, chunks) {
+	// Capture the requested values before this save enters the queue.
+	// The editor may mutate its chunk objects while earlier saves are still running.
 	const changes = chunks.map(chunk => ({...chunk}));
 
 	saveQueue = saveQueue.then(
@@ -1258,7 +1257,7 @@ async function persistChanges(documentId, changes) {
 	let data;
 
 	try {
-		data = await documents.saveToIDB(changes, documentId);
+		data = await documents.saveToIDB(documentId, changes);
 	} catch (err) {
 		if (editor.id === documentId) editor.markSaveFailed();
 		throw new Error(_('Error saving: ') + (err.message || err));
@@ -1298,7 +1297,7 @@ evt('.ed-recent', 'click', e => {
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	const documentId = editor.id;
-	save(editor.chunks)
+	save(editor.id, editor.chunks)
 		.then(data => {
 			if (editor.id !== documentId) return;
 			documents.download(data);
@@ -1306,16 +1305,10 @@ evt('.ed-save', 'click', e => {
 		})
 		.catch(err => addMsg(err.message, 'error'));
 });
-evt('.ed-undo', 'click', () => {
-	undoManager.undo().catch(err => addMsg(err.message, 'error'));
-});
-evt('.ed-redo', 'click', () => {
-	undoManager.redo().catch(err => addMsg(err.message, 'error'));
-});
+evt('.ed-undo', 'click', () => undoManager.undo().catch(err => addMsg(err.message, 'error')));
+evt('.ed-redo', 'click', () => undoManager.redo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-exit', 'click', () => {
-	if (confirm(_('Do you want to exit?'))) {
-		window.location.href = 'about:blank';
-	}
+	if (confirm(_('Do you want to exit?'))) window.location.href = 'about:blank';
 });
 
 evtDelegated(document, '[data-open]', 'click', function () {
