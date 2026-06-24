@@ -256,6 +256,11 @@
 		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
 	}
 
+	function normalizeFieldValue(field, value) {
+		value = normalizeText(value);
+		return field === 'otherIndirect' && (['None', 'none'].includes(value) || !INDIRECT[value]) ? '0' : value;
+	}
+
 	function formatReasoningPreview(reasoning, tid) {
 		const text = getText(reasoning);
 		if (!text) return '&nbsp;';
@@ -552,12 +557,13 @@
 		const tooltip = target.closest('.tooltip');
 		let changed = false;
 		each('[name],[data-name]', i => {
+			const field = i.dataset.name || i.name;
 			// Get the old value
-			const paragraphXml = sel(i.dataset.name || i.name, tokenXml);
+			const paragraphXml = sel(field, tokenXml);
 			// Convert checkbox value if it is checkbox type
 			const value = i.type === 'checkbox' ? (i.checked ? 'True' : 'False') : (i.dataset.value || i.value).trim();
 			// Compare old and new value
-			if (normalizeText(value) !== getText(paragraphXml)) {
+			if (normalizeFieldValue(field, value) !== normalizeFieldValue(field, getText(paragraphXml))) {
 				changed = true;
 				// Note the modification in the XML
 				paragraphXml.setAttribute('modified', 'True');
