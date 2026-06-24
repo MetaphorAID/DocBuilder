@@ -148,9 +148,7 @@ class AnnotationDB {
 		const {store, done} = await this.#transaction('readwrite');
 		store.put({name: fileName, data});
 
-		await done;
-
-		return data;
+		return done;
 	}
 
 	async updateFile(fileName, updater) {
