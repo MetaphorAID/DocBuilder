@@ -1013,21 +1013,20 @@ class UndoManager {
 	#createReverseHistoryEntry(data) {
 		const chunks = {};
 		const values = {};
-
 		let valid = true;
-		this.#forEachHistoryChunk(data, item => {
-			if (!valid) return;
 
+		this.#forEachHistoryChunk(data, item => {
 			// Verify that the document has not changed since the history entry was created
 			if (!item.current || item.current.value !== item.expected) {
 				valid = false;
-				return;
+				return false; // Shortcut if invalid
 			}
 
 			// Build the reverse history entry that	will be pushed onto the opposite stack (undo <-> redo)
 			chunks[item.cid] = item.current;
 			values[item.cid] = item.target.value;
 		});
+
 		return valid ? {chunks, values} : false;
 	}
 
@@ -1056,7 +1055,7 @@ class UndoManager {
 			const index = cid.substring(1);
 
 			// Provide metadata about each chunk to the callback
-			callback({
+			const ret = callback({
 				cid,
 				store,
 				index,
@@ -1064,6 +1063,8 @@ class UndoManager {
 				target: data.chunks[cid],
 				expected: data.values[cid]
 			});
+			// Shortcut if invalid history is provided
+			if (ret === false) return;
 		}
 	}
 
@@ -1089,7 +1090,7 @@ class UndoManager {
 		try {
 			await this.#save(tosave);
 		} catch (err) {
-			// Keep the editor consistent with storage if persistence fails.
+			// Keep the editor consistent with storage if persistence fails (i.e. redo changes in the editor and render them)
 			this.#applyChunks(reverseEntry);
 			this.#editor.render(visible);
 			throw err;
@@ -1102,9 +1103,7 @@ class UndoManager {
 			cids: visible
 		});
 
-		if (hidden.length) {
-			this.#editor.renderHidden(hidden);
-		}
+		if (hidden.length) this.#editor.renderHidden(hidden);
 
 		this.#editor.render(data.cids);
 	}
