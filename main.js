@@ -526,10 +526,13 @@ class Editor {
 
 			render(chunk, cid) {
 				if (!chunk.id || !chunk.name) {
+					// Read-only fallback for non-owning or filler chunks; <pre> preserves text layout.
 					const e = document.createElement('pre');
 					e.innerHTML = chunk.value;
 					return e;
 				}
+
+				// Editable fallback for named chunks when the template has no custom renderer.
 				const e = document.createElement('textarea');
 				e.className = 'input';
 				e.value = chunk.value;
