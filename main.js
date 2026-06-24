@@ -787,16 +787,15 @@ class Editor {
 		if (this.#pendingSaves || this.#saveFailed) return true;
 
 		// Detect changes by comparing every visible chunk (and normalising line endings)
-		let changed = false;
-		each('[data-cid]', i => {
+		for (const i of find('[data-cid]', this.dom)) {
 			const chunk = this.chunks[i.dataset.cid];
 			const c_type = Editor.#getType(chunk.name);
 
 			if (chunk.id && c_type.getValue && chunk.value !== c_type.getValue(i, chunk).replace(/(\r?\n|\r)/g, this.eol))
-				changed = true;
-		}, this.dom);
+				return true;
+		}
 
-		return changed;
+		return false;
 	}
 
 	confirmDiscardChanges(callback) {
