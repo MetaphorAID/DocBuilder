@@ -344,7 +344,7 @@ class DocumentManager {
 	async import(template) {
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
-		const text = readFile(file);
+		const text = await readFile(file);
 
 		return this.createDocument(file.name, text, template);
 	}
