@@ -626,7 +626,7 @@ class Editor {
 	}
 
 	load(data, store_filler) {
-		if (!data?.id) throw this.#createDocumentLoadError(new Error('Missing document id'));
+		if (!data?.id) throw this.#createDocumentLoadError(new Error(_('Missing document id')));
 
 		try {
 			this.markAllSaved();

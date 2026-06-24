@@ -1,4 +1,5 @@
 Locale = {
+	'Missing document id': 'Hiányzó dokumentumazonosító',
 	'Open': 'Megnyit',
 	'Recent...': 'Mostanában...',
 	'Save As...': 'Mentés mint...',
