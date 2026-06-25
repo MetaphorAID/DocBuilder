@@ -585,7 +585,7 @@
 		const mod = sel('ana[modified="True"]', morph);
 		if (mod) delNode(mod);
 
-		// If nothing is marked correct → we must create one
+		// If nothing is marked correct -> we must create one
 		if (!sel('ana[correct="True"]', morph)) {
 			let selected = sel('.selAna.selected', tooltip);
 			if (!selected) return addMsg(_('No Selected Analyzation'), null, tooltip);
@@ -814,7 +814,7 @@
 			keepToken.appendChild(morph);
 		}
 
-		// Keep the surviving token's complete ID and redirect references from both old tokens to it.
+		// Keep the surviving token's complete ID; only the removed token loses its identity
 		const keepId = keepToken.getAttribute('xml:id');
 		const removeId = removeToken.getAttribute('xml:id');
 		delNode(removeToken);
@@ -892,7 +892,7 @@
 		keepSentence.setAttribute('modified', 'True');
 		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
 
-		// Keep the surviving sentence's complete ID.
+		// Keep the surviving sentence's complete ID
 		const keepId = keepSentence.getAttribute('xml:id');
 		const removeId = removeSentence.getAttribute('xml:id');
 		delNode(removeSentence);

@@ -12,8 +12,8 @@ function find(selector, dom = document) {
 }
 
 function each(target, fn, dom) {
-	const arr = typeof target === 'string' ? find(target, dom) : (
-		target instanceof HTMLElement ? [target] : target);
+	const arr = typeof target === 'string' ? find(target, dom) :
+		(target instanceof HTMLElement ? [target] : target);
 	for (let i = 0; i < arr.length; ++i) if (fn(arr[i], i) === false) break;
 }
 
@@ -40,16 +40,12 @@ function evtDelegated(parent, selector, type, fn) {
 	parent.addEventListener(type, e => {
 		const target = e.target.closest(selector);
 
-		if (target) {
-			fn.call(target, e);
-		}
+		if (target) fn.call(target, e);
 	});
 }
 
 function trg(target, eventName, dom) {
-	each(target, el => {
-		el.dispatchEvent(new Event(eventName, {bubbles: true}));
-	}, dom);
+	each(target, el => el.dispatchEvent(new Event(eventName, {bubbles: true})), dom);
 }
 
 function dispatchAppEvent(target, event, dom) {
@@ -105,9 +101,7 @@ function addMsg(message, cls, target) {
 	} else {
 		(target || sel('#message')).appendChild(m);
 	}
-	setTimeout(() => {
-		m.remove();
-	}, 5000);
+	setTimeout(() => m.remove(), 5000);
 }
 
 function addConfirm(message, onconfirm) {

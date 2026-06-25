@@ -582,10 +582,7 @@
 		}, tooltip);
 
 		// Nothing is changed
-		if (!changed) {
-			trg(tooltip, 'close');
-			return;
-		}
+		if (!changed) return trg(tooltip, 'close');
 
 		// Save paragraph
 		savePar([paragraphId]);
@@ -790,16 +787,15 @@
 		if (!tokenXml2) return addMsg(_('Invalid Action'));
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
-		const keepWord = getTokenSurface(keepToken);
-		if (!keepWord) return addMsg(_('Invalid Action'));
+		const form = getTokenSurface(keepToken);
 		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
 			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);
 
 		// Join text
-		keepWord.setAttribute('modified', 'True');
-		keepWord.textContent = joinedWord;
+		form.setAttribute('modified', 'True');
+		form.textContent = joinedWord;
 
-		// Keep the surviving token's complete ID; only the removed token loses its identity.
+		// Keep the surviving token's complete ID; only the removed token loses its identity
 		const keepId = keepToken.getAttribute('xml:id');
 		const removeId = removeToken.getAttribute('xml:id');
 		delNode(removeToken);
@@ -867,7 +863,7 @@
 		keepSentence.setAttribute('modified', 'True');
 		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
 
-		// Keep the surviving sentence's complete ID.
+		// Keep the surviving sentence's complete ID
 		const keepId = keepSentence.getAttribute('xml:id');
 		const removeId = removeSentence.getAttribute('xml:id');
 		delNode(removeSentence);
@@ -917,6 +913,7 @@
 		const ctx = resolveContext(target, {includeValue: true});
 		if (!ctx) return;
 
+		// Token stuff
 		if (target.matches('.split.token'))
 			return handleSplitToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml, ctx.value);
 
@@ -1022,7 +1019,7 @@
 						try {
 							const err = await r.json();
 							msg = err.detail || err.message || msg;
-						} catch {
+						} catch {  // Extract the error message from JSON, do nothing if parsing fails, see unified handling below
 						}
 						addMsg(msg, 'error', tt);
 						// Reset button state
@@ -1038,10 +1035,8 @@
 				} catch (err) {
 					// Catch network errors and invalid bearer token errors
 					let errorMsg = err.message;
-					if (err.name === 'TypeError') {
-						// Network error (could be CORS, connection refused, etc.)
-						errorMsg = _('Network error:') + ' ' + err.message;
-					}
+					// Network error (could be CORS, connection refused, etc.)
+					if (err.name === 'TypeError') errorMsg = `${_('Network error:')} ${err.message}`;
 					addMsg(errorMsg, 'error', tt);
 					// Reset button state
 					submitBtn.textContent = originalText;
