@@ -50,7 +50,7 @@
 			if (!refs) return;
 
 			for (const aid of Object.keys(refs)) {
-				if (sel(`[data-aid="${aid}"]`)) continue; // Already rendered
+				if (sel(`[data-aid="${aid}"]`)) continue;  // Already rendered
 
 				const annot = _annots.list[aid];
 				const annotEl = document.createElement('div');
@@ -111,14 +111,14 @@
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
-				ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
+				ep.innerHTML = xmlToText(chunk.value) || `<em>${_('EMPTY')}</em>`;
 			} else {
 				ep.classList.add('par', 'tei');
 				renderAnnots(_annots, x);
 			}
 
 			// Add heading
-			if (header) ep.innerHTML = '<h4>' + header + '</h4>' + ep.innerHTML;
+			if (header) ep.innerHTML = `<h4>${header}</h4>${ep.innerHTML}`;
 			return ep;
 		},
 	}
@@ -131,9 +131,9 @@
 			if (h.name === '.t_header') {
 				const x = parseXml(h.value);
 				sel('#header').innerHTML = `<h2>${selToText(x, 'title')}</h2><h3>${selToText(x, 'author')}</h3>`;
-				continue
+				continue;
 			}
-			if (h.name !== '.t_annotations') continue
+			if (h.name !== '.t_annotations') continue;
 			_annots = {id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false}
 			each('annotation', (annot, index) => {
 				_annots.list.push(annot);
@@ -158,12 +158,8 @@
 		};
 
 		collectIds(xml);
-		for (const activeXml of Object.values(_active)) {
-			if (activeXml !== xml) collectIds(activeXml);
-		}
-		for (let cid = 0; cid < editor.chunks.length; ++cid) {
-			if (!_active[cid]) collectIds(parseXml(editor.chunks[cid].value));
-		}
+		for (const activeXml of Object.values(_active)) if (activeXml !== xml) collectIds(activeXml);
+		for (const [cid, chunk] of editor.chunks.entries()) if (!_active[cid]) collectIds(parseXml(chunk.value));
 		for (const hidden of editor.hidden) collectIds(parseXml(hidden.value));
 
 		let n = 1;
@@ -186,6 +182,10 @@
 		return el;
 	}
 
+	function isModified(node) {
+		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
+	}
+
 	function renderToken(token, tid, tableView) {
 		// Create word element
 		const wordEl = document.createElement(tableView ? 'tr' : 'span');
@@ -201,8 +201,8 @@
 		const word = sel('form', token);
 		if (!word) return null;
 
-		const isModified = word.getAttribute('modified') === 'True';
-		if (isModified) wordEl.classList.add('modified');
+		// Highlight the token when it or any of its fields was changed manually
+		if (isModified(word)) wordEl.classList.add('modified');
 
 		let morph = sel('morph', token);
 		if (!morph || morph.getAttribute('check') === 'True') {
@@ -278,7 +278,7 @@
 		return root;
 	}
 
-	function savePar(paragraphIds = []) {
+	function savePar(paragraphIds) {
 		// Annotations are considered hidden data, commit changes
 		const hdata = {};
 		if (_annots.changed) {
@@ -953,7 +953,7 @@
 		(_annots.ref[targetId] ??= {})[annotationId] = 3;
 		_annots.changed = true;
 
-		savePar();
+		savePar([]);
 	}
 
 	function handleAddToAnnotation(tokenXml, value) {
@@ -969,7 +969,7 @@
 		annotation.insertBefore(target, position === 'F' ? annotation.firstElementChild : null);
 
 		_annots.changed = true;
-		savePar();
+		savePar([]);
 	}
 
 	function handleDeleteFromAnnotation(tokenXml, value) {
@@ -981,7 +981,7 @@
 		if (!sel('[target]', annotation)) annotation.remove();
 
 		_annots.changed = true;
-		savePar();
+		savePar([]);
 	}
 
 	document.addEventListener('change', e => {

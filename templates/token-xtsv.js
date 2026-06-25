@@ -29,14 +29,16 @@
 				_cols._header = cols.join('\t');
 			}
 
+			// Parse the TSV to paragraph format
 			const x = parseTsv(chunk.value);
 			_active[Number(cid)] = x;
-
 			const ep = renderPar(x);
-			if (ep.children.length) {
-				ep.classList.add('par', 'xtsv');
-			} else {
+
+			// Empty paragraph handling
+			if (!ep.children.length) {
 				ep.innerHTML = chunk.value || `<em>${_('EMPTY')}</em>`;
+			} else {
+				ep.classList.add('par', 'xtsv');
 			}
 			return ep;
 		},

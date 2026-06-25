@@ -166,13 +166,13 @@
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
-				ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
+				ep.innerHTML = xmlToText(chunk.value) || `<em>${_('EMPTY')}</em>`;
 			} else {
 				ep.classList.add('par', 'tei');
 			}
 
 			// Add heading
-			if (header) ep.innerHTML = '<h4>' + header + '</h4>' + ep.innerHTML;
+			if (header) ep.innerHTML = `<h4>${header}</h4>${ep.innerHTML}`;
 			return ep;
 		},
 	}
@@ -224,12 +224,8 @@
 		};
 
 		collectIds(xml);
-		for (const activeXml of Object.values(_active)) {
-			if (activeXml !== xml) collectIds(activeXml);
-		}
-		for (let cid = 0; cid < editor.chunks.length; ++cid) {
-			if (!_active[cid]) collectIds(parseXml(editor.chunks[cid].value));
-		}
+		for (const activeXml of Object.values(_active)) if (activeXml !== xml) collectIds(activeXml);
+		for (const [cid, chunk] of editor.chunks.entries()) if (!_active[cid]) collectIds(parseXml(chunk.value));
 		for (const hidden of editor.hidden) collectIds(parseXml(hidden.value));
 
 		let n = 1;
@@ -243,6 +239,17 @@
 		const prev = node.previousSibling;
 		if (prev?.nodeName === '#text') prev.remove();
 		node.remove();
+	}
+
+	function createTdElement(content = '&nbsp;', className = 'as-parent') {
+		const el = document.createElement('td');
+		el.className = className;
+		el.innerHTML = content;
+		return el;
+	}
+
+	function isModified(node) {
+		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
 	}
 
 	function getTokenClass(token) {
@@ -259,17 +266,6 @@
 		return 'direct-token';
 	}
 
-	function createTdElement(content = '&nbsp;', className = 'as-parent') {
-		const el = document.createElement('td');
-		el.className = className;
-		el.innerHTML = content;
-		return el;
-	}
-
-	function isModified(node) {
-		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
-	}
-
 	function normalizeFieldValue(field, value) {
 		value = normalizeText(value);
 		return field === 'otherIndirect' && (['None', 'none'].includes(value) || !INDIRECT[value]) ? '0' : value;
@@ -283,8 +279,7 @@
 		const preview = encXml(words.slice(0, REASONING_PREVIEW_WORDS).join(' '));
 		if (words.length <= REASONING_PREVIEW_WORDS) return preview;
 
-		return `${preview} <a href="#" class="show reason" data-tid="${tid}"
-			title="${_('Reasoning')}">&hellip;</a>`;
+		return `${preview} <a href="#" class="show reason" data-tid="${tid}" title="${_('Reasoning')}">&hellip;</a>`;
 	}
 
 	function renderToken(token, tid, tableView) {
@@ -302,8 +297,8 @@
 		const word = getTokenSurface(token);
 		if (!word) return null;
 
-		// Highlight the token when it or any of its fields was changed manually.
-		if (isModified(token)) wordEl.classList.add('modified');
+		// Highlight the token when it or any of its fields was changed manually
+		if (isModified(word)) wordEl.classList.add('modified');
 
 		if (tableView) {
 			for (const field of TABLE_FIELDS) {
@@ -340,8 +335,7 @@
 		each('token', (token, tid) => {
 			const renderedToken = renderToken(token, tid, tableView);
 
-			if (renderedToken)
-				sentenceEl.appendChild(renderedToken);
+			if (renderedToken) sentenceEl.appendChild(renderedToken);
 		}, sentence);
 
 		// Create the config row for the sentence
@@ -363,10 +357,10 @@
 		return root;
 	}
 
-	function savePar(paragraphId) {
+	function savePar(paragraphIds) {
 		// No hidden data to change
 		const hdata = {};
-		return editor.onchange(paragraphId, hdata);
+		return editor.onchange(paragraphIds, hdata);
 	}
 
 	function resolveParagraphContext(target) {
