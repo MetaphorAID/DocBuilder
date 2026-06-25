@@ -42,13 +42,13 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
-		evt(editor.dom, 'document-before-render', function () {
+		evt(editor.dom, 'document-before-render', () => {
 			sel('#header').innerHTML = '';
 			sel('#footer').innerHTML = '';
 			sel('header .btn-view')?.remove();
 		});
 
-		evt(editor.dom, 'document-ready', function () {
+		evt(editor.dom, 'document-ready', () => {
 			// Add Normal/Table view swithcher button
 			if (!sel('header .btn-view')) {
 				const a = document.createElement('a');
@@ -60,7 +60,7 @@ class TOKEN {
 			}
 		});
 
-		document.addEventListener('click', function (e) {
+		document.addEventListener('click', (e) => {
 			const t = e.target;
 			if (!t) return;
 
@@ -96,7 +96,7 @@ class TOKEN {
 
 	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {
 		const s = select(val, emptyOpt, opts, multiple);
-		s.className += ' ' + cls;
+		s.classList.add(...cls.split(/\s+/));  // Add multiple classes simultaneously
 		if (tid) s.dataset.tid = tid;
 
 		return s.outerHTML;
