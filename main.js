@@ -1237,7 +1237,7 @@ function showDocumentLoadError(err) {
 	if (!message || message === 'No file chosen' || message === _('No file chosen')) return;
 
 	// Wrapped load errors keep their low-level cause here, while the UI shows the friendly top-level message.
-	console.error('Error during file open process:', err);
+	console.error('Error during file open process:', err?.cause ?? err);
 	addMsg(message, 'error');
 }
 
