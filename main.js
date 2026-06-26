@@ -607,7 +607,7 @@ class Editor {
 		});
 	}
 
-	load(data, store_filler) {
+	load(data) {
 		const loadErrorMessage =
 			_('Could not open the document. The file content is invalid or does not match the selected template.');
 
@@ -621,7 +621,7 @@ class Editor {
 			this.#clearView();
 
 			// Reset the editor
-			this.#reset(data, store_filler);
+			this.#reset(data);
 			this.#renderDocument({restoreView: true});
 		} catch (err) {
 			throw new Error(loadErrorMessage, {cause: err});
@@ -745,7 +745,7 @@ class Editor {
 		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
-	#reset(data, store_filler) {
+	#reset(data) {
 		// Reset the editor to a clean state
 		this.id = data.id;
 		this.eol = false;
@@ -754,7 +754,9 @@ class Editor {
 
 		// Separate chunks to visible and hidden
 		for (const chunk of data.chunks || []) {
-			if (!store_filler && !chunk.name) continue;
+			// Filler chunks preserve source text between editable sections in storage,
+			// but the editor only renders chunks handled by the selected template
+			if (!chunk.name) continue;
 
 			// Store original line endings to preserve them later
 			if (!this.eol) {
@@ -1096,26 +1098,40 @@ class UndoManager {
 		this.#editor.renderPage(data.cids, hidden);
 	}
 
-	async #apply(reverse) {
+	#apply(reverse) {
 		const from = this.#hist[reverse ? 'redo' : 'undo'];
 		const to = this.#hist[reverse ? 'undo' : 'redo'];
 
 		// Get history (undo or redo) if any
 		const data = from.get();
-		if (!data) return;
+		if (!data) return Promise.resolve();
 
+		const restoreHistoryEntry = err => {
+			try {
+				from.add(data);
+			} catch (restoreErr) {
+				return Promise.reject(restoreErr);
+			}
+
+			return Promise.reject(err);
+		};
+
+		// The entry has already been popped from the source stack. If setup,
+		// rendering, or saving fails, put it back so the action can be retried
 		try {
+			// History entries store chunk indexes for one document only. If a stale
+			// entry survived a document switch, drop both stacks and stop instead of
+			// applying those indexes to the currently open document
 			if (data.id !== this.#editor.id) {
 				from.clear();
 				to.clear();
-				return;
+				return Promise.resolve();
 			}
 
 			const visible = this.#editor.getVisible();
-			await this.#applyHistoryEntry(data, visible, from, to);
+			return this.#applyHistoryEntry(data, visible, from, to).catch(restoreHistoryEntry);
 		} catch (err) {
-			from.add(data);
-			throw err;
+			return restoreHistoryEntry(err);
 		}
 	}
 
@@ -1176,7 +1192,7 @@ async function displayDocument(data) {
 	// Undo and redo only apply to edits made since this document was loaded
 	hist.undo.clear();
 	hist.redo.clear();
-	editor.load(data, false);
+	editor.load(data);
 	hist.recent.moveToTop(editor.id);
 
 	// Enable export button
