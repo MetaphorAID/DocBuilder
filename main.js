@@ -1228,6 +1228,8 @@ documents = new DocumentManager(editor, async (keys) => {
 
 function persistDocument(documentId, chunks) {
 	return documents.persist(documentId, chunks).then(data => {
+		// The user may open/create another document before the queued save finishes.
+		// Only the still-active document should get save-completion UI updates.
 		if (editor.id === documentId) {
 			addMsg(_('Document Saved'), 'success');
 			editor.applySavedDocument();
@@ -1340,8 +1342,10 @@ evt('.ed-recent', 'click', e => {
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	const documentId = editor.id;
-	persistDocument(editor.id, editor.chunks)
+	persistDocument(documentId, editor.chunks)
 		.then(data => {
+			// If another document was loaded while this async save was pending,
+			// avoid downloading a stale export after the user has moved on.
 			if (editor.id !== documentId) return;
 			documents.download(data);
 		})
