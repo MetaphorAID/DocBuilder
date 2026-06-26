@@ -246,8 +246,9 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = TOKEN.renderHeaderCells(TOKEN.MORPH_HEADERS);
-			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
+			const tbody = document.createElement('tbody');
+			tbody.appendChild(TOKEN.createHeaderRow(TOKEN.MORPH_HEADERS));
+			sentenceEl.appendChild(tbody);
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
 		}
@@ -514,34 +515,32 @@
 
 	function handleEditAna(e, target, sentence, tokenId, tokenXml) {
 		const form = selToText(tokenXml, 'form');
-		const row = (cols, btnHtml = '') => `<tr><td>${cols.join('</td><td>')}</td><td>${btnHtml}</td></tr>`;
 		const btn = (tid, anaId = '', selected = false) =>
 			`<a href="#" data-tid="${tid}" data-ana="${anaId}" class="btn selAna ${selected ? 'selected' : ''}">✓</a>`;
 		const headers = TOKEN.MORPH_HEADERS;
-
-		let html = `<h3 class="tkn">${_(headers[0])}: <strong>${form}</strong></h3><table><tr>${
-			TOKEN.renderHeaderCells(headers.slice(1))}</tr>`;
+		const rows = [];
 
 		// Existing analyses
 		each('ana', (anaXml, anaId) => {
 			if (anaXml.getAttribute('modified') === 'True') return;
-			html += row([selToText(anaXml, 'lemma'), selToText(anaXml, 'detailed'), selToText(anaXml, 'simple')],
-				btn(tokenId, anaId, anaXml.getAttribute('correct') === 'True'));
+			rows.push([selToText(anaXml, 'lemma'), selToText(anaXml, 'detailed'), selToText(anaXml, 'simple'),
+				btn(tokenId, anaId, anaXml.getAttribute('correct') === 'True')]);
 		}, tokenXml);
 
 		// Modified / Editable ana
 		const ana = sel('ana[modified="True"]', tokenXml);
-		html += row([
+		rows.push([
 			`<input class="input" type="text" value="${ana ? selToText(ana, 'lemma') : ''}">`,
 			`<input class="input" type="text" value="${ana ? selToText(ana, 'detailed') : ''}">`,
-			`<input class="input" type="text" value="${ana ? selToText(ana, 'simple') : ''}">`
-		], btn(tokenId, '', !!ana));
-
-		html += `</table><div class="center">${TOKEN.getLink(tokenId, 'btn ana fetch', 'Re-Analyze')
-		}${TOKEN.getLink(tokenId, 'btn ana save', 'Save')}</div>`;
+			`<input class="input" type="text" value="${ana ? selToText(ana, 'simple') : ''}">`,
+			btn(tokenId, '', !!ana)
+		]);
 
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += html;
+		tt.insertAdjacentHTML('beforeend', `<h3 class="tkn">${_(headers[0])}: <strong>${form}</strong></h3>`);
+		tt.appendChild(TOKEN.createTable(headers.slice(1), rows));
+		tt.insertAdjacentHTML('beforeend', `<div class="center">${TOKEN.getLink(tokenId, 'btn ana fetch', 'Re-Analyze')
+		}${TOKEN.getLink(tokenId, 'btn ana save', 'Save')}</div>`);
 
 		evt('table input', 'focus', function () {
 			trg('.btn', 'click', this.closest('tr'));

@@ -93,7 +93,42 @@ class TOKEN {
 	}
 
 	static renderHeaderCells(headers) {
-		return headers.map(header => `<th>${header ? _(header) : ''}</th>`).join('');
+		const cells = document.createDocumentFragment();
+
+		for (const header of headers) {
+			const cell = document.createElement('th');
+			if (header) cell.textContent = _(header);
+			cells.appendChild(cell);
+		}
+
+		return cells;
+	}
+
+	static createHeaderRow(headers) {
+		const row = document.createElement('tr');
+		row.appendChild(this.renderHeaderCells(headers));
+		return row;
+	}
+
+	static createTable(headers, rows) {
+		const table = document.createElement('table');
+		const tbody = document.createElement('tbody');
+		tbody.appendChild(this.createHeaderRow(headers));
+
+		for (const rowCells of rows) {
+			const row = document.createElement('tr');
+
+			for (const cellContent of rowCells) {
+				const cell = document.createElement('td');
+				cell.innerHTML = cellContent;
+				row.appendChild(cell);
+			}
+
+			tbody.appendChild(row);
+		}
+
+		table.appendChild(tbody);
+		return table;
 	}
 
 	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {

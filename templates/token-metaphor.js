@@ -326,8 +326,9 @@
 		sentenceEl.className = 's';
 		sentenceEl.dataset.sid = sid;
 		if (tableView) {
-			const headers = TOKEN.renderHeaderCells(TABLE_FIELDS);
-			sentenceEl.innerHTML = `<tbody><tr>${headers}</tr></tbody>`;
+			const tbody = document.createElement('tbody');
+			tbody.appendChild(TOKEN.createHeaderRow(TABLE_FIELDS));
+			sentenceEl.appendChild(tbody);
 			// Change from <table> to <tbody>
 			sentenceEl = sentenceEl.children[0];
 		}
@@ -524,11 +525,12 @@
 			// Collect header value cell pairs
 			if (td) {
 				headers.push(field);
-				cells.push(`<td>${td}</td>`);
+				cells.push(td);
 			}
 		}
-		tt.innerHTML += `<table><tr>${TOKEN.renderHeaderCells(headers)}</tr><tr>${cells.join('')}</tr></table>
-			<div class="center">${TOKEN.getLink(tokenId, 'btn info save', 'Save')}</div>`;
+		tt.appendChild(TOKEN.createTable(headers, [cells]));
+		tt.insertAdjacentHTML('beforeend',
+			`<div class="center">${TOKEN.getLink(tokenId, 'btn info save', 'Save')}</div>`);
 	}
 
 	function handleEditMeaning(e, sentence, tokenId, tokenXml) {
@@ -543,14 +545,15 @@
 			switch (field) {
 				case MEANING_FIELD.PRIMARY:
 				case MEANING_FIELD.OTHER:
-					cells.push(`<td><textarea name="${field}" class="input">${encXml(value)}</textarea></td>`);
+					cells.push(`<textarea name="${field}" class="input">${encXml(value)}</textarea>`);
 					break;
 				default:  // CONTEXTUAL_INDEX
-					cells.push(`<td><input type="text" name="${field}" class="input" value="${value}"></td>`);
+					cells.push(`<input type="text" name="${field}" class="input" value="${value}">`);
 			}
 		}
-		tt.innerHTML += `<table><tr>${TOKEN.renderHeaderCells(headers)}</tr><tr>${cells.join('')}</tr></table>
-			<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`;
+		tt.appendChild(TOKEN.createTable(headers, [cells]));
+		tt.insertAdjacentHTML('beforeend',
+			`<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`);
 	}
 
 	function handleEditReason(e, sentence, tokenId, tokenXml) {
