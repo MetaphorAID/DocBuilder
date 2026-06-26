@@ -331,10 +331,16 @@ class ChunkProcessor {
 class DocumentManager {
 	#editor
 	#db
+	#saveQueue
+	#pendingSaves
+	#failedSaves
 
 	constructor(editor, oninit, db = new AnnotationDB()) {
 		this.#editor = editor;
 		this.#db = db;
+		this.#saveQueue = Promise.resolve();
+		this.#pendingSaves = new Map();
+		this.#failedSaves = new Set();
 		// Init the database
 		this.#db.init().then(async () => {
 			const keys = await this.#db.getAllKeys();
@@ -368,7 +374,7 @@ class DocumentManager {
 		return doc;
 	}
 
-	async saveToIDB(fileName, changes) {
+	async #saveToIDB(fileName, changes) {
 		return this.#db.updateFile(fileName, data => {
 			data.chunks = ChunkProcessor.merge(changes, data.chunks);
 
@@ -376,9 +382,86 @@ class DocumentManager {
 		});
 	}
 
+	async persist(fileName, chunks) {
+		// Capture the requested values before this save enters the queue.
+		// The editor may mutate its chunk objects while earlier saves are still running.
+		const changes = chunks.map(chunk => ({...chunk}));
+
+		// Append this request to the single save queue. The original caller still
+		// receives failures, but later saves must not be blocked by a rejected tail.
+		const readyToSave = this.#saveQueue.catch(() => {});
+		const saveToken = this.#markSavePending(fileName);
+		const persistence = readyToSave.then(() => this.#persistChanges(fileName, changes));
+		this.#saveQueue = persistence.finally(() => this.#markSaveFinished(fileName, saveToken));
+
+		return this.#saveQueue;
+	}
+
+	async #persistChanges(fileName, changes) {
+		try {
+			return await this.#saveToIDB(fileName, changes);
+		} catch (err) {
+			this.#markSaveFailed(fileName);
+			throw new Error(_('Error saving: ') + (err.message || err));
+		}
+	}
+
+	#markSavePending(fileName) {
+		const saveToken = Symbol(fileName);
+		let pendingSaves = this.#pendingSaves.get(fileName);
+		if (!pendingSaves) {
+			pendingSaves = new Set();
+			this.#pendingSaves.set(fileName, pendingSaves);
+		}
+		pendingSaves.add(saveToken);
+
+		return saveToken;
+	}
+
+	#markSaveFinished(fileName, saveToken) {
+		const pendingSaves = this.#pendingSaves.get(fileName);
+		if (!pendingSaves) return;
+
+		pendingSaves.delete(saveToken);
+		if (!pendingSaves.size) this.#pendingSaves.delete(fileName);
+	}
+
+	#markSaveFailed(fileName) {
+		this.#failedSaves.add(fileName);
+	}
+
+	markAllSaved(fileName) {
+		if (fileName) {
+			this.#failedSaves.delete(fileName);
+			return;
+		}
+
+		this.#failedSaves.clear();
+	}
+
+	clearSaveState(fileName) {
+		if (fileName) {
+			this.#pendingSaves.delete(fileName);
+			this.#failedSaves.delete(fileName);
+			return;
+		}
+
+		this.#pendingSaves.clear();
+		this.#failedSaves.clear();
+	}
+
+	hasUnfinishedSave(fileName) {
+		const pendingSaves = this.#pendingSaves.get(fileName);
+
+		return !!fileName && (!!pendingSaves?.size || this.#failedSaves.has(fileName));
+	}
+
 	download(data) {
+		const fileName = data.id || this.#editor.id;
+		this.markAllSaved(fileName);
+
 		const blob = ChunkProcessor.createBlob(data.chunks);
-		downloadAsFile(data.id || this.#editor.id, blob);
+		downloadAsFile(fileName, blob);
 	}
 }
 
@@ -552,8 +635,6 @@ class Editor {
 	#onchange_callback
 	#restore
 	#restoreHidden
-	#pendingSaves
-	#saveFailed
 
 	constructor(dom, onchange) {
 		this.dom = dom;
@@ -561,8 +642,6 @@ class Editor {
 		this.chunks = [];
 		this.#restore = null;
 		this.#restoreHidden = null;
-		this.#pendingSaves = 0;
-		this.#saveFailed = false;
 
 		// Mark the container as editor
 		dom.classList.add('editor');
@@ -597,14 +676,6 @@ class Editor {
 			}
 		});
 
-		// Unsaved changes warning
-		window.addEventListener('beforeunload', e => {
-			if (this.#hasChanges()) {
-				e.preventDefault();
-				e.returnValue = _('There are unsaved changes! Are you sure?');
-				return e.returnValue;
-			}
-		});
 	}
 
 	load(data) {
@@ -614,9 +685,6 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			// Clear save state from the previous document before loading this one
-			this.markAllSaved();
-
 			// Clear the UI while the previous document model is still available
 			this.#clearView();
 
@@ -639,23 +707,6 @@ class Editor {
 		} else if (hids.length) {
 			this.#renderHidden(hids);
 		}
-	}
-
-	markSaveStarted() {
-		++this.#pendingSaves;
-	}
-
-	markSaveFinished() {
-		this.#pendingSaves = Math.max(0, this.#pendingSaves - 1);
-	}
-
-	markSaveFailed() {
-		this.#saveFailed = true;
-	}
-
-	markAllSaved() {
-		this.#pendingSaves = 0;
-		this.#saveFailed = false;
 	}
 
 	#cleanupRenderedChunks() {
@@ -776,11 +827,7 @@ class Editor {
 		if (!this.eol) this.eol = '\n';
 	}
 
-	#hasChanges() {
-		// Treat the document as changed while an autosave is still pending, after a failed
-		// save, or when the rendered editor value differs from the last saved chunk value.
-		if (this.#pendingSaves || this.#saveFailed) return true;
-
+	hasChanges() {
 		// Detect changes by comparing visible chunks and stop at the first difference.
 		for (const i of find('[data-cid]', this.dom)) {
 			const chunk = this.chunks[i.dataset.cid];
@@ -793,14 +840,6 @@ class Editor {
 		}
 
 		return false;
-	}
-
-	confirmDiscardChanges(callback) {
-		if (!this.#hasChanges()) {
-			callback();
-		} else {
-			addConfirm(_('There are unsaved changes! Are you sure?'), callback);
-		}
 	}
 
 	onchange(cids, hdata) {
@@ -1153,6 +1192,7 @@ const hist = {
 	redo: new History('ed_redo', undefined,
 		h => disable('.ed-redo', !!h.length))
 };
+let documents;
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// Store previous values in Undo history
 	hist.undo.add({
@@ -1171,12 +1211,12 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	}
 	// Persist changes
 	try {
-		await save(editor.id, tosave);
+		await persistDocument(editor.id, tosave);
 	} catch (err) {
 		addMsg(err.message, 'error');
 	}
 });
-const documents = new DocumentManager(editor, async (keys) => {
+documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
 	try {
 		hist.recent.clear();
@@ -1185,10 +1225,45 @@ const documents = new DocumentManager(editor, async (keys) => {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
-const undoManager = new UndoManager(editor, hist, save);
+
+function persistDocument(documentId, chunks) {
+	return documents.persist(documentId, chunks).then(data => {
+		if (editor.id === documentId) {
+			addMsg(_('Document Saved'), 'success');
+			editor.applySavedDocument();
+		}
+
+		return data;
+	});
+}
+
+function hasUnsavedChanges() {
+	return documents.hasUnfinishedSave(editor.id) || editor.hasChanges();
+}
+
+function confirmDiscardChanges(callback) {
+	if (!hasUnsavedChanges()) {
+		callback();
+	} else {
+		addConfirm(_('There are unsaved changes! Are you sure?'), callback);
+	}
+}
+
+window.addEventListener('beforeunload', e => {
+	if (hasUnsavedChanges()) {
+		e.preventDefault();
+		e.returnValue = _('There are unsaved changes! Are you sure?');
+		return e.returnValue;
+	}
+});
+
+const undoManager = new UndoManager(editor, hist, persistDocument);
 const templates = new TemplateManager();
 
 async function displayDocument(data) {
+	// Loading a document replaces any pending/failed save state the editor was warning about.
+	documents.clearSaveState();
+
 	// Undo and redo only apply to edits made since this document was loaded
 	hist.undo.clear();
 	hist.redo.clear();
@@ -1241,42 +1316,6 @@ function showDocumentLoadError(err) {
 	addMsg(message, 'error');
 }
 
-let saveQueue = Promise.resolve();
-
-async function save(documentId, chunks) {
-	// Capture the requested values before this save enters the queue.
-	// The editor may mutate its chunk objects while earlier saves are still running.
-	const changes = chunks.map(chunk => ({...chunk}));
-
-	// Append this request to the single save queue. The original caller still
-	// receives failures, but later saves must not be blocked by a rejected tail.
-	const readyToSave = saveQueue.catch(() => {});
-	saveQueue = readyToSave.then(() => persistChanges(documentId, changes));
-
-	return saveQueue;
-}
-
-async function persistChanges(documentId, changes) {
-	editor.markSaveStarted();
-	let data;
-
-	try {
-		data = await documents.saveToIDB(documentId, changes);
-	} catch (err) {
-		if (editor.id === documentId) editor.markSaveFailed();
-		throw new Error(_('Error saving: ') + (err.message || err));
-	} finally {
-		editor.markSaveFinished();
-	}
-
-	if (editor.id === documentId) {
-		addMsg(_('Document Saved'), 'success');
-		editor.applySavedDocument();
-	}
-
-	return data;
-}
-
 evt('.ed-open', 'click', e => {
 	templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
@@ -1301,14 +1340,10 @@ evt('.ed-recent', 'click', e => {
 evt('.ed-save', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	const documentId = editor.id;
-	save(editor.id, editor.chunks)
+	persistDocument(editor.id, editor.chunks)
 		.then(data => {
 			if (editor.id !== documentId) return;
 			documents.download(data);
-			// markAllSaved() clears editor-wide pending/failed save state. save()
-			// can be called with partial autosave/undo changes, so clear that state
-			// only after this flow has persisted and exported the full document.
-			editor.markAllSaved();
 		})
 		.catch(err => addMsg(err.message, 'error'));
 });
@@ -1320,7 +1355,7 @@ evt('.ed-exit', 'click', () => {
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document
-	editor.confirmDiscardChanges(() => {
+	confirmDiscardChanges(() => {
 		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
 		openDocument(recentDocumentFilename).catch(showDocumentLoadError);
 	});
@@ -1338,10 +1373,10 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 		// Execute action on template
 		if (action === 'open') {
-			editor.confirmDiscardChanges(() =>
+			confirmDiscardChanges(() =>
 				importDocument(templateInfo).catch(showDocumentLoadError));
 		} else if (action === 'new') {
-			editor.confirmDiscardChanges(() =>
+			confirmDiscardChanges(() =>
 				createNewDocument(templateInfo).catch(showDocumentLoadError));
 		}
 
