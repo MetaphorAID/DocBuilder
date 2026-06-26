@@ -434,8 +434,8 @@
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = getToken(tokenXml);
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', `Insert Before <b>${form}</b>`)}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', `Insert After <b>${form}</b>`)}</div>`;
+			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', null, {word: form})}${
+			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', null, {word: form})}</div>`;
 		tt.innerHTML += '<input type="text" class="input" value="">';
 	}
 

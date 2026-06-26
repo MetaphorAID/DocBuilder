@@ -31,6 +31,8 @@ class TOKEN {
 		Locale['Join Token...'] = 'Token összevon...';
 		Locale['Delete Token'] = 'Token törlése';
 		Locale['Insert Token'] = 'Token beszúrása';
+		// Locale lookups are exact, so callers must keep `%word%` in the key
+		// and let TOKEN.getLink() substitute the runtime token text after `_()`
 		Locale['Insert Before <b>%word%</b>'] = 'Beszúrás <b>%word%</b> elé';
 		Locale['Insert After <b>%word%</b>'] = 'Beszúrás <b>%word%</b> után';
 
@@ -102,12 +104,21 @@ class TOKEN {
 		return s.outerHTML;
 	}
 
-	static getLink(tid, cls, txt, tpl) {
+	static formatLocaleText(txt, replacements) {
+		let text = _(txt);
+		for (const [key, value] of Object.entries(replacements || {})) {
+			text = text.split(`%${key}%`).join(String(value));
+		}
+		return text;
+	}
+
+	static getLink(tid, cls, txt, tpl, replacements) {
 		const a = document.createElement('a');
 		a.href = '#';
 		a.className = cls;
 		if (tid) a.dataset.tid = tid;
-		a.innerHTML = tpl ? tpl.replace('@', _(txt)) : _(txt);
+		const label = TOKEN.formatLocaleText(txt, replacements);
+		a.innerHTML = tpl ? tpl.replace('@', label) : label;
 
 		return a.outerHTML;
 	}
