@@ -298,7 +298,7 @@
 		if (!word) return null;
 
 		// Highlight the token when it or any of its fields was changed manually
-		if (isModified(word)) wordEl.classList.add('modified');
+		if (isModified(token)) wordEl.classList.add('modified');
 
 		if (tableView) {
 			for (const field of TABLE_FIELDS) {

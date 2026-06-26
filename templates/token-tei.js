@@ -202,7 +202,7 @@
 		if (!word) return null;
 
 		// Highlight the token when it or any of its fields was changed manually
-		if (isModified(word)) wordEl.classList.add('modified');
+		if (isModified(token)) wordEl.classList.add('modified');
 
 		let morph = sel('morph', token);
 		if (!morph || morph.getAttribute('check') === 'True') {
