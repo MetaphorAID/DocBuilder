@@ -624,15 +624,23 @@ class Editor {
 			this.dom.innerHTML = '';
 			clean_ttip(this.dom);
 
-			this.#renderDocument();
-			this.#finishReady();
+			this.#renderDocument({restoreView: true});
 		} catch (err) {
 			throw new Error(loadErrorMessage, {cause: err});
 		}
 	}
 
 	applySavedDocument() {
-		this.restoreView();
+		const cids = this.#restore;
+		const hids = this.#restoreHidden ?? [];
+		this.#restore = null;
+		this.#restoreHidden = null;
+
+		if (cids) {
+			this.renderPage(cids, hids);
+		} else if (hids.length) {
+			this.#renderHidden(hids);
+		}
 	}
 
 	markSaveStarted() {
@@ -652,37 +660,26 @@ class Editor {
 		this.#saveFailed = false;
 	}
 
-	#renderDocument() {
+	#renderDocument({restoreView = false} = {}) {
 		// The document model is loaded and the editor DOM is empty here.
 		// Templates can clear per-document UI before the new document is rendered.
 		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 
-		// Render the UI
 		const hids = Object.keys(this.hidden);
-		this.renderHidden(hids);
-		this.renderPage([0]);
-	}
+		const cids = restoreView ? (this.#restore ?? [0]) : [0];
 
-	#finishReady() {
-		this.restoreView();
+		this.#restore = null;
+		this.#restoreHidden = null;
+
+		this.renderPage(cids, hids);
+
 		// The editor UI is rendered and the previous view has been restored
 		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 	}
 
-	restoreView() {
-		// Restore visible and hidden chunks if a saved state exists and clear the state
-		if (this.#restore) {
-			this.renderPage(this.#restore);
-			this.#restore = null;
-		}
+	renderPage(cids, hids = []) {
+		if (hids.length) this.#renderHidden(hids);
 
-		if (this.#restoreHidden) {
-			this.renderHidden(this.#restoreHidden);
-			this.#restoreHidden = null;
-		}
-	}
-
-	renderPage(cids) {
 		// Clear the current view
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
@@ -720,7 +717,7 @@ class Editor {
 		return e;
 	}
 
-	renderHidden(hids) {
+	#renderHidden(hids) {
 		// Tell the templates to render the hidden chunks in hids
 		dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
 	}
@@ -1083,9 +1080,7 @@ class UndoManager {
 			cids: visible
 		});
 
-		if (hidden.length) this.#editor.renderHidden(hidden);
-
-		this.#editor.renderPage(data.cids);
+		this.#editor.renderPage(data.cids, hidden);
 	}
 
 	async #apply(reverse) {
