@@ -580,7 +580,7 @@ class Editor {
 			if (!t) return;
 
 			// Render the actual page identified by pagenumber
-			if (t.matches('[data-render]')) return this.render([Number(t.dataset.render)]);
+			if (t.matches('[data-render]')) return this.renderPage([Number(t.dataset.render)]);
 
 			// Plus one behaviour
 			if (t.matches('.plus-one')) {
@@ -660,7 +660,7 @@ class Editor {
 		// Render the UI
 		const hids = Object.keys(this.hidden);
 		this.renderHidden(hids);
-		this.render([0]);
+		this.renderPage([0]);
 	}
 
 	#finishReady() {
@@ -672,7 +672,7 @@ class Editor {
 	restoreView() {
 		// Restore visible and hidden chunks if a saved state exists and clear the state
 		if (this.#restore) {
-			this.render(this.#restore);
+			this.renderPage(this.#restore);
 			this.#restore = null;
 		}
 
@@ -682,7 +682,7 @@ class Editor {
 		}
 	}
 
-	render(cids) {
+	renderPage(cids) {
 		// Clear the current view
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
@@ -1049,7 +1049,7 @@ class UndoManager {
 	}
 
 	async #applyHistoryEntry(data, visible, from, to) {
-		this.#editor.render([]);
+		this.#editor.renderPage([]);
 
 		// Create the corresponding reverse entry
 		const reverseEntry = this.#createReverseHistoryEntry(data);
@@ -1060,7 +1060,7 @@ class UndoManager {
 
 			addMsg(_('Document changed outside, history action is disabled'), 'error');
 
-			this.#editor.render(visible);
+			this.#editor.renderPage(visible);
 			return;
 		}
 
@@ -1072,7 +1072,7 @@ class UndoManager {
 		} catch (err) {
 			// Keep the editor consistent with storage if persistence fails (i.e. redo changes in the editor and render them)
 			this.#applyChunks(reverseEntry);
-			this.#editor.render(visible);
+			this.#editor.renderPage(visible);
 			throw err;
 		}
 
@@ -1085,7 +1085,7 @@ class UndoManager {
 
 		if (hidden.length) this.#editor.renderHidden(hidden);
 
-		this.#editor.render(data.cids);
+		this.#editor.renderPage(data.cids);
 	}
 
 	async #apply(reverse) {

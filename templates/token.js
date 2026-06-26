@@ -68,7 +68,7 @@ class TOKEN {
 			if (t.matches('.btn-view')) {
 				localStorage.tableview = localStorage.tableview ? '' : '1';
 				sel('header .btn-view').innerHTML = _(localStorage.tableview ? 'Normal View' : 'Table View');
-				editor.render(editor.getVisible());
+				editor.renderPage(editor.getVisible());
 			}
 		});
 	}
