@@ -153,6 +153,8 @@ class TOKEN {
 		a.className = cls;
 		if (tid) a.dataset.tid = tid;
 		const label = TOKEN.formatLocaleText(txt, replacements);
+		// tpl is optional wrapper markup around the link text, for example '<b>@</b>'.
+		// Replace its @ placeholder with the localized label before assigning innerHTML.
 		a.innerHTML = tpl ? tpl.replace('@', label) : label;
 
 		return a.outerHTML;
