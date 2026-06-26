@@ -301,6 +301,7 @@
 	}
 
 	function handleTokenContextMenu(e, target, sentence, tokenId, tokenXml) {
+		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
 		let html = '';
@@ -421,6 +422,8 @@
 
 		// No change -> just close
 		if (getToken(tokenXml) === value) return trg(tooltip, 'close');
+
+		// Validation
 		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
 
 		resetToken(tokenXml, value);
@@ -463,21 +466,21 @@
 		if (ctx.target.matches('.t, .cfg'))
 			return handleTokenContextMenu(e, ctx.target, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
-		if (target.matches('.edit.ana')) return handleEditAna(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+		if (ctx.target.matches('.edit.ana')) return handleEditAna(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
-		if (target.matches('.selAna')) return handleSelAna(ctx.target, ctx.paragraphId, ctx.tokenXml);
+		if (ctx.target.matches('.selAna')) return handleSelAna(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
-		if (target.matches('.save.ana')) return handleSaveAna(ctx.target, ctx.paragraphId, ctx.tokenXml);
+		if (ctx.target.matches('.save.ana')) return handleSaveAna(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
-		if (target.matches('.fetch.ana')) return updAna([ctx.tokenXml], ctx.paragraphId);
+		if (ctx.target.matches('.fetch.ana')) return updAna([ctx.tokenXml], ctx.paragraphId);
 
-		if (target.matches('.edit.token')) return handleEditToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+		if (ctx.target.matches('.edit.token')) return handleEditToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
-		if (target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.paragraphId, ctx.tokenXml);
+		if (ctx.target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
-		if (target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml);
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml);
 
-		if (target.matches('.ins-save.token'))
+		if (ctx.target.matches('.ins-save.token'))
 			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml);
 
 		if (target.matches('.del.token')) {
@@ -486,36 +489,6 @@
 		}
 
 	});
-
-	function handleSplitSentence(paragraphId, paragraphXml, tokenId, value) {
-		// Determine split point
-		const offset = value === '0' ? 0 : 1;
-		paragraphXml.splice(Number(tokenId) + offset, 0, ['']);
-
-		editor.requestReload();
-		savePar([paragraphId], true);
-	}
-
-	function handleJoinSentence(paragraph, paragraphId, value) {
-		// Determine direction
-		const joinRight = value !== '0';
-		const offset = joinRight ? 1 : -1;
-		let adjacentParagraphId = paragraphId + offset;
-		if (adjacentParagraphId < 0) return;
-
-		if (!_active[adjacentParagraphId]) {
-			const chunk = editor.renderChunk(adjacentParagraphId);
-			if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
-		}
-		if (!_active[adjacentParagraphId]) return addMsg(_('Invalid Action'));
-
-		adjacentParagraphId = Math.max(paragraphId, adjacentParagraphId);
-		if (_active[adjacentParagraphId][0].length < 2) {
-			_active[adjacentParagraphId].shift();
-			editor.requestReload();
-			savePar([adjacentParagraphId]);
-		}
-	}
 
 	// function handleEditSticky(paragraphId, tokens, tokenId, tokenXml) {
 	// 	const tokenIdNum = Number(tokenId);
@@ -548,18 +521,43 @@
 		updAna([tokenXml], paragraphId);
 	}
 
+	function handleSplitSentence(paragraphId, paragraphXml, tokenId, value) {
+		// Determine split point
+		const offset = value === '0' ? 0 : 1;
+		paragraphXml.splice(Number(tokenId) + offset, 0, ['']);
+
+		// Save changes and refresh UI
+		editor.requestReload();
+		savePar([paragraphId], true);
+	}
+
+	function handleJoinSentence(paragraph, paragraphId, value) {
+		// Determine direction
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
+		let adjacentParagraphId = paragraphId + offset;
+		if (adjacentParagraphId < 0) return;
+
+		if (!_active[adjacentParagraphId]) {
+			const chunk = editor.renderChunk(adjacentParagraphId);
+			if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
+		}
+		if (!_active[adjacentParagraphId]) return addMsg(_('Invalid Action'));
+
+		adjacentParagraphId = Math.max(paragraphId, adjacentParagraphId);
+		if (_active[adjacentParagraphId][0].length < 2) {
+			_active[adjacentParagraphId].shift();
+			editor.requestReload();
+			savePar([adjacentParagraphId]);
+		}
+	}
+
 	document.addEventListener('change', e => {
 		const target = e.target;
 		if (!target) return;
 
 		const ctx = resolveContext(target, {resolveTableCellParent: true});
 		if (!ctx) return;
-
-		// Sentence stuff
-		if (target.matches('.split.sent'))
-			return handleSplitSentence(ctx.paragraphId, ctx.paragraphXml, ctx.tokenId, ctx.value);
-
-		if (target.matches('.join.sent')) return handleJoinSentence(ctx.paragraph, ctx.paragraphId, ctx.value);
 
 		// Token stuff
 		// if (t.matches('.edit.sticky')) return handleEditSticky(ctx.paragraphId, ctx.tokens, ctx.tokenId, ctx.tokenXml);
@@ -569,5 +567,11 @@
 
 		if (target.matches('.join.token'))
 			return handleJoinToken(ctx.paragraphId, ctx.paragraphXml, ctx.tokenId, ctx.tokenXml, ctx.value);
+
+		// Sentence stuff
+		if (target.matches('.split.sent'))
+			return handleSplitSentence(ctx.paragraphId, ctx.paragraphXml, ctx.tokenId, ctx.value);
+
+		if (target.matches('.join.sent')) return handleJoinSentence(ctx.paragraph, ctx.paragraphId, ctx.value);
 	});
 })();
