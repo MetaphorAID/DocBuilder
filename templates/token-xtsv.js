@@ -526,9 +526,7 @@
 		const offset = value === '0' ? 0 : 1;
 		paragraphXml.splice(Number(tokenId) + offset, 0, ['']);
 
-		// Save changes and refresh UI
-		editor.requestReload();
-		savePar([paragraphId], true);
+		savePar([paragraphId]);
 	}
 
 	function handleJoinSentence(paragraph, paragraphId, value) {
@@ -547,7 +545,6 @@
 		adjacentParagraphId = Math.max(paragraphId, adjacentParagraphId);
 		if (_active[adjacentParagraphId][0].length < 2) {
 			_active[adjacentParagraphId].shift();
-			editor.requestReload();
 			savePar([adjacentParagraphId]);
 		}
 	}

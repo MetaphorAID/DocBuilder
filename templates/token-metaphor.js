@@ -685,7 +685,6 @@
 				// Handle success
 				const xml = sel('body', parseXml(data));
 				_content[paragraphId] = xml.innerHTML;
-				editor.requestReload();
 				return savePar([paragraphId]);
 			} catch {
 				addMsg(_('API response format is incorrect'), false, contentInput);

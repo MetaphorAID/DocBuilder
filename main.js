@@ -218,12 +218,12 @@ class ChunkProcessor {
 					// Chunk splitters must consume source text. Advancing past an
 					// empty match avoids an exec() loop, but can also skip a real
 					// chunk starting at the same offset, so fail loudly instead.
-					const err = new Error(_(
+					throw new Error(_(
 						'The selected template could not split this file into editable sections. ' +
 						'Check that you chose the right template and that the file is not empty or missing required content.'
-					));
-					err.cause = new Error(`Chunk splitter matched an empty string at offset ${match.index}: ${patternStr}`);
-					throw err;
+					), {
+						cause: new Error(`Chunk splitter matched an empty string at offset ${match.index}: ${patternStr}`)
+					});
 				}
 
 				matches.push({
@@ -393,29 +393,23 @@ class TemplateManager {
 		this.#styles = new Map();
 	}
 
-	#createLoadError(url, cause) {
-		const err = new Error(_('Could not load template file: ') + url);
-		err.cause = cause;
-		return err;
-	}
-
 	async #loadJSON(url) {
 		let response;
 		try {
 			response = await fetch(url);
 		} catch (err) {
-			throw this.#createLoadError(url, err);
+			throw new Error(_('Could not load template file: ') + url, {cause: err});
 		}
 
 		if (!response.ok) {
 			const message = `${response.status} ${response.statusText}`.trim();
-			throw this.#createLoadError(url, new Error(message));
+			throw new Error(_('Could not load template file: ') + url, {cause: new Error(message)});
 		}
 
 		try {
 			return await response.json();
 		} catch (err) {
-			throw this.#createLoadError(url, err);
+			throw new Error(_('Could not load template file: ') + url, {cause: err});
 		}
 	}
 
@@ -453,7 +447,7 @@ class TemplateManager {
 			e.onload = resolve;
 			e.onerror = event => {
 				e.remove();
-				reject(this.#createLoadError(src, event));
+				reject(new Error(_('Could not load template file: ') + src, {cause: event}));
 			};
 			document.head.appendChild(e);
 		});
@@ -473,7 +467,7 @@ class TemplateManager {
 			e.onload = resolve;
 			e.onerror = event => {
 				e.remove();
-				reject(this.#createLoadError(src, event));
+				reject(new Error(_('Could not load template file: ') + src, {cause: event}));
 			};
 			document.body.appendChild(e);
 		});
@@ -558,7 +552,6 @@ class Editor {
 	#onchange_callback
 	#restore
 	#restoreHidden
-	#reloadRequested
 	#pendingSaves
 	#saveFailed
 
@@ -568,7 +561,6 @@ class Editor {
 		this.chunks = [];
 		this.#restore = null;
 		this.#restoreHidden = null;
-		this.#reloadRequested = false;
 		this.#pendingSaves = 0;
 		this.#saveFailed = false;
 
@@ -615,18 +607,11 @@ class Editor {
 		});
 	}
 
-	#createDocumentLoadError(cause) {
-		if (cause?.documentLoadError) return cause;
-
-		const err =
-			new Error(_('Could not open the document. The file content is invalid or does not match the selected template.'));
-		err.cause = cause;
-		err.documentLoadError = true;
-		return err;
-	}
-
 	load(data, store_filler) {
-		if (!data?.id) throw this.#createDocumentLoadError(new Error(_('Missing document id')));
+		const loadErrorMessage =
+			_('Could not open the document. The file content is invalid or does not match the selected template.');
+
+		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
 			// Clear save state from the previous document before loading this one
@@ -642,21 +627,11 @@ class Editor {
 			this.#renderDocument();
 			this.#finishReady();
 		} catch (err) {
-			throw this.#createDocumentLoadError(err);
+			throw new Error(loadErrorMessage, {cause: err});
 		}
 	}
 
-	requestReload() {
-		this.#reloadRequested = true;
-	}
-
-	applySavedDocument(data) {
-		if (this.#reloadRequested) {
-			this.#reloadRequested = false;
-			this.load(data, false);
-			return;
-		}
-
+	applySavedDocument() {
 		this.restoreView();
 	}
 
@@ -1237,6 +1212,7 @@ function showDocumentLoadError(err) {
 	const message = err?.message || String(err || '');
 	if (!message || message === 'No file chosen' || message === _('No file chosen')) return;
 
+	// Wrapped load errors keep their low-level cause here, while the UI shows the friendly top-level message.
 	console.error('Error during file open process:', err);
 	addMsg(message, 'error');
 }
@@ -1271,7 +1247,7 @@ async function persistChanges(documentId, changes) {
 
 	if (editor.id === documentId) {
 		addMsg(_('Document Saved'), 'success');
-		editor.applySavedDocument(data);
+		editor.applySavedDocument();
 	}
 
 	return data;
