@@ -1092,7 +1092,7 @@ class UndoManager {
 		const {tosave, hidden} = this.#applyChunks(data);
 
 		try {
-			await this.#save(tosave);
+			await this.#save(data.id, tosave);
 		} catch (err) {
 			// Keep the editor consistent with storage if persistence fails (i.e. redo changes in the editor and render them)
 			this.#applyChunks(reverseEntry);
@@ -1247,10 +1247,10 @@ async function save(documentId, chunks) {
 	// The editor may mutate its chunk objects while earlier saves are still running.
 	const changes = chunks.map(chunk => ({...chunk}));
 
-	saveQueue = saveQueue.then(
-		() => persistChanges(documentId, changes),
-		() => persistChanges(documentId, changes)
-	);
+	// Append this request to the single save queue. The original caller still
+	// receives failures, but later saves must not be blocked by a rejected tail.
+	const readyToSave = saveQueue.catch(() => {});
+	saveQueue = readyToSave.then(() => persistChanges(documentId, changes));
 
 	return saveQueue;
 }
@@ -1304,6 +1304,9 @@ evt('.ed-save', 'click', e => {
 		.then(data => {
 			if (editor.id !== documentId) return;
 			documents.download(data);
+			// markAllSaved() clears editor-wide pending/failed save state. save()
+			// can be called with partial autosave/undo changes, so clear that state
+			// only after this flow has persisted and exported the full document.
 			editor.markAllSaved();
 		})
 		.catch(err => addMsg(err.message, 'error'));
