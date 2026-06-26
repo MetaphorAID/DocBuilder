@@ -757,15 +757,19 @@ class Editor {
 	}
 
 	#hasChanges() {
+		// Treat the document as changed while an autosave is still pending, after a failed
+		// save, or when the rendered editor value differs from the last saved chunk value.
 		if (this.#pendingSaves || this.#saveFailed) return true;
 
-		// Detect changes by comparing every visible chunk (and normalising line endings)
+		// Detect changes by comparing visible chunks and stop at the first difference.
 		for (const i of find('[data-cid]', this.dom)) {
 			const chunk = this.chunks[i.dataset.cid];
 			const c_type = Editor.#getType(chunk.name);
 
-			if (chunk.id && c_type.getValue && chunk.value !== c_type.getValue(i, chunk).replace(/(\r?\n|\r)/g, this.eol))
-				return true;
+			if (!chunk.id || !c_type.getValue) continue;
+
+			const value = c_type.getValue(i, chunk).replace(/(\r?\n|\r)/g, this.eol);
+			if (chunk.value !== value) return true;
 		}
 
 		return false;
