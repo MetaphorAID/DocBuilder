@@ -429,16 +429,16 @@
 		updAna([tokenXml], paragraphId);
 	}
 
-	function handleInsertToken(e, sentence, tokenXml) {
+	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = getToken(tokenXml);
+		// Both insert buttons use the same value; the button only selects the insertion side.
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
 			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', null, {word: form})}${
 			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', null, {word: form})}</div>`;
-		tt.innerHTML += '<input type="text" class="input" value="">';
 	}
 
-	function handleSaveInsertedToken(target, paragraphId, paragraphXml) {
+	function handleSaveInsertedToken(target, paragraphId, paragraphXml, tokenId) {
 		// Get the new token and validate it
 		const input = sel('input', target.closest('.tooltip'));
 		const value = input.value.trim();
@@ -447,7 +447,7 @@
 		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
 
 		// Clone the original token XML
-		const newTokenId = target.classList.contains('left') ? tokenId : Number(tokenId) + 1;
+		const newTokenId = Number(tokenId) + (target.classList.contains('left') ? 0 : 1);
 		const newTokenXml = [];
 		resetToken(newTokenXml, value);
 		paragraphXml.splice(newTokenId, 0, newTokenXml);
@@ -477,10 +477,10 @@
 
 		if (ctx.target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.paragraphId, ctx.tokenXml);
 
-		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenXml);
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
 		if (ctx.target.matches('.ins-save.token'))
-			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml);
+			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml, ctx.tokenId);
 
 		if (target.matches('.del.token')) {
 			delete ctx.paragraphXml[ctx.tokenId];
