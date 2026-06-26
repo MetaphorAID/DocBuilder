@@ -617,13 +617,11 @@ class Editor {
 			// Clear save state from the previous document before loading this one
 			this.markAllSaved();
 
+			// Clear the UI while the previous document model is still available
+			this.#clearView();
+
 			// Reset the editor
 			this.#reset(data, store_filler);
-
-			// Clear the UI
-			this.dom.innerHTML = '';
-			clean_ttip(this.dom);
-
 			this.#renderDocument({restoreView: true});
 		} catch (err) {
 			throw new Error(loadErrorMessage, {cause: err});
@@ -660,6 +658,23 @@ class Editor {
 		this.#saveFailed = false;
 	}
 
+	#cleanupRenderedChunks() {
+		each('[data-cid]', input => {
+			const chunk = this.chunks[input.dataset.cid];
+			if (!chunk) return;
+
+			const type = input._editorType || Editor.#getType(chunk.name);
+			type.remove?.(input, chunk);
+		}, this.dom);
+	}
+
+	#clearView() {
+		// Let templates release per-render state before their DOM disappears.
+		this.#cleanupRenderedChunks();
+		this.dom.innerHTML = '';
+		clean_ttip(this.dom);
+	}
+
 	#renderDocument({restoreView = false} = {}) {
 		// The document model is loaded and the editor DOM is empty here.
 		// Templates can clear per-document UI before the new document is rendered.
@@ -678,11 +693,10 @@ class Editor {
 	}
 
 	renderPage(cids, hids = []) {
-		if (hids.length) this.#renderHidden(hids);
-
 		// Clear the current view
-		this.dom.innerHTML = '';
-		clean_ttip(this.dom);
+		this.#clearView();
+
+		if (hids.length) this.#renderHidden(hids);
 
 		if (!cids.length) return;
 
@@ -710,9 +724,13 @@ class Editor {
 		const chunk = this.chunks[cid];
 		if (!chunk) return null;
 
-		const e = Editor.#getType(chunk.name).render(chunk, cid);
+		const type = Editor.#getType(chunk.name);
+		const e = type.render(chunk, cid);
 		// Note which chunk this DOM element represents
-		if (e) e.dataset.cid = cid;
+		if (e) {
+			e.dataset.cid = cid;
+			e._editorType = type;
+		}
 
 		return e;
 	}
@@ -776,22 +794,10 @@ class Editor {
 	}
 
 	confirmDiscardChanges(callback) {
-		const cleanupChunks = () => {
-			each('[data-cid]', i => {
-				const c = this.chunks[i.dataset.cid];
-				const t = Editor.#getType(c.name);
-
-				t.remove?.(i, c);
-			}, this.dom);
-
-			// Call the callback
-			callback();
-		};
-
 		if (!this.#hasChanges()) {
-			cleanupChunks();
+			callback();
 		} else {
-			addConfirm(_('There are unsaved changes! Are you sure?'), cleanupChunks);
+			addConfirm(_('There are unsaved changes! Are you sure?'), callback);
 		}
 	}
 
@@ -1050,6 +1056,9 @@ class UndoManager {
 	}
 
 	async #applyHistoryEntry(data, visible, from, to) {
+		// Intentionally render an empty page first: renderPage([]) clears the current
+		// view, closes editor-owned tooltips, and lets templates run remove hooks
+		// against the currently rendered chunks before the history entry mutates them.
 		this.#editor.renderPage([]);
 
 		// Create the corresponding reverse entry
