@@ -629,6 +629,7 @@ class Editor {
 		if (!data?.id) throw this.#createDocumentLoadError(new Error(_('Missing document id')));
 
 		try {
+			// Clear save state from the previous document before loading this one
 			this.markAllSaved();
 
 			// Reset the editor
