@@ -57,10 +57,10 @@ document.addEventListener('click', e => {
 document.addEventListener('close', ({target}) => {
 	if (!target?.matches('.tooltip')) return;
 
-	// Trigger open multi-select change handlers before removing the tooltip.
+	// Trigger open multi-select change handlers before removing the tooltip
 	each('.select.multiple.open', el => trg(el, 'change'), target);
 
-	// Let the close event finish while the tooltip is still in the DOM.
+	// Let the close event finish while the tooltip is still in the DOM
 	requestAnimationFrame(() => target.remove());
 });
 
@@ -245,8 +245,7 @@ class ChunkProcessor {
 			const {start, end, chunk} = match;
 
 			if (pos > start) {
-				// Keep overlapping matches as non-owning views, without an id,
-				// so their source text is not included twice when saving.
+				// Keep overlapping matches as non-owning views w/o id, so their source text is not included twice when saving
 				chunks.push(chunk);
 				continue;
 			}
@@ -636,13 +635,13 @@ class Editor {
 
 			render(chunk, cid) {
 				if (!chunk.id || !chunk.name) {
-					// Read-only fallback for non-owning or filler chunks; <pre> preserves text layout.
+					// Read-only fallback for non-owning or filler chunks; <pre> preserves text layout
 					const e = document.createElement('pre');
 					e.innerHTML = chunk.value;
 					return e;
 				}
 
-				// Editable fallback for named chunks when the template has no custom renderer.
+				// Editable fallback for named chunks when the template has no custom renderer
 				const e = document.createElement('textarea');
 				e.className = 'input';
 				e.value = chunk.value;
@@ -672,6 +671,8 @@ class Editor {
 	constructor(dom, onchange) {
 		this.dom = dom;
 		this.#onchange_callback = onchange;
+		this.eol = '\n';
+		this.hidden = [];
 		this.chunks = [];
 		this.#restore = null;
 		this.#restoreHidden = null;
@@ -723,7 +724,22 @@ class Editor {
 
 			// Reset the editor
 			this.#reset(data);
-			this.#renderDocument({restoreView: true});
+
+			// Templates can clear per-document UI before the new document is rendered
+			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
+
+			// Restore the view if there is any
+			const hids = Object.keys(this.hidden);
+			const cids = this.#restore ?? [0];
+
+			this.#restore = null;
+			this.#restoreHidden = null;
+
+			// Render the current page of the document on the clean state
+			this.renderPage(cids, hids);
+
+			// The editor UI is rendered and the previous view has been restored
+			dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 		} catch (err) {
 			throw new Error(loadErrorMessage, {cause: err});
 		}
@@ -736,44 +752,26 @@ class Editor {
 		this.#restoreHidden = null;
 
 		if (cids) {
+			// Render cids and hids too
 			this.renderPage(cids, hids);
 		} else if (hids.length) {
 			this.#renderHidden(hids);
 		}
 	}
 
-	#cleanupRenderedChunks() {
+	#clearView() {
+		// Clean up rendered chunks. Let templates release per-render state before their DOM disappears
 		each('[data-cid]', input => {
 			const chunk = this.chunks[input.dataset.cid];
 			if (!chunk) return;
 
+			// Call the template's remove() function on the chunk to clear it's state
 			const type = input._editorType || Editor.#getType(chunk.name);
 			type.remove?.(input, chunk);
 		}, this.dom);
-	}
 
-	#clearView() {
-		// Let templates release per-render state before their DOM disappears
-		this.#cleanupRenderedChunks();
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
-	}
-
-	#renderDocument({restoreView = false} = {}) {
-		// The document model is loaded and the editor DOM is empty here.
-		// Templates can clear per-document UI before the new document is rendered.
-		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
-
-		const hids = Object.keys(this.hidden);
-		const cids = restoreView ? (this.#restore ?? [0]) : [0];
-
-		this.#restore = null;
-		this.#restoreHidden = null;
-
-		this.renderPage(cids, hids);
-
-		// The editor UI is rendered and the previous view has been restored
-		dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 	}
 
 	renderPage(cids, hids = []) {
@@ -1187,7 +1185,7 @@ class UndoManager {
 			return Promise.reject(err);
 		};
 
-		// The entry has already been popped from the source stack.
+		// The entry has already been popped from the source stack
 		// If setup, rendering, or saving fails, put it back so the action can be retried
 		try {
 			// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
@@ -1282,14 +1280,6 @@ function confirmDiscardChanges(callback) {
 		addConfirm(_('There are unsaved changes! Are you sure?'), callback);
 	}
 }
-
-window.addEventListener('beforeunload', e => {
-	if (hasUnsavedChanges()) {
-		e.preventDefault();
-		e.returnValue = _('There are unsaved changes! Are you sure?');
-		return e.returnValue;
-	}
-});
 
 const undoManager = new UndoManager(editor, hist, persistDocument);
 const templates = new TemplateManager();
@@ -1418,5 +1408,13 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 	} catch (err) {
 		showDocumentLoadError(err);
+	}
+});
+
+window.addEventListener('beforeunload', e => {
+	if (hasUnsavedChanges()) {
+		e.preventDefault();
+		e.returnValue = _('There are unsaved changes! Are you sure?');
+		return e.returnValue;
 	}
 });
