@@ -335,7 +335,10 @@ class SaveQueue {
 	}
 
 	async enqueue(fileName, saveFn) {
-		// The original caller still receives failures, but later saves must not be blocked by a rejected tail
+		// Keep the queue usable after a save failure. Each enqueued save receives its own
+		// captured chunk values; a later save may persist newer values that supersede the
+		// failed attempt, while the rejected caller still sees the error and failedSaves keeps
+		// the document in the unsaved-warning state until the user resolves it.
 		const readyToSave = this.#saveQueue.catch(() => {});
 		const saveToken = this.#markSavePending(fileName);
 		// Chain the callback to be executed when previous ones have finished
