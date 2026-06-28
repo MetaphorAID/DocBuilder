@@ -384,23 +384,12 @@ class SaveQueue {
 	}
 
 	clearFailures(fileName) {
-		if (fileName) {
-			this.#failedSaves.delete(fileName);
-			return;
-		}
+		if (!fileName) throw new TypeError('clearFailures requires a fileName');
 
-		// fileName undefined -> General cleansing requested
-		this.#failedSaves.clear();
+		this.#failedSaves.delete(fileName);
 	}
 
-	clear(fileName) {
-		if (fileName) {
-			this.#pendingSaves.delete(fileName);
-			this.#failedSaves.delete(fileName);
-			return;
-		}
-
-		// fileName undefined -> General cleansing requested
+	clearAll() {
 		this.#pendingSaves.clear();
 		this.#failedSaves.clear();
 	}
@@ -480,8 +469,8 @@ class DocumentManager {
 		});
 	}
 
-	clearSaveState(fileName) {
-		this.#saveQueue.clear(fileName);
+	clearSaveState() {
+		this.#saveQueue.clearAll();
 	}
 
 	hasUnfinishedSave() {
