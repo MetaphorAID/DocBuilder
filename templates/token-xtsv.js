@@ -432,7 +432,7 @@
 	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = getToken(tokenXml);
-		// Both insert buttons use the same value; the button only selects the insertion side.
+		// Both insert buttons use the same value; the button only selects the insertion side
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
 			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', null, {word: form})}${
 			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', null, {word: form})}</div>`;

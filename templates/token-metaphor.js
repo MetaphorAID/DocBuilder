@@ -797,8 +797,8 @@
 		form.setAttribute('modified', 'True');
 		form.textContent = joinedWord;
 
-		// Preserve an existing ID on the merged token.
-		// Prefer the survivor's ID; if it lacks one, reuse the removed token's ID.
+		// Preserve an existing ID on the merged token
+		// Prefer the survivor's ID; if it lacks one, reuse the removed token's ID
 		const keepId = keepToken.getAttribute('xml:id');
 		const removeId = removeToken.getAttribute('xml:id');
 		delNode(removeToken);
@@ -866,8 +866,8 @@
 		keepSentence.setAttribute('modified', 'True');
 		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
 
-		// Preserve an existing ID on the merged sentence.
-		// Prefer the survivor's ID; if it lacks one, reuse the removed sentence's ID.
+		// Preserve an existing ID on the merged sentence
+		// Prefer the survivor's ID; if it lacks one, reuse the removed sentence's ID
 		const keepId = keepSentence.getAttribute('xml:id');
 		const removeId = removeSentence.getAttribute('xml:id');
 		delNode(removeSentence);

@@ -215,15 +215,11 @@ class ChunkProcessor {
 			let match;
 			while ((match = regex.exec(content)) !== null) {
 				if (match[0].length === 0) {
-					// Chunk splitters must consume source text. Advancing past an
-					// empty match avoids an exec() loop, but can also skip a real
-					// chunk starting at the same offset, so fail loudly instead.
-					throw new Error(_(
-						'The selected template could not split this file into editable sections. ' +
+					// Chunk splitters must consume source text. Advancing past an empty match avoids an exec() loop,
+					// but can also skip a real chunk starting at the same offset, so fail loudly instead
+					throw new Error(_('The selected template could not split this file into editable sections. ' +
 						'Check that you chose the right template and that the file is not empty or missing required content.'
-					), {
-						cause: new Error(`Chunk splitter matched an empty string at offset ${match.index}: ${patternStr}`)
-					});
+					), {cause: new Error(`Chunk splitter matched an empty string at offset ${match.index}: ${patternStr}`)});
 				}
 
 				matches.push({
@@ -328,19 +324,107 @@ class ChunkProcessor {
 	}
 }
 
-class DocumentManager {
-	#editor
-	#db
+class SaveQueue {
 	#saveQueue
 	#pendingSaves
 	#failedSaves
 
-	constructor(editor, oninit, db = new AnnotationDB()) {
-		this.#editor = editor;
-		this.#db = db;
+	constructor() {
 		this.#saveQueue = Promise.resolve();
 		this.#pendingSaves = new Map();
 		this.#failedSaves = new Set();
+	}
+
+	async enqueue(fileName, saveFn) {
+		// The original caller still receives failures, but later saves must not be blocked by a rejected tail
+		const readyToSave = this.#saveQueue.catch(() => {});
+		const saveToken = this.#markSavePending(fileName);
+		// Chain the callback to be executed when previous ones have finished
+		const persistence = readyToSave.then(saveFn);
+		this.#saveQueue = persistence.finally(() => this.#markSaveFinished(fileName, saveToken));
+
+		try {
+			return await persistence;
+		} catch (err) {
+			this.#markSaveFailed(fileName);
+			throw err;
+		}
+	}
+
+	#markSavePending(fileName) {
+		// Create a unique token for this save operation
+		const saveToken = Symbol(fileName);
+		// Get the set of pending saves for this file
+		let pendingSaves = this.#pendingSaves.get(fileName);
+		// Create the set if this is the first pending save
+		if (!pendingSaves) {
+			pendingSaves = new Set();
+			this.#pendingSaves.set(fileName, pendingSaves);
+		}
+		// Add this save operation to the set
+		pendingSaves.add(saveToken);
+
+		// Return the token so it can be removed later
+		return saveToken;
+	}
+
+	#markSaveFinished(fileName, saveToken) {
+		// Get the set of pending saves for the file
+		const pendingSaves = this.#pendingSaves.get(fileName);
+		// If the file isn't being tracked, do nothing
+		if (!pendingSaves) return;
+
+		// Remove this particular save operation
+		pendingSaves.delete(saveToken);
+		// Remove the file entry if no saves remain
+		if (!pendingSaves.size) this.#pendingSaves.delete(fileName);
+	}
+
+	#markSaveFailed(fileName) {
+		this.#failedSaves.add(fileName);
+	}
+
+	clearFailures(fileName) {
+		if (fileName) {
+			this.#failedSaves.delete(fileName);
+			return;
+		}
+
+		// fileName undefined -> General cleansing requested
+		this.#failedSaves.clear();
+	}
+
+	clear(fileName) {
+		if (fileName) {
+			this.#pendingSaves.delete(fileName);
+			this.#failedSaves.delete(fileName);
+			return;
+		}
+
+		// fileName undefined -> General cleansing requested
+		this.#pendingSaves.clear();
+		this.#failedSaves.clear();
+	}
+
+	hasUnfinishedSave(fileName) {
+		// Get pending saves for the file
+		const pendingSaves = this.#pendingSaves.get(fileName);
+
+		// If the filename is provided does it have pending or failed saves?
+		return !!fileName && (!!pendingSaves?.size || this.#failedSaves.has(fileName));
+	}
+}
+
+class DocumentManager {
+	#editor
+	#db
+	#saveQueue
+
+	constructor(editor, oninit, db = new AnnotationDB()) {
+		this.#editor = editor;
+		this.#db = db;
+		this.#saveQueue = new SaveQueue();
+
 		// Init the database
 		this.#db.init().then(async () => {
 			const keys = await this.#db.getAllKeys();
@@ -383,82 +467,31 @@ class DocumentManager {
 	}
 
 	async persist(fileName, chunks) {
-		// Capture the requested values before this save enters the queue.
-		// The editor may mutate its chunk objects while earlier saves are still running.
+		// Capture the requested values before this save enters the queue
+		// The editor may mutate its chunk objects while earlier saves are still running
 		const changes = chunks.map(chunk => ({...chunk}));
 
-		// Append this request to the single save queue. The original caller still
-		// receives failures, but later saves must not be blocked by a rejected tail.
-		const readyToSave = this.#saveQueue.catch(() => {});
-		const saveToken = this.#markSavePending(fileName);
-		const persistence = readyToSave.then(() => this.#persistChanges(fileName, changes));
-		this.#saveQueue = persistence.finally(() => this.#markSaveFinished(fileName, saveToken));
-
-		return this.#saveQueue;
-	}
-
-	async #persistChanges(fileName, changes) {
-		try {
-			return await this.#saveToIDB(fileName, changes);
-		} catch (err) {
-			this.#markSaveFailed(fileName);
-			throw new Error(_('Error saving: ') + (err.message || err));
-		}
-	}
-
-	#markSavePending(fileName) {
-		const saveToken = Symbol(fileName);
-		let pendingSaves = this.#pendingSaves.get(fileName);
-		if (!pendingSaves) {
-			pendingSaves = new Set();
-			this.#pendingSaves.set(fileName, pendingSaves);
-		}
-		pendingSaves.add(saveToken);
-
-		return saveToken;
-	}
-
-	#markSaveFinished(fileName, saveToken) {
-		const pendingSaves = this.#pendingSaves.get(fileName);
-		if (!pendingSaves) return;
-
-		pendingSaves.delete(saveToken);
-		if (!pendingSaves.size) this.#pendingSaves.delete(fileName);
-	}
-
-	#markSaveFailed(fileName) {
-		this.#failedSaves.add(fileName);
-	}
-
-	markAllSaved(fileName) {
-		if (fileName) {
-			this.#failedSaves.delete(fileName);
-			return;
-		}
-
-		this.#failedSaves.clear();
+		// Take care of the enqueuing of the save operation and handle the failiures with the single save queue
+		return this.#saveQueue.enqueue(fileName, async () => {
+			try {
+				return await this.#saveToIDB(fileName, changes);
+			} catch (err) {
+				throw new Error(_('Error saving: ') + (err.message || err));
+			}
+		});
 	}
 
 	clearSaveState(fileName) {
-		if (fileName) {
-			this.#pendingSaves.delete(fileName);
-			this.#failedSaves.delete(fileName);
-			return;
-		}
-
-		this.#pendingSaves.clear();
-		this.#failedSaves.clear();
+		this.#saveQueue.clear(fileName);
 	}
 
 	hasUnfinishedSave(fileName) {
-		const pendingSaves = this.#pendingSaves.get(fileName);
-
-		return !!fileName && (!!pendingSaves?.size || this.#failedSaves.has(fileName));
+		return this.#saveQueue.hasUnfinishedSave(fileName);
 	}
 
 	download(data) {
 		const fileName = data.id || this.#editor.id;
-		this.markAllSaved(fileName);
+		this.#saveQueue.clearFailures(fileName);
 
 		const blob = ChunkProcessor.createBlob(data.chunks);
 		downloadAsFile(fileName, blob);
@@ -720,7 +753,7 @@ class Editor {
 	}
 
 	#clearView() {
-		// Let templates release per-render state before their DOM disappears.
+		// Let templates release per-render state before their DOM disappears
 		this.#cleanupRenderedChunks();
 		this.dom.innerHTML = '';
 		clean_ttip(this.dom);
@@ -828,7 +861,7 @@ class Editor {
 	}
 
 	hasChanges() {
-		// Detect changes by comparing visible chunks and stop at the first difference.
+		// Detect changes by comparing visible chunks and stop at the first difference
 		for (const i of find('[data-cid]', this.dom)) {
 			const chunk = this.chunks[i.dataset.cid];
 			const c_type = Editor.#getType(chunk.name);
@@ -1097,9 +1130,8 @@ class UndoManager {
 	}
 
 	async #applyHistoryEntry(data, visible, from, to) {
-		// Intentionally render an empty page first: renderPage([]) clears the current
-		// view, closes editor-owned tooltips, and lets templates run remove hooks
-		// against the currently rendered chunks before the history entry mutates them.
+		// Intentionally render an empty page first: renderPage([]) clears the current view, closes editor-owned tooltips,
+		// and lets templates run remove hooks against the currently rendered chunks before the history entry mutates them
 		this.#editor.renderPage([]);
 
 		// Create the corresponding reverse entry
@@ -1155,12 +1187,11 @@ class UndoManager {
 			return Promise.reject(err);
 		};
 
-		// The entry has already been popped from the source stack. If setup,
-		// rendering, or saving fails, put it back so the action can be retried
+		// The entry has already been popped from the source stack.
+		// If setup, rendering, or saving fails, put it back so the action can be retried
 		try {
-			// History entries store chunk indexes for one document only. If a stale
-			// entry survived a document switch, drop both stacks and stop instead of
-			// applying those indexes to the currently open document
+			// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
+			// drop both stacks and stop instead of applying those indexes to the currently open document
 			if (data.id !== this.#editor.id) {
 				from.clear();
 				to.clear();
@@ -1194,6 +1225,7 @@ const hist = {
 };
 let documents;
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
+	// When the content changes in the editor
 	// Store previous values in Undo history
 	hist.undo.add({
 		id: editor.id,
@@ -1228,8 +1260,8 @@ documents = new DocumentManager(editor, async (keys) => {
 
 function persistDocument(documentId, chunks) {
 	return documents.persist(documentId, chunks).then(data => {
-		// The user may open/create another document before the queued save finishes.
-		// Only the still-active document should get save-completion UI updates.
+		// The user may open/create another document before the queued save finishes
+		// Only the still-active document should get save-completion UI updates
 		if (editor.id === documentId) {
 			addMsg(_('Document Saved'), 'success');
 			editor.applySavedDocument();
@@ -1263,7 +1295,7 @@ const undoManager = new UndoManager(editor, hist, persistDocument);
 const templates = new TemplateManager();
 
 async function displayDocument(data) {
-	// Loading a document replaces any pending/failed save state the editor was warning about.
+	// Loading a document replaces any pending/failed save state the editor was warning about
 	documents.clearSaveState();
 
 	// Undo and redo only apply to edits made since this document was loaded
@@ -1313,7 +1345,7 @@ function showDocumentLoadError(err) {
 	const message = err?.message || String(err || '');
 	if (!message || message === 'No file chosen' || message === _('No file chosen')) return;
 
-	// Wrapped load errors keep their low-level cause here, while the UI shows the friendly top-level message.
+	// Wrapped load errors keep their low-level cause here, while the UI shows the friendly top-level message
 	console.error('Error during file open process:', err?.cause ?? err);
 	addMsg(message, 'error');
 }
@@ -1345,7 +1377,7 @@ evt('.ed-save', 'click', e => {
 	persistDocument(documentId, editor.chunks)
 		.then(data => {
 			// If another document was loaded while this async save was pending,
-			// avoid downloading a stale export after the user has moved on.
+			// avoid downloading a stale export after the user has moved on
 			if (editor.id !== documentId) return;
 			documents.download(data);
 		})
