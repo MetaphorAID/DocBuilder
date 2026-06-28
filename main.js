@@ -711,7 +711,8 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			// Clear the UI while the previous document model is still available
+			// Clear the old rendered chunks before #reset(data), while their previous
+			// document model is still available for template remove hooks
 			this.#clearView();
 
 			// Reset the editor
@@ -728,7 +729,7 @@ class Editor {
 			this.#restoreHidden = null;
 
 			// Render the current page of the document on the clean state
-			this.renderPage(cids, hids);
+			this.#renderPageContents(cids, hids);
 
 			// The editor UI is rendered and the previous view has been restored
 			dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
@@ -772,6 +773,10 @@ class Editor {
 		// Clear the current view
 		this.#clearView();
 
+		this.#renderPageContents(cids, hids);
+	}
+
+	#renderPageContents(cids, hids = []) {
 		if (hids.length) this.#renderHidden(hids);
 
 		if (!cids.length) return;
