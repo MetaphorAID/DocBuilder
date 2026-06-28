@@ -746,13 +746,15 @@ class Editor {
 	}
 
 	applySavedDocument() {
+		// onchange() remembers the currently visible chunks and any hidden template state
+		// touched by the edit. After persistence succeeds, rerender the saved values into
+		// the UI; hidden-only saves update template state without rebuilding the visible page.
 		const cids = this.#restore;
 		const hids = this.#restoreHidden ?? [];
 		this.#restore = null;
 		this.#restoreHidden = null;
 
 		if (cids) {
-			// Render cids and hids too
 			this.renderPage(cids, hids);
 		} else if (hids.length) {
 			this.#renderHidden(hids);
@@ -1360,9 +1362,12 @@ evt('.ed-save', 'click', e => {
 	const documentId = editor.id;
 	persistDocument(documentId, editor.chunks)
 		.then(data => {
-			// If another document was loaded while this async save was pending,
-			// avoid downloading a stale export after the user has moved on
-			if (editor.id !== documentId) return;
+			// Saving can finish after the user has moved on to another document.
+			// Avoid downloading the stale export, but make the cancelled export visible.
+			if (editor.id !== documentId) {
+				addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
+				return;
+			}
 			documents.download(data);
 		})
 		.catch(err => addMsg(err.message, 'error'));
