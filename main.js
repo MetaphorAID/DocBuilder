@@ -484,8 +484,8 @@ class DocumentManager {
 		this.#saveQueue.clear(fileName);
 	}
 
-	hasUnfinishedSave(fileName) {
-		return this.#saveQueue.hasUnfinishedSave(fileName);
+	hasUnfinishedSave() {
+		return this.#saveQueue.hasUnfinishedSave(this.#editor.id) || this.#editor.hasChanges();
 	}
 
 	download(data) {
@@ -1185,7 +1185,7 @@ class UndoManager {
 			return Promise.reject(err);
 		};
 
-		// The entry has already been popped from the source stack
+		// The entry has already been popped from the source stack (data)
 		// If setup, rendering, or saving fails, put it back so the action can be retried
 		try {
 			// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
@@ -1221,7 +1221,6 @@ const hist = {
 	redo: new History('ed_redo', undefined,
 		h => disable('.ed-redo', !!h.length))
 };
-let documents;
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// When the content changes in the editor
 	// Store previous values in Undo history
@@ -1246,7 +1245,7 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 		addMsg(err.message, 'error');
 	}
 });
-documents = new DocumentManager(editor, async (keys) => {
+const documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
 	try {
 		hist.recent.clear();
@@ -1255,6 +1254,8 @@ documents = new DocumentManager(editor, async (keys) => {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
+const undoManager = new UndoManager(editor, hist, persistDocument);
+const templates = new TemplateManager();
 
 function persistDocument(documentId, chunks) {
 	return documents.persist(documentId, chunks).then(data => {
@@ -1269,20 +1270,13 @@ function persistDocument(documentId, chunks) {
 	});
 }
 
-function hasUnsavedChanges() {
-	return documents.hasUnfinishedSave(editor.id) || editor.hasChanges();
-}
-
 function confirmDiscardChanges(callback) {
-	if (!hasUnsavedChanges()) {
+	if (!documents.hasUnfinishedSave()) {
 		callback();
 	} else {
 		addConfirm(_('There are unsaved changes! Are you sure?'), callback);
 	}
 }
-
-const undoManager = new UndoManager(editor, hist, persistDocument);
-const templates = new TemplateManager();
 
 async function displayDocument(data) {
 	// Loading a document replaces any pending/failed save state the editor was warning about
@@ -1412,7 +1406,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 });
 
 window.addEventListener('beforeunload', e => {
-	if (hasUnsavedChanges()) {
+	if (documents.hasUnfinishedSave()) {
 		e.preventDefault();
 		e.returnValue = _('There are unsaved changes! Are you sure?');
 		return e.returnValue;
