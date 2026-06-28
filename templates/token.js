@@ -92,7 +92,7 @@ class TOKEN {
 		return row;
 	}
 
-	static renderHeaderCells(headers) {
+	static #renderHeaderCells(headers) {
 		const cells = document.createDocumentFragment();
 
 		for (const header of headers) {
@@ -106,7 +106,7 @@ class TOKEN {
 
 	static createHeaderRow(headers) {
 		const row = document.createElement('tr');
-		row.appendChild(this.renderHeaderCells(headers));
+		row.appendChild(this.#renderHeaderCells(headers));
 		return row;
 	}
 
@@ -139,7 +139,7 @@ class TOKEN {
 		return s.outerHTML;
 	}
 
-	static formatLocaleText(txt, replacements) {
+	static #formatLocaleText(txt, replacements) {
 		let text = _(txt);
 		for (const [key, value] of Object.entries(replacements || {})) {
 			text = text.split(`%${key}%`).join(String(value));
@@ -152,7 +152,7 @@ class TOKEN {
 		a.href = '#';
 		a.className = cls;
 		if (tid) a.dataset.tid = tid;
-		const label = TOKEN.formatLocaleText(txt, replacements);
+		const label = TOKEN.#formatLocaleText(txt, replacements);
 		// tpl is optional wrapper markup around the link text, for example '<b>@</b>'
 		// Replace its @ placeholder with the localized label before assigning innerHTML
 		a.innerHTML = tpl ? tpl.replace('@', label) : label;

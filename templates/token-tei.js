@@ -148,7 +148,7 @@
 	});
 
 	function getUID(xml, prefix) {
-		// IDs are document-wide even though the editor stores the XML in chunks.
+		// IDs are document-wide even though the editor stores the XML in chunks
 		const ids = new Set();
 		const collectIds = documentXml => {
 			for (const element of documentXml.getElementsByTagName('*')) {
@@ -373,10 +373,10 @@
 
 	function resolveTokenContext(target, paragraphCtx, resolveTableCellParent = false) {
 
-		// In table view the click lands on a <td class="as-parent">, while the
-		// token class and data-tid live on its parent <tr>. Both nodes have the
-		// same .s ancestor, so this normalization is needed for token lookup,
-		// not for resolving the sentence.
+		// In table view the click lands on a <td class="as-parent">,
+		// while the token class and data-tid live on its parent <tr>
+		// Both nodes have the same .s ancestor, so this normalization is needed for token lookup,
+		// not for resolving the sentence
 		if (resolveTableCellParent && localStorage.tableview && target.classList.contains('as-parent'))
 			target = target.parentNode;
 

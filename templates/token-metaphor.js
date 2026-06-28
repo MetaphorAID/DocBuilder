@@ -214,7 +214,7 @@
 	});
 
 	function getUID(xml, prefix) {
-		// IDs are document-wide even though the editor stores the XML in chunks.
+		// IDs are document-wide even though the editor stores the XML in chunks
 		const ids = new Set();
 		const collectIds = documentXml => {
 			for (const element of documentXml.getElementsByTagName('*')) {
@@ -255,7 +255,7 @@
 	function getTokenClass(token) {
 		// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
 		// Use getText() instead of format(): these checks need the raw True/False and numeric values,
-		// while format() converts them to localized display labels.
+		// while format() converts them to localized display labels
 		let otherIndirect = getText(sel('otherIndirect', token));
 		if (['None', 'none'].includes(otherIndirect)) otherIndirect = '0';
 
@@ -379,10 +379,10 @@
 
 	function resolveTokenContext(target, paragraphCtx, resolveTableCellParent = false) {
 
-		// In table view the click lands on a <td class="as-parent">, while the
-		// token class and data-tid live on its parent <tr>. Both nodes have the
-		// same .s ancestor, so this normalization is needed for token lookup,
-		// not for resolving the sentence.
+		// In table view the click lands on a <td class="as-parent">,
+		// while the token class and data-tid live on its parent <tr>
+		// Both nodes have the same .s ancestor, so this normalization is needed for token lookup,
+		// not for resolving the sentence
 		if (resolveTableCellParent && localStorage.tableview && target.classList.contains('as-parent'))
 			target = target.parentNode;
 
@@ -500,7 +500,7 @@
 					td = `<input type="text" name="${field}" class="input" value="${fieldValue}">`
 					break;
 				case 'meanings':
-					// Meanings are edited in the dedicated Meanings tooltip.
+					// Meanings are edited in the dedicated Meanings tooltip
 					break;
 				case 'comment':
 					const commentValue = encXml(fieldValue);

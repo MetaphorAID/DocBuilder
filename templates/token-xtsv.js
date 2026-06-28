@@ -236,10 +236,10 @@
 
 	function resolveTokenContext(target, paragraphCtx, resolveTableCellParent = false) {
 
-		// In table view the click lands on a <td class="as-parent">, while the
-		// token class and data-tid live on its parent <tr>. Both nodes have the
-		// same .s ancestor, so this normalization is needed for token lookup,
-		// not for resolving the sentence.
+		// In table view the click lands on a <td class="as-parent">,
+		// while the token class and data-tid live on its parent <tr>
+		// Both nodes have the same .s ancestor, so this normalization is needed for token lookup,
+		// not for resolving the sentence
 		if (resolveTableCellParent && localStorage.tableview && target.classList.contains('as-parent'))
 			target = target.parentNode;
 
