@@ -651,8 +651,8 @@
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = selToText(tokenXml, 'form');
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', null, {word: form})}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', null, {word: form})}</div>`;
+			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form})}${
+			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})}</div>`;
 	}
 
 	function handleSaveInsertedToken(target, paragraphId, paragraphXml, sentenceXml, tokenXml) {

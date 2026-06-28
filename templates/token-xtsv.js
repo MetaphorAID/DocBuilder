@@ -434,8 +434,8 @@
 		const form = getToken(tokenXml);
 		// Both insert buttons use the same value; the button only selects the insertion side
 		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', null, {word: form})}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', null, {word: form})}</div>`;
+			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form})}${
+			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})}</div>`;
 	}
 
 	function handleSaveInsertedToken(target, paragraphId, paragraphXml, tokenId) {

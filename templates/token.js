@@ -147,15 +147,12 @@ class TOKEN {
 		return text;
 	}
 
-	static getLink(tid, cls, txt, tpl, replacements) {
+	static getLink(tid, cls, txt, replacements) {
 		const a = document.createElement('a');
 		a.href = '#';
 		a.className = cls;
 		if (tid) a.dataset.tid = tid;
-		const label = TOKEN.#formatLocaleText(txt, replacements);
-		// tpl is optional wrapper markup around the link text, for example '<b>@</b>'
-		// Replace its @ placeholder with the localized label before assigning innerHTML
-		a.innerHTML = tpl ? tpl.replace('@', label) : label;
+		a.innerHTML = TOKEN.#formatLocaleText(txt, replacements);
 
 		return a.outerHTML;
 	}
