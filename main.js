@@ -713,10 +713,10 @@ class Editor {
 		try {
 			// Clear the old rendered chunks before #resetEditorState(data), while their previous
 			// document model is still available for template remove hooks
-			this.#clearView();
+			this.#clearChunksView();
 
-			// Reset the editor
-			this.#resetEditorState(data);
+			// Reset the editor (id, chunks, hidden, eol)
+			this.#resetEditorState(data.id, data.chunks);
 
 			// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
 			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
@@ -739,9 +739,9 @@ class Editor {
 	}
 
 	applySavedDocument() {
-		// onchange() remembers the currently visible chunks and any hidden template state
-		// touched by the edit. After persistence succeeds, rerender the saved values into
-		// the UI; hidden-only saves update template state without rebuilding the visible page.
+		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
+		// After persistence succeeds, rerender the saved values into the UI;
+		// hidden-only saves update template state without rebuilding the visible page
 		const cids = this.#restore;
 		const hids = this.#restoreHidden ?? [];
 		this.#restore = null;
@@ -754,7 +754,7 @@ class Editor {
 		}
 	}
 
-	#clearView() {
+	#clearChunksView() {
 		// Clean up rendered chunks. Let templates release per-render state before their DOM disappears
 		each('[data-cid]', input => {
 			const chunk = this.chunks[input.dataset.cid];
@@ -771,7 +771,7 @@ class Editor {
 
 	renderPage(cids, hids = []) {
 		// Clear the current view
-		this.#clearView();
+		this.#clearChunksView();
 
 		this.#renderPageContents(cids, hids);
 	}
@@ -826,15 +826,15 @@ class Editor {
 		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
-	#resetEditorState(data) {
+	#resetEditorState(dataId, chunks) {
 		// Reset the editor to a clean state
-		this.id = data.id;
+		this.id = dataId;
 		this.eol = false;
 		this.hidden = [];
 		this.chunks = [];
 
 		// Separate chunks to visible and hidden
-		for (const chunk of data.chunks || []) {
+		for (const chunk of chunks || []) {
 			// Filler chunks preserve source text between editable sections in storage,
 			// but the editor only renders chunks handled by the selected template
 			if (!chunk.name) continue;
@@ -1367,8 +1367,8 @@ evt('.ed-save', 'click', e => {
 	const documentId = editor.id;
 	persistDocument(documentId, editor.chunks)
 		.then(data => {
-			// Saving can finish after the user has moved on to another document.
-			// Avoid downloading the stale export, but make the cancelled export visible.
+			// Saving can finish after the user has moved on to another document
+			// Avoid downloading the stale export, but make the cancelled export visible
 			if (editor.id !== documentId) {
 				addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
 				return;
