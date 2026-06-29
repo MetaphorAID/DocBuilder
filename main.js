@@ -335,10 +335,10 @@ class SaveQueue {
 	}
 
 	async enqueue(fileName, saveFn) {
-		// Keep the queue usable after a save failure. Each enqueued save receives its own
-		// captured chunk values; a later save may persist newer values that supersede the
-		// failed attempt, while the rejected caller still sees the error and failedSaves keeps
-		// the document in the unsaved-warning state until the user resolves it.
+		// Keep the queue usable after a save failure. Each enqueued save receives its own captured chunk values;
+		// a later save may persist newer values that supersede the failed attempt,
+		// while the rejected caller still sees the error and failedSaves keeps the document in the unsaved-warning state
+		// until the user resolves it
 		const readyToSave = this.#saveQueue.catch(() => {});
 		const saveToken = this.#markSavePending(fileName);
 		// Chain the callback to be executed when previous ones have finished
@@ -711,21 +711,21 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			// Clear the old rendered chunks before #reset(data), while their previous
+			// Clear the old rendered chunks before #resetEditorState(data), while their previous
 			// document model is still available for template remove hooks
 			this.#clearView();
 
 			// Reset the editor
-			this.#reset(data);
+			this.#resetEditorState(data);
 
-			// Templates can clear per-document UI before the new document is rendered
+			// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
 			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 
 			// Restore the view if there is any
-			const hids = Object.keys(this.hidden);
 			const cids = this.#restore ?? [0];
-
 			this.#restore = null;
+
+			const hids = Object.keys(this.hidden);
 			this.#restoreHidden = null;
 
 			// Render the current page of the document on the clean state
@@ -781,11 +781,11 @@ class Editor {
 
 		if (!cids.length) return;
 
-		// Render the paginator
-		this.dom.appendChild(this.#renderPaginator(cids[0]));
-
 		// Render the chunks
 		for (const cid of cids) this.dom.appendChild(this.renderChunk(cid));
+
+		// Render the paginator
+		this.dom.appendChild(this.#renderPaginator(cids[0]));
 
 		// Create +1 sentence button
 		const lastCid = cids[cids.length - 1];
@@ -826,7 +826,7 @@ class Editor {
 		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
-	#reset(data) {
+	#resetEditorState(data) {
 		// Reset the editor to a clean state
 		this.id = data.id;
 		this.eol = false;
@@ -882,7 +882,7 @@ class Editor {
 		const hids = Object.keys(hiddenData);
 		if (hids.length) this.#restoreHidden = hids;
 
-		// Collect changed visible chunks by change id (derived from chunk index)
+		// Collect changed visible chunks by change id (derived from chunk index) into a batch
 		const chunks = {};
 		const values = {};
 		for (const cid of cids) {
@@ -895,11 +895,11 @@ class Editor {
 			}
 		}
 
-		// Collect changed hidden chunks by change id (derived from chunk index)
+		// Collect changed hidden chunks by change id (derived from chunk index) into a batch
 		for (const hid in hiddenData)
 			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
 
-		// If there were changes commit them
+		// If there were changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) return this.#onchange_callback(chunks, values);
 	}
 
