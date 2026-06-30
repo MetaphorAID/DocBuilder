@@ -656,13 +656,13 @@ class Editor {
 		return Editor.NEW_DOCUMENT_TYPES[type];
 	}
 
-	#onchange_callback
+	#onchangeCallback
 	#restore
 	#restoreHidden
 
-	constructor(dom, onchange) {
+	constructor(dom, onchangeFun) {
 		this.dom = dom;
-		this.#onchange_callback = onchange;
+		this.#onchangeCallback = onchangeFun;
 		this.eol = '\n';
 		this.hidden = [];
 		this.chunks = [];
@@ -711,7 +711,7 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			// Clear the old rendered chunks before #resetEditorState(data), while their previous
+			// Clear the old rendered chunks using the templates before #resetEditorState(data), while their previous
 			// document model is still available for template remove hooks
 			this.#clearChunksView();
 
@@ -728,7 +728,7 @@ class Editor {
 			const hids = Object.keys(this.hidden);
 			this.#restoreHidden = null;
 
-			// Render the current page of the document on the clean state
+			// Render the current page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
 			this.#renderPageContents(cids, hids);
 
 			// The editor UI is rendered and the previous view has been restored
@@ -743,8 +743,9 @@ class Editor {
 		// After persistence succeeds, rerender the saved values into the UI;
 		// hidden-only saves update template state without rebuilding the visible page
 		const cids = this.#restore;
-		const hids = this.#restoreHidden ?? [];
 		this.#restore = null;
+
+		const hids = this.#restoreHidden ?? [];
 		this.#restoreHidden = null;
 
 		if (cids) {
@@ -773,10 +774,12 @@ class Editor {
 		// Clear the current view
 		this.#clearChunksView();
 
+		// Render the current page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
 		this.#renderPageContents(cids, hids);
 	}
 
 	#renderPageContents(cids, hids = []) {
+		// Render hidden chunks
 		if (hids.length) this.#renderHidden(hids);
 
 		if (!cids.length) return;
@@ -900,7 +903,7 @@ class Editor {
 			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
 
 		// If there were changes commit them at once (to get a single undo entry)
-		if (Object.keys(chunks).length > 0) return this.#onchange_callback(chunks, values);
+		if (Object.keys(chunks).length > 0) return this.#onchangeCallback(chunks, values);
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
@@ -1060,12 +1063,12 @@ class History {
 class UndoManager {
 	#editor;
 	#hist;
-	#save;
+	#saveFun;
 
-	constructor(editor, hist, save) {
+	constructor(editor, hist, saveFun) {
 		this.#editor = editor;
 		this.#hist = hist;
-		this.#save = save;
+		this.#saveFun = saveFun;
 	}
 
 	#createReverseHistoryEntry(data) {
@@ -1148,7 +1151,7 @@ class UndoManager {
 		const {tosave, hidden} = this.#applyChunks(data);
 
 		try {
-			await this.#save(data.id, tosave);
+			await this.#saveFun(data.id, tosave);
 		} catch (err) {
 			// Keep the editor consistent with storage if persistence fails (i.e. redo changes in the editor and render them)
 			this.#applyChunks(reverseEntry);
