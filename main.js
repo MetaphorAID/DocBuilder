@@ -740,8 +740,8 @@ class Editor {
 
 	applySavedDocument() {
 		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
-		// After persistence succeeds, rerender the saved values into the UI;
-		// hidden-only saves update template state without rebuilding the visible page
+		// After the onchange callback applies the new values, rerender them into the UI;
+		// hidden-only changes update template state without rebuilding the visible page
 		const cids = this.#restore;
 		this.#restore = null;
 
@@ -1158,24 +1158,29 @@ class UndoManager {
 
 		// Apply a single history entry to the editor
 		const {tosave, hidden} = this.#applyChunks(data);
+		let renderCids = data.cids;
+		let renderHidden = hidden;
 
 		try {
-			await this.#saveFun(data.id, tosave);
-		} catch (err) {
-			// Keep the editor consistent with storage if persistence fails (i.e. redo changes in the editor and render them)
-			this.#applyChunks(reverseEntry);
-			this.#editor.renderPage(visible);
-			throw err;
+			try {
+				await this.#saveFun(data.id, tosave);
+			} catch (err) {
+				// Keep the editor consistent with storage if persistence fails
+				const reverted = this.#applyChunks(reverseEntry);
+				renderCids = visible;
+				renderHidden = reverted.hidden;
+				throw err;
+			}
+
+			to.add({
+				id: data.id,
+				chunks: reverseEntry.chunks,
+				values: reverseEntry.values,
+				cids: visible
+			});
+		} finally {
+			this.#editor.renderPage(renderCids, renderHidden);
 		}
-
-		to.add({
-			id: data.id,
-			chunks: reverseEntry.chunks,
-			values: reverseEntry.values,
-			cids: visible
-		});
-
-		this.#editor.renderPage(data.cids, hidden);
 	}
 
 	#apply(reverse) {
@@ -1240,10 +1245,11 @@ const hist = {
 		h => disable('.ed-redo', !!h.length))
 };
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
+	const documentId = editor.id;
 	// When the content changes in the editor
 	// Store previous values in Undo history
 	hist.undo.add({
-		id: editor.id,
+		id: documentId,
 		chunks: chunks,
 		values: values,
 		cids: editor.getVisible()
@@ -1258,9 +1264,11 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	}
 	// Persist changes
 	try {
-		await persistDocument(editor.id, tosave);
+		await persistDocument(documentId, tosave);
 	} catch (err) {
 		addMsg(err.message, 'error');
+	} finally {
+		if (editor.id === documentId) editor.applySavedDocument();
 	}
 });
 const documents = new DocumentManager(editor, async (keys) => {
@@ -1281,7 +1289,6 @@ function persistDocument(documentId, chunks) {
 		// Only the still-active document should get save-completion UI updates
 		if (editor.id === documentId) {
 			addMsg(_('Document Saved'), 'success');
-			editor.applySavedDocument();
 		}
 
 		return data;
