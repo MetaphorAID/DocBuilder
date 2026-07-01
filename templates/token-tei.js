@@ -57,7 +57,7 @@
 
 				annotEl.dataset.aid = aid;
 				annotEl.className = 'annot';
-				annotEl.innerHTML = `${annot.getAttribute('entity')}: ${xmlToText(annot.innerHTML)}`;
+				annotEl.textContent = `${annot.getAttribute('entity')}: ${xmlToText(annot.innerHTML, true)}`;
 				sel('#footer').appendChild(annotEl);
 			}
 		}, x);
@@ -111,14 +111,19 @@
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
-				ep.innerHTML = xmlToText(chunk.value) || `<em>${_('EMPTY')}</em>`;
+				const content = xmlToText(chunk.value, true);
+				if (content) {
+					ep.textContent = content;
+				} else {
+					ep.appendChild(TOKEN.createTextElement('em', _('EMPTY')));
+				}
 			} else {
 				ep.classList.add('par', 'tei');
 				renderAnnots(_annots, x);
 			}
 
 			// Add heading
-			if (header) ep.innerHTML = `<h4>${header}</h4>${ep.innerHTML}`;
+			if (header) ep.prepend(TOKEN.createTextElement('h4', xmlToText(header, true) || header));
 			return ep;
 		},
 	}
@@ -130,7 +135,11 @@
 			const h = editor.hidden[hid];
 			if (h.name === '.t_header') {
 				const x = parseXml(h.value);
-				sel('#header').innerHTML = `<h2>${selToText(x, 'title')}</h2><h3>${selToText(x, 'author')}</h3>`;
+				const header = sel('#header');
+				header.replaceChildren(
+					TOKEN.createTextElement('h2', selToText(x, 'title', true)),
+					TOKEN.createTextElement('h3', selToText(x, 'author', true))
+				);
 				continue;
 			}
 			if (h.name !== '.t_annotations') continue;
@@ -143,7 +152,7 @@
 						+ (token.nextElementSibling ? 0 : 2);
 				}, annot);
 			}, _annots.xml);
-			sel('#footer').innerHTML = '';
+			sel('#footer').replaceChildren();
 		}
 	});
 
@@ -178,7 +187,7 @@
 	function createTdElement(content = '&nbsp;', className = 'as-parent') {
 		const el = document.createElement('td');
 		el.className = className;
-		el.innerHTML = content;
+		TOKEN.appendContent(el, content);
 		return el;
 	}
 
@@ -214,7 +223,7 @@
 
 		if (tableView) {
 			const ana = sel('ana[correct="True"]', token);
-			const wordVal = word.innerHTML || '&nbsp;';
+			const wordVal = word.textContent || '&nbsp;';
 			const lemma = ana ? sel('lemma', ana).textContent : '&nbsp;';
 			const detailed = ana ? sel('detailed', ana).textContent : '&nbsp;';
 			const simple = ana ? sel('simple', ana).textContent : '&nbsp;';
@@ -235,7 +244,7 @@
 				wordEl.appendChild(createTdElement());
 			}
 		} else {
-			wordEl.innerHTML = word.innerHTML || '&nbsp;';
+			TOKEN.replaceContent(wordEl, word.textContent || TOKEN.EMPTY_TEXT);
 		}
 		return wordEl;
 	}
@@ -442,26 +451,26 @@
 		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
-		let html = '';
+		const items = [];
 		if (tokenXml) { // Token
 			// Set the current tooltip active
 			target.classList.add('active');
 
 			// Setup elements
-			if (sel('morph', tokenXml)) html += TOKEN.getLink(tokenId, 'edit ana', 'Select Ana.');
+			if (sel('morph', tokenXml)) items.push(TOKEN.createLink(tokenId, 'edit ana', 'Select Ana.'));
 			// TODO: check if this case even possible
 			// Annotation features are available only when the document has an <annotations> section
 			if (_annots.xml) {
-				html += TOKEN.getSelect(tokenId, 'add annot', '', 'New Annotation...', ANNOT_TYPE);
+				items.push(TOKEN.createSelect(tokenId, 'add annot', '', 'New Annotation...', ANNOT_TYPE));
 				const addIfHas = (lst, label) => {
-					if (Object.keys(lst).length) html += TOKEN.getSelect(tokenId, label.key, '', label.text, lst);
+					if (Object.keys(lst).length) items.push(TOKEN.createSelect(tokenId, label.key, '', label.text, lst));
 				};
 
 				const buildList = (items, filterFn, prefix = '') => {
 					const lst = {};
 					for (const i in items || {}) {
 						if (!filterFn(items[i])) continue;
-						lst[prefix + i] = xmlToText(_annots.list[i].innerHTML);
+						lst[prefix + i] = xmlToText(_annots.list[i].innerHTML, true);
 					}
 					return lst;
 				};
@@ -482,65 +491,71 @@
 
 				addIfHas(merged, {key: 'addto annot', text: 'Add To Annotation...'});
 			}
-			html += TOKEN.getSelect(tokenId, 'edit sticky', tokenXml.getAttribute('join') || '?', 'Sticks To...',
-				TOKEN_STICKY);
+			items.push(TOKEN.createSelect(tokenId, 'edit sticky', tokenXml.getAttribute('join') || '?', 'Sticks To...',
+				TOKEN_STICKY));
 
 			// Setup possible token splittings
 			const tkn = selToText(tokenXml, 'form', true);
 			if (tkn.length > 1) {
 				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
-				html += TOKEN.getSelect(tokenId, 'split token', '', 'Split Token...', split);
+				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
-			html += TOKEN.getLink(tokenId, 'edit token', 'Fix Token'); // Change the value freely
-			html += TOKEN.getSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
-			html += TOKEN.getLink(tokenId, 'ins token', 'Insert Token');
-			html += TOKEN.getLink(tokenId, 'del token', 'Delete Token');
-			html += TOKEN.getSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE);
+			items.push(TOKEN.createLink(tokenId, 'edit token', 'Fix Token')); // Change the value freely
+			items.push(TOKEN.createSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'ins token', 'Insert Token'));
+			items.push(TOKEN.createLink(tokenId, 'del token', 'Delete Token'));
+			items.push(TOKEN.createSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE));
 		} else {
 			// Setup elements for the cogwheel (sentence-wide) menu
 			sentence.classList.add('active');
-			html += TOKEN.getSelect(tokenId, 'edit sent', (sentenceXml.getAttribute('sent') || '').split(';'),
-				'Select Sentinence...', SENT_TYPE, true);
-			html += TOKEN.getSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE);
-			html += TOKEN.getSelect(tokenId, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE);
+			items.push(TOKEN.createSelect(tokenId, 'edit sent', (sentenceXml.getAttribute('sent') || '').split(';'),
+				'Select Sentinence...', SENT_TYPE, true));
+			items.push(TOKEN.createSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createSelect(tokenId, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE));
 		}
 
 		// Show the tooltip a dropdown menu
 		const tt = ttip(target, e);
 		tt.classList.add('dropdown');
-		tt.innerHTML = html;
+		for (const item of items) tt.appendChild(item);
 	}
 
 	function handleEditAna(e, target, sentence, tokenId, tokenXml) {
-		const form = selToText(tokenXml, 'form');
-		const btn = (tid, anaId = '', selected = false) =>
-			`<a href="#" data-tid="${tid}" data-ana="${anaId}" class="btn selAna ${selected ? 'selected' : ''}">✓</a>`;
+		const form = selToText(tokenXml, 'form', true);
+		const btn = (tid, anaId = '', selected = false) => {
+			const button = TOKEN.createLink(tid, `btn selAna${selected ? ' selected' : ''}`, '\u2713');
+			button.dataset.ana = anaId;
+			return button;
+		};
 		const headers = TOKEN.MORPH_HEADERS;
 		const rows = [];
 
 		// Existing analyses
 		each('ana', (anaXml, anaId) => {
 			if (anaXml.getAttribute('modified') === 'True') return;
-			rows.push([selToText(anaXml, 'lemma'), selToText(anaXml, 'detailed'), selToText(anaXml, 'simple'),
+			rows.push([selToText(anaXml, 'lemma', true), selToText(anaXml, 'detailed', true),
+				selToText(anaXml, 'simple', true),
 				btn(tokenId, anaId, anaXml.getAttribute('correct') === 'True')]);
 		}, tokenXml);
 
 		// Modified / Editable ana
 		const ana = sel('ana[modified="True"]', tokenXml);
 		rows.push([
-			`<input class="input" type="text" value="${ana ? selToText(ana, 'lemma') : ''}">`,
-			`<input class="input" type="text" value="${ana ? selToText(ana, 'detailed') : ''}">`,
-			`<input class="input" type="text" value="${ana ? selToText(ana, 'simple') : ''}">`,
+			TOKEN.createInput({value: ana ? selToText(ana, 'lemma', true) : ''}),
+			TOKEN.createInput({value: ana ? selToText(ana, 'detailed', true) : ''}),
+			TOKEN.createInput({value: ana ? selToText(ana, 'simple', true) : ''}),
 			btn(tokenId, '', !!ana)
 		]);
 
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		tt.insertAdjacentHTML('beforeend', `<h3 class="tkn">${_(headers[0])}: <strong>${form}</strong></h3>`);
+		tt.appendChild(TOKEN.createTokenTitle(headers[0], form));
 		tt.appendChild(TOKEN.createTable(headers.slice(1), rows));
-		tt.insertAdjacentHTML('beforeend', `<div class="center">${TOKEN.getLink(tokenId, 'btn ana fetch', 'Re-Analyze')
-		}${TOKEN.getLink(tokenId, 'btn ana save', 'Save')}</div>`);
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn ana fetch', 'Re-Analyze'),
+			TOKEN.createLink(tokenId, 'btn ana save', 'Save')
+		));
 
 		evt('table input', 'focus', function () {
 			trg('.btn', 'click', this.closest('tr'));
@@ -617,11 +632,10 @@
 		savePar([paragraphId]);
 	}
 
-	function handleEditToken(e, sentence, tokenXml) {
-		const html = `<input type="text" class="input" value="${selToText(tokenXml, 'form')}"><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token save', 'Save')}</div>`;
-
-		ttip(sel('.cfg', sentence), e, true).innerHTML += html;
+	function handleEditToken(e, sentence, tokenId, tokenXml) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		tt.appendChild(TOKEN.createInput({value: selToText(tokenXml, 'form', true)}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn token save', 'Save')));
 	}
 
 	function handleSaveToken(target, paragraphId, tokenXml) {
@@ -649,10 +663,12 @@
 
 	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		const form = selToText(tokenXml, 'form');
-		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form})}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})}</div>`;
+		const form = selToText(tokenXml, 'form', true);
+		tt.appendChild(TOKEN.createInput());
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form}),
+			TOKEN.createLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})
+		));
 	}
 
 	function handleSaveInsertedToken(target, paragraphId, paragraphXml, sentenceXml, tokenXml) {
@@ -713,7 +729,7 @@
 
 		if (ctx.target.matches('.fetch.ana')) return updAna([ctx.tokenXml], ctx.paragraphId);
 
-		if (ctx.target.matches('.edit.token')) return handleEditToken(e, ctx.sentence, ctx.tokenXml);
+		if (ctx.target.matches('.edit.token')) return handleEditToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
 
 		if (ctx.target.matches('.save.token')) return handleSaveToken(ctx.target, ctx.paragraphId, ctx.tokenXml);
 

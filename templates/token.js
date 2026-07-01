@@ -10,6 +10,7 @@ class TOKEN {
 	}
 
 	static MORPH_HEADERS = Object.freeze(['Token', 'Lemma', 'Detailed', 'Simple', ''])
+	static EMPTY_TEXT = '\xa0'
 
 	static initalize() {
 		// Common
@@ -32,7 +33,7 @@ class TOKEN {
 		Locale['Delete Token'] = 'Token törlése';
 		Locale['Insert Token'] = 'Token beszúrása';
 		// Locale lookups are exact, so callers must keep `%word%` in the key
-		// and let TOKEN.getLink() substitute the runtime token text after `_()`
+		// and let TOKEN.createLink() substitute the runtime token text after `_()`
 		Locale['Insert Before <b>%word%</b>'] = 'Beszúrás <b>%word%</b> elé';
 		Locale['Insert After <b>%word%</b>'] = 'Beszúrás <b>%word%</b> után';
 
@@ -45,8 +46,8 @@ class TOKEN {
 		Locale['Save'] = 'Elment';
 
 		evt(editor.dom, 'document-before-render', () => {
-			sel('#header').innerHTML = '';
-			sel('#footer').innerHTML = '';
+			sel('#header').replaceChildren();
+			sel('#footer').replaceChildren();
 			sel('header .btn-view')?.remove();
 		});
 
@@ -56,7 +57,7 @@ class TOKEN {
 				const a = document.createElement('a');
 				a.href = '#';
 				a.className = 'btn btn-view';
-				a.innerHTML = _(localStorage.tableview ? 'Normal View' : 'Table View');
+				a.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
 
 				sel('header').appendChild(a);
 			}
@@ -69,7 +70,7 @@ class TOKEN {
 			// Change view
 			if (t.matches('.btn-view')) {
 				localStorage.tableview = localStorage.tableview ? '' : '1';
-				sel('header .btn-view').innerHTML = _(localStorage.tableview ? 'Normal View' : 'Table View');
+				sel('header .btn-view').textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
 				editor.renderPage(editor.getVisible());
 			}
 		});
@@ -120,7 +121,7 @@ class TOKEN {
 
 			for (const cellContent of rowCells) {
 				const cell = document.createElement('td');
-				cell.innerHTML = cellContent;
+				this.appendContent(cell, cellContent);
 				row.appendChild(cell);
 			}
 
@@ -131,30 +132,134 @@ class TOKEN {
 		return table;
 	}
 
-	static getSelect(tid, cls, val, emptyOpt, opts, multiple) {
-		const s = select(val, emptyOpt, opts, multiple);
-		s.classList.add(...cls.split(/\s+/));  // Add multiple classes simultaneously
-		if (tid) s.dataset.tid = tid;
-
-		return s.outerHTML;
-	}
-
-	static #formatLocaleText(txt, replacements) {
-		let text = _(txt);
-		for (const [key, value] of Object.entries(replacements || {})) {
-			text = text.split(`%${key}%`).join(String(value));
+	static appendContent(parent, content) {
+		if (content == null || content === '&nbsp;') {
+			parent.appendChild(document.createTextNode(TOKEN.EMPTY_TEXT));
+			return parent;
 		}
-		return text;
+
+		if (Array.isArray(content)) {
+			for (const item of content) TOKEN.appendContent(parent, item);
+			return parent;
+		}
+
+		if (content instanceof Node) {
+			parent.appendChild(content);
+			return parent;
+		}
+
+		parent.appendChild(document.createTextNode(String(content)));
+		return parent;
 	}
 
-	static getLink(tid, cls, txt, replacements) {
+	static replaceContent(parent, content) {
+		parent.textContent = '';
+		return this.appendContent(parent, content);
+	}
+
+	static createTextElement(tagName, text, className) {
+		const element = document.createElement(tagName);
+		if (className) element.className = className;
+		element.textContent = text;
+		return element;
+	}
+
+	static createMultilineContent(content) {
+		const fragment = document.createDocumentFragment();
+		if (content == null || content === '&nbsp;' || content === '') {
+			fragment.appendChild(document.createTextNode(TOKEN.EMPTY_TEXT));
+			return fragment;
+		}
+
+		String(content).split('\n').forEach((line, index) => {
+			if (index) fragment.appendChild(document.createElement('br'));
+			fragment.appendChild(document.createTextNode(line));
+		});
+		return fragment;
+	}
+
+	static createSelect(tid, cls, val, emptyOpt, opts, multiple) {
+		const s = select(val, emptyOpt, opts, multiple);
+		s.classList.add(...cls.split(/\s+/).filter(Boolean));  // Add multiple classes simultaneously
+		if (tid != null && tid !== '') s.dataset.tid = tid;
+
+		return s;
+	}
+
+	static createInput({type = 'text', name, value = '', placeholder, className = 'input', checked = false} = {}) {
+		const input = document.createElement('input');
+		input.type = type;
+		input.className = className;
+		if (name) input.name = name;
+		if (value != null) input.value = value;
+		if (placeholder != null) input.placeholder = _(placeholder);
+		if (type === 'checkbox') input.checked = checked;
+		return input;
+	}
+
+	static createTextarea({name, value = '', placeholder, className = 'input'} = {}) {
+		const textarea = document.createElement('textarea');
+		textarea.className = className;
+		if (name) textarea.name = name;
+		textarea.value = value || '';
+		if (placeholder != null) textarea.placeholder = _(placeholder);
+		return textarea;
+	}
+
+	static createCenter(...children) {
+		const center = document.createElement('div');
+		center.className = 'center';
+		for (const child of children) TOKEN.appendContent(center, child);
+		return center;
+	}
+
+	static createTokenTitle(label, value) {
+		const title = document.createElement('h3');
+		title.className = 'tkn';
+		title.appendChild(document.createTextNode(`${_(label)}: `));
+		const strong = document.createElement('strong');
+		strong.textContent = value;
+		title.appendChild(strong);
+		return title;
+	}
+
+	static #appendTextWithReplacements(parent, text, replacements) {
+		const parts = String(text).split(/(%[A-Za-z0-9_]+%)/g);
+		for (const part of parts) {
+			const match = part.match(/^%([A-Za-z0-9_]+)%$/);
+			parent.appendChild(document.createTextNode(match && replacements?.[match[1]] != null
+				? String(replacements[match[1]])
+				: part));
+		}
+	}
+
+	static #appendFormattedLocaleText(parent, txt, replacements) {
+		const stack = [parent];
+		for (const part of _(txt).split(/(<\/?b>)/i)) {
+			if (!part) continue;
+			const current = stack[stack.length - 1];
+			if (part.toLowerCase() === '<b>') {
+				const bold = document.createElement('b');
+				current.appendChild(bold);
+				stack.push(bold);
+				continue;
+			}
+			if (part.toLowerCase() === '</b>') {
+				if (stack.length > 1) stack.pop();
+				continue;
+			}
+			TOKEN.#appendTextWithReplacements(current, part, replacements);
+		}
+	}
+
+	static createLink(tid, cls, txt, replacements) {
 		const a = document.createElement('a');
 		a.href = '#';
 		a.className = cls;
-		if (tid) a.dataset.tid = tid;
-		a.innerHTML = TOKEN.#formatLocaleText(txt, replacements);
+		if (tid != null && tid !== '') a.dataset.tid = tid;
+		TOKEN.#appendFormattedLocaleText(a, txt, replacements);
 
-		return a.outerHTML;
+		return a;
 	}
 }
 

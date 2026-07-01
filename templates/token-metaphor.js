@@ -166,13 +166,18 @@
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
-				ep.innerHTML = xmlToText(chunk.value) || `<em>${_('EMPTY')}</em>`;
+				const content = xmlToText(chunk.value, true);
+				if (content) {
+					ep.textContent = content;
+				} else {
+					ep.appendChild(TOKEN.createTextElement('em', _('EMPTY')));
+				}
 			} else {
 				ep.classList.add('par', 'tei');
 			}
 
 			// Add heading
-			if (header) ep.innerHTML = `<h4>${header}</h4>${ep.innerHTML}`;
+			if (header) ep.prepend(TOKEN.createTextElement('h4', xmlToText(header, true) || header));
 			return ep;
 		},
 	}
@@ -183,34 +188,37 @@
 		const headerChunk = e.detail.map(hid => editor.hidden[hid]).find(h => h?.name === '.mm_header');
 		if (!headerChunk) return;
 		const x = parseXml(headerChunk.value);
-		const legend = `
-				<div class="legend">
-						<h4>${_('Token Legend')}</h4>
-						<div class="legend-item">
-								<span class="legend-color metaphor-token"></span>
-								${_('Metaphor')}
-						</div>
-						<div class="legend-item">
-								<span class="legend-color indirect-token"></span>
-								${_('Other Indirect Meaning')}
-						</div>
-						<div class="legend-item">
-								<span class="legend-color direct-token"></span>
-								${_('Direct meaning')}
-						</div>
-						<div class="legend-item">
-								<span class="legend-modified" aria-hidden="true"></span>
-								${_('Manually modified')}
-						</div>
-				</div>
-		`;
+		const legend = document.createElement('div');
+		legend.className = 'legend';
+		legend.appendChild(TOKEN.createTextElement('h4', _('Token Legend')));
 
-		sel('#header').innerHTML = `
-				<img alt="MetaphorAID logo" class="logo" src="./templates/assets/metaphor-aid.webp" style="height:3em"/>
-				<h2>${selToText(x, 'title')}</h2>
-				<h3>${selToText(x, 'author')}</h3>
-				${legend}
-		`;
+		const addLegendItem = (indicatorClass, label, hidden = false) => {
+			const item = document.createElement('div');
+			item.className = 'legend-item';
+			const indicator = document.createElement('span');
+			indicator.className = indicatorClass;
+			if (hidden) indicator.setAttribute('aria-hidden', 'true');
+			item.append(indicator, document.createTextNode(_(label)));
+			legend.appendChild(item);
+		};
+
+		addLegendItem('legend-color metaphor-token', 'Metaphor');
+		addLegendItem('legend-color indirect-token', 'Other Indirect Meaning');
+		addLegendItem('legend-color direct-token', 'Direct meaning');
+		addLegendItem('legend-modified', 'Manually modified', true);
+
+		const logo = document.createElement('img');
+		logo.alt = 'MetaphorAID logo';
+		logo.className = 'logo';
+		logo.src = './templates/assets/metaphor-aid.webp';
+		logo.style.height = '3em';
+
+		sel('#header').replaceChildren(
+			logo,
+			TOKEN.createTextElement('h2', selToText(x, 'title', true)),
+			TOKEN.createTextElement('h3', selToText(x, 'author', true)),
+			legend
+		);
 	});
 
 	function getUID(xml, prefix) {
@@ -244,7 +252,7 @@
 	function createTdElement(content = '&nbsp;', className = 'as-parent') {
 		const el = document.createElement('td');
 		el.className = className;
-		el.innerHTML = content;
+		TOKEN.appendContent(el, content);
 		return el;
 	}
 
@@ -276,10 +284,15 @@
 		if (!text) return '&nbsp;';
 
 		const words = text.split(/\s+/);
-		const preview = encXml(words.slice(0, REASONING_PREVIEW_WORDS).join(' '));
+		const preview = words.slice(0, REASONING_PREVIEW_WORDS).join(' ');
 		if (words.length <= REASONING_PREVIEW_WORDS) return preview;
 
-		return `${preview} <a href="#" class="show reason" data-tid="${tid}" title="${_('Reasoning')}">&hellip;</a>`;
+		const fragment = document.createDocumentFragment();
+		fragment.appendChild(document.createTextNode(`${preview} `));
+		const link = TOKEN.createLink(tid, 'show reason', '\u2026');
+		link.title = _('Reasoning');
+		fragment.appendChild(link);
+		return fragment;
 	}
 
 	function renderToken(token, tid, tableView) {
@@ -305,14 +318,14 @@
 				const fieldXml = getTokenField(token, field);
 				const content = field === 'reasoning'
 					? formatReasoningPreview(fieldXml, tid)
-					: format(field, fieldXml).replaceAll('\n', '<br>');
+					: TOKEN.createMultilineContent(format(field, fieldXml));
 				const fieldEl = createTdElement(content);
 				if (field === 'reasoning') fieldEl.classList.add('reasoning-preview');
 				if (isModified(fieldXml)) fieldEl.classList.add('modified');
 				wordEl.appendChild(fieldEl);
 			}
 		} else {
-			wordEl.innerHTML = word.innerHTML || '&nbsp;';
+			TOKEN.replaceContent(wordEl, word.textContent || TOKEN.EMPTY_TEXT);
 		}
 
 		// Add background coloring based on token class
@@ -448,40 +461,40 @@
 		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
-		let html = '';
+		const items = [];
 		if (tokenXml) {  // Token
 			// Set the current tooltip active
 			target.classList.add('active');
 
 			// Setup elements
-			html += TOKEN.getLink(tokenId, 'show info', 'Edit');
-			html += TOKEN.getLink(tokenId, 'show meaning', 'Meanings');
+			items.push(TOKEN.createLink(tokenId, 'show info', 'Edit'));
+			items.push(TOKEN.createLink(tokenId, 'show meaning', 'Meanings'));
 			// Show reasoning if there is any
-			if (selToText(tokenXml, 'reasoning', true)) html += TOKEN.getLink(tokenId, 'show reason', 'Reasoning');
+			if (selToText(tokenXml, 'reasoning', true)) items.push(TOKEN.createLink(tokenId, 'show reason', 'Reasoning'));
 			// Setup possible token splittings
 			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
 			if (tkn.length > 1) {
 				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
-				html += TOKEN.getSelect(tokenId, 'split token', '', 'Split Token...', split);
+				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
-			html += TOKEN.getSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
-			html += TOKEN.getLink(tokenId, 'ins token disabled', 'Insert Token');
-			html += TOKEN.getLink(tokenId, 'del token disabled', 'Delete Token');
-			html += TOKEN.getSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE);
+			items.push(TOKEN.createSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'ins token disabled', 'Insert Token'));
+			items.push(TOKEN.createLink(tokenId, 'del token disabled', 'Delete Token'));
+			items.push(TOKEN.createSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE));
 		} else {
 			// Setup elements for the cogwheel (sentence-wide) menu
 			sentence.classList.add('active');
-			html += TOKEN.getSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE);
-			html += TOKEN.getSelect(tokenId, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE);
-			html += TOKEN.getLink(tokenId, 'set content', 'Set Paragraph...');
+			items.push(TOKEN.createSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createSelect(tokenId, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'set content', 'Set Paragraph...'));
 		}
 
 		// Show the tooltip a dropdown menu
 		const tt = ttip(target, e);
 		tt.classList.add('dropdown');
-		tt.innerHTML = html;
+		for (const item of items) tt.appendChild(item);
 	}
 
 	function handleEditTokenInfo(e, sentence, tokenId, tokenXml) {
@@ -491,24 +504,23 @@
 		// Setup elements for fields
 		for (const field of TOKEN_FIELDS) {
 			const fieldValue = getTokenFieldText(tokenXml, field, true);
-			let td = '';
+			let td = null;
 			switch (field) {
 				case TOKEN_SURFACE_FIELD:
 				case 'lemma':
 				case 'pos':
 				case 'nerTag':
-					td = `<input type="text" name="${field}" class="input" value="${fieldValue}">`
+					td = TOKEN.createInput({type: 'text', name: field, value: fieldValue});
 					break;
 				case 'meanings':
 					// Meanings are edited in the dedicated Meanings tooltip
 					break;
 				case 'comment':
-					const commentValue = encXml(fieldValue);
-					td = `<textarea name="${field}" class="input">${commentValue}</textarea>`;
+					td = TOKEN.createTextarea({name: field, value: fieldValue});
 					break;
 				case 'metaphor':
 					const checked = fieldValue === 'True';
-					td = `<input type="checkbox" name="${field}" class="input" value="True" ${checked ? ' checked' : ''}>`;
+					td = TOKEN.createInput({type: 'checkbox', name: field, value: 'True', checked});
 					break;
 				case 'otherIndirect':
 					// Setup select element
@@ -517,10 +529,10 @@
 					const selectEl = select(oIValue, '', INDIRECT);
 					selectEl.classList.add('input');
 					selectEl.dataset.name = field;
-					td = selectEl.outerHTML;
+					td = selectEl;
 					break;
 				default:
-					td = format(field, sel(field, tokenXml));
+					td = TOKEN.createMultilineContent(format(field, sel(field, tokenXml)));
 			}
 			// Collect header value cell pairs
 			if (td) {
@@ -529,8 +541,7 @@
 			}
 		}
 		tt.appendChild(TOKEN.createTable(headers, [cells]));
-		tt.insertAdjacentHTML('beforeend',
-			`<div class="center">${TOKEN.getLink(tokenId, 'btn info save', 'Save')}</div>`);
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn info save', 'Save')));
 	}
 
 	function handleEditMeaning(e, sentence, tokenId, tokenXml) {
@@ -545,22 +556,20 @@
 			switch (field) {
 				case MEANING_FIELD.PRIMARY:
 				case MEANING_FIELD.OTHER:
-					cells.push(`<textarea name="${field}" class="input">${encXml(value)}</textarea>`);
+					cells.push(TOKEN.createTextarea({name: field, value}));
 					break;
 				default:  // CONTEXTUAL_INDEX
-					cells.push(`<input type="text" name="${field}" class="input" value="${value}">`);
+					cells.push(TOKEN.createInput({type: 'text', name: field, value}));
 			}
 		}
 		tt.appendChild(TOKEN.createTable(headers, [cells]));
-		tt.insertAdjacentHTML('beforeend',
-			`<div class="center">${TOKEN.getLink(tokenId, 'btn meaning save', 'Save')}</div>`);
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn meaning save', 'Save')));
 	}
 
 	function handleEditReason(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += `<textarea name="reasoning" class="input">${
-			encXml(selToText(tokenXml, 'reasoning', true))}</textarea>
-      <div class="center">${TOKEN.getLink(tokenId, 'btn reason save', 'Save')}</div>`;
+		tt.appendChild(TOKEN.createTextarea({name: 'reasoning', value: selToText(tokenXml, 'reasoning', true)}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn reason save', 'Save')));
 	}
 
 	function handleSaveTokenFields(e, target, paragraphId, tokenXml) {
@@ -593,10 +602,12 @@
 
 	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
-		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form})}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})}</div>`;
+		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
+		tt.appendChild(TOKEN.createInput());
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form}),
+			TOKEN.createLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})
+		));
 	}
 
 	function handleSaveInsertedToken(target, paragraphId, paragraphXml, sentenceXml, tokenXml) {
@@ -633,11 +644,20 @@
 	function handleSetContent(e, sentence, tokenId) {
 		// Display the set content dialog
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		tt.innerHTML += `<input type="url" name="api" class="input" placeholder="API URL"
- 			value="${localStorage['metaphor_api'] || ''}"><input type="password" name="token" class="input"
- 			placeholder="API Token" value="${localStorage['metaphor_token'] || ''}">
-			<textarea name="content" class="input" placeholder="${_('Content')}"></textarea>
-			<div class="center">${TOKEN.getLink(tokenId, 'btn save content', 'Save')}</div>`;
+		tt.appendChild(TOKEN.createInput({
+			type: 'url',
+			name: 'api',
+			placeholder: 'API URL',
+			value: localStorage['metaphor_api'] || ''
+		}));
+		tt.appendChild(TOKEN.createInput({
+			type: 'password',
+			name: 'token',
+			placeholder: 'API Token',
+			value: localStorage['metaphor_token'] || ''
+		}));
+		tt.appendChild(TOKEN.createTextarea({name: 'content', placeholder: 'Content'}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn save content', 'Save')));
 	}
 
 	function handleSaveContent(e, target, paragraphId) {
@@ -955,16 +975,34 @@
 			const defaultFilename = 'uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_')
 				.replace(/Z$/, '') + '.xml';
 
-			tt.innerHTML = `<h3 style="text-align: center;">${_('New Text for Metaphor Detection')}</h3>
-			<input type="text" name="filename" class="input" placeholder="${_('File Name')}" value="${defaultFilename}">
-			<input type="url" name="api" class="input" placeholder="API URL" value="${localStorage['metaphor_api'] || ''}">
-			<input type="password" name="token" class="input" placeholder="API Token"
-			 value="${localStorage['metaphor_token'] || ''}">
-			<textarea name="content" class="input" placeholder="${_('Content')}"></textarea>
-			<div class="center">
-				<a href="#" class="btn metaphor-new-submit">${_('Submit')}</a>
-				<a href="#" class="btn metaphor-new-cancel">${_('Cancel')}</a>
-			</div>`;
+			const title = TOKEN.createTextElement('h3', _('New Text for Metaphor Detection'));
+			title.style.textAlign = 'center';
+			tt.append(
+				title,
+				TOKEN.createInput({
+					type: 'text',
+					name: 'filename',
+					placeholder: 'File Name',
+					value: defaultFilename
+				}),
+				TOKEN.createInput({
+					type: 'url',
+					name: 'api',
+					placeholder: 'API URL',
+					value: localStorage['metaphor_api'] || ''
+				}),
+				TOKEN.createInput({
+					type: 'password',
+					name: 'token',
+					placeholder: 'API Token',
+					value: localStorage['metaphor_token'] || ''
+				}),
+				TOKEN.createTextarea({name: 'content', placeholder: 'Content'}),
+				TOKEN.createCenter(
+					TOKEN.createLink(null, 'btn metaphor-new-submit', 'Submit'),
+					TOKEN.createLink(null, 'btn metaphor-new-cancel', 'Cancel')
+				)
+			);
 
 			// Set minimum height for the modal to fit content
 			tt.style.minHeight = '400px';

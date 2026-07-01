@@ -36,7 +36,11 @@
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
-				ep.innerHTML = chunk.value || `<em>${_('EMPTY')}</em>`;
+				if (chunk.value) {
+					ep.textContent = chunk.value;
+				} else {
+					ep.appendChild(TOKEN.createTextElement('em', _('EMPTY')));
+				}
 			} else {
 				ep.classList.add('par', 'xtsv');
 			}
@@ -102,7 +106,7 @@
 	function createTdElement(content = '&nbsp;', className = 'as-parent') {
 		const el = document.createElement('td');
 		el.className = className;
-		el.innerHTML = content;
+		TOKEN.appendContent(el, content);
 		return el;
 	}
 
@@ -140,7 +144,7 @@
 				wordEl.appendChild(createTdElement());
 			}
 		} else {
-			wordEl.innerHTML = getToken(token) || '&nbsp;';
+			TOKEN.replaceContent(wordEl, getToken(token) || TOKEN.EMPTY_TEXT);
 		}
 		return wordEl;
 	}
@@ -305,49 +309,53 @@
 		// Clear active
 		each('.par .active', i => i.classList.remove('active'));
 
-		let html = '';
+		const items = [];
 		if (tokenXml) { // Token
 			// Set the current tooltip active
 			target.classList.add('active');
 
 			// Setup elements
-			html += TOKEN.getLink(tokenId, 'edit ana', 'Select Ana.');
+			items.push(TOKEN.createLink(tokenId, 'edit ana', 'Select Ana.'));
 
 			// Setup possible token splittings
 			const tkn = getToken(tokenXml);
 			if (tkn.length > 1) {
 				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
-				html += TOKEN.getSelect(tokenId, 'split token', '', 'Split Token...', split);
+				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
-			html += TOKEN.getLink(tokenId, 'edit token', 'Fix Token'); // Change the value freely
-			html += TOKEN.getSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
-			html += TOKEN.getLink(tokenId, 'ins token', 'Insert Token');
-			html += TOKEN.getLink(tokenId, 'del token', 'Delete Token');
-			html += TOKEN.getSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE);
+			items.push(TOKEN.createLink(tokenId, 'edit token', 'Fix Token')); // Change the value freely
+			items.push(TOKEN.createSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'ins token', 'Insert Token'));
+			items.push(TOKEN.createLink(tokenId, 'del token', 'Delete Token'));
+			items.push(TOKEN.createSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE));
 		} else {
 			// Setup elements for the cogwheel (sentence-wide) menu
 			sentence.classList.add('active');
-			html += TOKEN.getSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE);
+			items.push(TOKEN.createSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE));
 		}
 
 		// Show the tooltip a dropdown menu
 		const tt = ttip(target, e);
 		tt.classList.add('dropdown');
-		tt.innerHTML = html;
+		for (const item of items) tt.appendChild(item);
 	}
 
 	function handleEditAna(e, sentence, tokenId, tokenXml) {
-		const btn = (tid, anaId = '', selected = false) =>
-			`<a href="#" data-tid="${tid}" data-ana="${anaId}" class="btn selAna ${selected ? 'selected' : ''}">✓</a>`;
+		const btn = (tid, anaId = '', selected = false) => {
+			const button = TOKEN.createLink(tid, `btn selAna${selected ? ' selected' : ''}`, '\u2713');
+			button.dataset.ana = anaId;
+			return button;
+		};
 		const headers = TOKEN.MORPH_HEADERS;
 		const rows = [];
 
 		// Existing analyses
 		each('ana', (anaXml, anaId) => {
 			if (anaXml.getAttribute('modified') === 'True') return;
-			rows.push([selToText(anaXml, 'lemma'), selToText(anaXml, 'detailed'), selToText(anaXml, 'simple'),
+			rows.push([selToText(anaXml, 'lemma', true), selToText(anaXml, 'detailed', true),
+				selToText(anaXml, 'simple', true),
 				btn(tokenId, anaId, anaXml.getAttribute('correct') === 'True')]);
 		}, tokenXml);
 
@@ -355,18 +363,20 @@
 		const anas = getAnas(tokenXml);
 		const ana = selectedAna(anas, tokenXml) || {};
 		rows.push([
-			`<input class="input" type="text" value="${ana.custom ? ana.lemma : ''}">`,
+			TOKEN.createInput({value: ana.custom ? ana.lemma : ''}),
 			'&nbsp;',
-			`<input class="input" type="text" value="${ana.custom ? ana.tag : ''}">`,
-			`<input class="input" type="text" value="${ana.custom ? 'selected' : ''}">`,
+			TOKEN.createInput({value: ana.custom ? ana.tag : ''}),
+			TOKEN.createInput({value: ana.custom ? 'selected' : ''}),
 			btn(tokenId, '', !!ana)
 		]);
 
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		tt.insertAdjacentHTML('beforeend', `<h3 class="tkn">${_(headers[0])}: <strong>${getToken(tokenXml)}</strong></h3>`);
+		tt.appendChild(TOKEN.createTokenTitle(headers[0], getToken(tokenXml)));
 		tt.appendChild(TOKEN.createTable(headers.slice(1), rows));
-		tt.insertAdjacentHTML('beforeend', `<div class="center">${TOKEN.getLink(tokenId, 'btn ana fetch', 'Re-Analyze')
-		}${TOKEN.getLink(tokenId, 'btn ana save', 'Save')}</div>`);
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn ana fetch', 'Re-Analyze'),
+			TOKEN.createLink(tokenId, 'btn ana save', 'Save')
+		));
 
 		evt('table input', 'focus', function () {
 			trg('.btn', 'click', this.closest('tr'));
@@ -408,10 +418,9 @@
 	}
 
 	function handleEditToken(e, sentence, tokenId, tokenXml) {
-		const html = `<input type="text" class="input" value="${getToken(tokenXml)}"><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token save', 'Save')}</div>`;
-
-		ttip(sel('.cfg', sentence), e, true).innerHTML += html;
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		tt.appendChild(TOKEN.createInput({value: getToken(tokenXml)}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn token save', 'Save')));
 	}
 
 	function handleSaveToken(target, paragraphId, tokenXml) {
@@ -433,9 +442,11 @@
 		const tt = ttip(sel('.cfg', sentence), e, true);
 		const form = getToken(tokenXml);
 		// Both insert buttons use the same value; the button only selects the insertion side
-		tt.innerHTML += `<input type="text" class="input" value=""><div class="center">${
-			TOKEN.getLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form})}${
-			TOKEN.getLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})}</div>`;
+		tt.appendChild(TOKEN.createInput());
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form}),
+			TOKEN.createLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})
+		));
 	}
 
 	function handleSaveInsertedToken(target, paragraphId, paragraphXml, tokenId) {

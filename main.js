@@ -677,7 +677,7 @@ class Editor {
 		dom.classList.add('editor');
 
 		// Initially disable save button since no file is open
-		disable('.ed-save', false);
+		disable('.ed-export', false);
 
 		// Rerender chunk when changed
 		evt(dom, 'change', e => {
@@ -1311,7 +1311,7 @@ async function displayDocument(data) {
 	hist.recent.moveToTop(editor.id);
 
 	// Enable export button
-	disable('.ed-save', !!editor.id);
+	disable('.ed-export', !!editor.id);
 
 	addMsg(_('Document Loaded'), 'success');
 }
@@ -1357,7 +1357,7 @@ function showDocumentLoadError(err) {
 	addMsg(message, 'error');
 }
 
-evt('.ed-open', 'click', e => {
+evt('.ed-import', 'click', e => {
 	templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
 	e.stopPropagation();
 });
@@ -1378,7 +1378,7 @@ evt('.ed-recent', 'click', e => {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-evt('.ed-save', 'click', e => {
+evt('.ed-export', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	const documentId = editor.id;
 	persistDocument(documentId, editor.chunks)
