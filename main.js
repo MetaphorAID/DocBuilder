@@ -715,8 +715,6 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			const cids = this.#restore ?? [0];
-
 			// Clear the old document view before #resetEditorState(data), while the previous
 			// document model is still available for template cleanup hooks
 			this.#clearDocumentView();
@@ -724,14 +722,13 @@ class Editor {
 			// Reset the editor (id, chunks, hidden, eol, pending restores)
 			this.#resetEditorState(data.id, data.chunks);
 
-			// Full document loads must initialize all template-owned hidden UI (headers, annotations, legends)
-			// from the newly reset model; #restoreHidden only tracks hidden chunks touched by a save.
+			// Full document loads must initialize all template-owned hidden UI (headers, annotations, legends).
 			const hids = Object.keys(this.hidden);
 
-			// Render the current page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
-			this.#renderPageContents(cids, hids);
+			// Render the first page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
+			this.#renderPageContents([0], hids);
 
-			// The editor UI is rendered and the previous view has been restored
+			// The editor UI is rendered and ready for template-owned setup
 			dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
 		} catch (err) {
 			throw new Error(loadErrorMessage, {cause: err});
@@ -740,19 +737,18 @@ class Editor {
 
 	applySavedDocument() {
 		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
-		// After the onchange callback applies the new values, rerender them into the UI;
-		// hidden-only changes update template state without rebuilding the visible page
+		// After the onchange callback applies the new values, rerender the saved view into the UI.
+		// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates.
 		const cids = this.#restore;
-		this.#restore = null;
-
 		const hids = this.#restoreHidden ?? [];
-		this.#restoreHidden = null;
+		this.#clearRestoreState();
 
-		if (cids) {
-			this.renderPage(cids, hids);
-		} else if (hids.length) {
-			this.#renderHidden(hids);
-		}
+		if (cids) this.renderPage(cids, hids);
+	}
+
+	#clearRestoreState() {
+		this.#restore = null;
+		this.#restoreHidden = null;
 	}
 
 	#clearDocumentView() {
@@ -842,8 +838,7 @@ class Editor {
 		this.eol = false;
 		this.hidden = [];
 		this.chunks = [];
-		this.#restore = null;
-		this.#restoreHidden = null;
+		this.#clearRestoreState();
 
 		// Separate chunks to visible and hidden
 		for (const chunk of chunks || []) {
@@ -892,7 +887,7 @@ class Editor {
 
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
-		if (hids.length) this.#restoreHidden = hids;
+		if (hids.length) this.#restoreHidden = [...new Set([...(this.#restoreHidden ?? []), ...hids])];
 
 		// Collect changed visible chunks by change id (derived from chunk index) into a batch
 		const chunks = {};
@@ -913,6 +908,8 @@ class Editor {
 
 		// If there were changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) return this.#onchangeCallback(chunks, values);
+
+		this.#clearRestoreState();
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
