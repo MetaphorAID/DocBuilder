@@ -725,10 +725,12 @@ class Editor {
 			// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
 			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 
-			// Restore the view if there is any
+			// Restore the visible chunk selection if there is any, otherwise show the first chunk
 			const cids = this.#restore ?? [0];
 			this.#restore = null;
 
+			// Full document loads must initialize all template-owned hidden UI (headers, annotations, legends)
+			// from the newly reset model; #restoreHidden only tracks hidden chunks touched by a save.
 			const hids = Object.keys(this.hidden);
 			this.#restoreHidden = null;
 
