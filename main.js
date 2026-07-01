@@ -715,24 +715,18 @@ class Editor {
 		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
 
 		try {
-			// Clear the old rendered chunks using the templates before #resetEditorState(data), while their previous
-			// document model is still available for template remove hooks
-			this.#clearChunksView();
-
-			// Reset the editor (id, chunks, hidden, eol)
-			this.#resetEditorState(data.id, data.chunks);
-
-			// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
-			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
-
-			// Restore the visible chunk selection if there is any, otherwise show the first chunk
 			const cids = this.#restore ?? [0];
-			this.#restore = null;
+
+			// Clear the old document view before #resetEditorState(data), while the previous
+			// document model is still available for template cleanup hooks
+			this.#clearDocumentView();
+
+			// Reset the editor (id, chunks, hidden, eol, pending restores)
+			this.#resetEditorState(data.id, data.chunks);
 
 			// Full document loads must initialize all template-owned hidden UI (headers, annotations, legends)
 			// from the newly reset model; #restoreHidden only tracks hidden chunks touched by a save.
 			const hids = Object.keys(this.hidden);
-			this.#restoreHidden = null;
 
 			// Render the current page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
 			this.#renderPageContents(cids, hids);
@@ -759,6 +753,13 @@ class Editor {
 		} else if (hids.length) {
 			this.#renderHidden(hids);
 		}
+	}
+
+	#clearDocumentView() {
+		this.#clearChunksView();
+
+		// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
+		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 	}
 
 	#clearChunksView() {
@@ -841,6 +842,8 @@ class Editor {
 		this.eol = false;
 		this.hidden = [];
 		this.chunks = [];
+		this.#restore = null;
+		this.#restoreHidden = null;
 
 		// Separate chunks to visible and hidden
 		for (const chunk of chunks || []) {
