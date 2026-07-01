@@ -335,10 +335,14 @@ class SaveQueue {
 	}
 
 	async enqueue(fileName, saveFn) {
-		// Keep the queue usable after a save failure. Each enqueued save receives its own captured chunk values;
-		// a later save may persist newer values that supersede the failed attempt,
-		// while the rejected caller still sees the error and failedSaves keeps the document in the unsaved-warning state
-		// until the user resolves it
+		// Do not let one rejected promise poison the queue tail: otherwise every later save
+		// would fail without trying. A single IndexedDB transaction is still all-or-nothing;
+		// this is about separate queued save attempts. Example: storage has A0/B0 and save #1
+		// captures A1 but fails. If save #2 later captures A2 for the same chunk and succeeds,
+		// storage ends at A2/B0 because each save carries the full captured value for its chunks.
+		// If save #2 captures only B1, storage becomes A0/B1; A1 is still not persisted, the
+		// original caller saw the rejection, and failedSaves keeps the document in the
+		// unsaved-warning state.
 		const readyToSave = this.#saveQueue.catch(() => {});
 		const saveToken = this.#markSavePending(fileName);
 		// Chain the callback to be executed when previous ones have finished
@@ -462,7 +466,7 @@ class DocumentManager {
 		// The editor may mutate its chunk objects while earlier saves are still running
 		const changes = chunks.map(chunk => ({...chunk}));
 
-		// Take care of the enqueuing of the save operation and handle the failiures with the single save queue
+		// Take care of the enqueuing of the save operation and handle the failures with the single save queue
 		return this.#saveQueue.enqueue(fileName, async () => {
 			try {
 				return await this.#saveToIDB(fileName, changes);
