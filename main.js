@@ -667,7 +667,8 @@ class Editor {
 	constructor(dom, onchangeFun) {
 		this.dom = dom;
 		this.#onchangeCallback = onchangeFun;
-		this.eol = '\n';
+		this.id = null;
+		this.eol = null;
 		this.hidden = [];
 		this.chunks = [];
 		this.#restore = null;
@@ -708,54 +709,17 @@ class Editor {
 
 	}
 
-	load(data) {
-		const loadErrorMessage =
-			_('Could not open the document. The file content is invalid or does not match the selected template.');
-
-		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
-
-		try {
-			// Clear the old document view before #resetEditorState(data), while the previous
-			// document model is still available for template cleanup hooks
-			this.#clearDocumentView();
-
-			// Reset the editor (id, chunks, hidden, eol, pending restores)
-			this.#resetEditorState(data.id, data.chunks);
-
-			// Full document loads must initialize all template-owned hidden UI (headers, annotations, legends).
-			const hids = Object.keys(this.hidden);
-
-			// Render the first page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
-			this.#renderPageContents([0], hids);
-
-			// The editor UI is rendered and ready for template-owned setup
-			dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
-		} catch (err) {
-			throw new Error(loadErrorMessage, {cause: err});
-		}
-	}
-
 	applySavedDocument() {
 		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
-		// After the onchange callback applies the new values, rerender the saved view into the UI.
-		// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates.
+		// After the onchange callback applies the new values, rerender the saved view into the UI
+		// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
 		const cids = this.#restore;
+		this.#restore = null;
+
 		const hids = this.#restoreHidden ?? [];
-		this.#clearRestoreState();
+		this.#restoreHidden = null;
 
 		if (cids) this.renderPage(cids, hids);
-	}
-
-	#clearRestoreState() {
-		this.#restore = null;
-		this.#restoreHidden = null;
-	}
-
-	#clearDocumentView() {
-		this.#clearChunksView();
-
-		// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
-		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 	}
 
 	#clearChunksView() {
@@ -773,6 +737,36 @@ class Editor {
 		clean_ttip(this.dom);
 	}
 
+	load(data) {
+		const loadErrorMessage =
+			_('Could not open the document. The file content is invalid or does not match the selected template.');
+
+		if (!data?.id) throw new Error(loadErrorMessage, {cause: new Error(_('Missing document id'))});
+
+		try {
+			// Clear the old document view before #resetEditorState(data.id, data.chunks), while the previous
+			// document model is still available for template cleanup hooks
+			this.#clearChunksView();
+
+			// Templates can clear per-document UI (e.g. header and footer) before the new document is rendered
+			dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
+
+			// Reset the editor (id, chunks, hidden, eol, pending restores)
+			this.#resetEditorState(data.id, data.chunks);
+
+			// Initialize all template-owned hidden UI (headers, annotations, legends)
+			const hids = Object.keys(this.hidden);
+
+			// Render the first page of the document on the clean state (hidden, chunks, paginator, +1 sentence)
+			this.#renderPageContents([0], hids);
+
+			// The editor UI is rendered and ready for template-owned setup
+			dispatchAppEvent(this.dom, new Event('document-ready', {bubbles: true}));
+		} catch (err) {
+			throw new Error(loadErrorMessage, {cause: err});
+		}
+	}
+
 	renderPage(cids, hids = []) {
 		// Clear the current view
 		this.#clearChunksView();
@@ -782,8 +776,8 @@ class Editor {
 	}
 
 	#renderPageContents(cids, hids = []) {
-		// Render hidden chunks
-		if (hids.length) this.#renderHidden(hids);
+		// Tell the templates to render the hidden chunks in hids
+		if (hids.length) dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
 
 		if (!cids.length) return;
 
@@ -822,11 +816,6 @@ class Editor {
 		return e;
 	}
 
-	#renderHidden(hids) {
-		// Tell the templates to render the hidden chunks in hids
-		dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
-	}
-
 	getVisible() {
 		// Get visible chunk indices
 		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
@@ -835,10 +824,11 @@ class Editor {
 	#resetEditorState(dataId, chunks) {
 		// Reset the editor to a clean state
 		this.id = dataId;
-		this.eol = false;
+		this.eol = null;
 		this.hidden = [];
 		this.chunks = [];
-		this.#clearRestoreState();
+		this.#restore = null;
+		this.#restoreHidden = null;
 
 		// Separate chunks to visible and hidden
 		for (const chunk of chunks || []) {
@@ -909,7 +899,8 @@ class Editor {
 		// If there were changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) return this.#onchangeCallback(chunks, values);
 
-		this.#clearRestoreState();
+		this.#restore = null;
+		this.#restoreHidden = null;
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
@@ -1178,6 +1169,7 @@ class UndoManager {
 				cids: visible
 			});
 		} finally {
+			// Render both in normal and error cases, but with different parameters
 			this.#editor.renderPage(renderCids, renderHidden);
 		}
 	}
@@ -1244,8 +1236,8 @@ const hist = {
 		h => disable('.ed-redo', !!h.length))
 };
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
-	const documentId = editor.id;
 	// When the content changes in the editor
+	const documentId = editor.id;
 	// Store previous values in Undo history
 	hist.undo.add({
 		id: documentId,
@@ -1257,18 +1249,16 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	hist.redo.clear();
 	// Apply changes to chunk objects
 	const tosave = [];
-	for (const cid in chunks) {
-		chunks[cid].value = values[cid];
-		tosave.push(chunks[cid]);
+	for (const [cid, chunk] of Object.entries(chunks)) {
+		chunk.value = values[cid];
+		tosave.push(chunk);
 	}
 	// Persist changes
-	try {
-		await persistDocument(documentId, tosave);
-	} catch (err) {
-		addMsg(err.message, 'error');
-	} finally {
-		if (editor.id === documentId) editor.applySavedDocument();
-	}
+	await persistDocument(documentId, tosave)
+		.catch((err) => addMsg(err.message, 'error'))
+		.finally(() => {
+			if (editor.id === documentId) editor.applySavedDocument();
+		});
 });
 const documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
@@ -1286,9 +1276,7 @@ function persistDocument(documentId, chunks) {
 	return documents.persist(documentId, chunks).then(data => {
 		// The user may open/create another document before the queued save finishes
 		// Only the still-active document should get save-completion UI updates
-		if (editor.id === documentId) {
-			addMsg(_('Document Saved'), 'success');
-		}
+		if (editor.id === documentId) addMsg(_('Document Saved'), 'success');
 
 		return data;
 	});
@@ -1387,10 +1375,9 @@ evt('.ed-export', 'click', e => {
 		.then(data => {
 			// Saving can finish after the user has moved on to another document
 			// Avoid downloading the stale export, but make the cancelled export visible
-			if (editor.id !== documentId) {
-				addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
-				return;
-			}
+			if (editor.id !== documentId)
+				return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
+
 			documents.download(data);
 		})
 		.catch(err => addMsg(err.message, 'error'));
