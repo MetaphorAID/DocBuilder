@@ -872,17 +872,9 @@ class Editor {
 	onchange(cids, hdata) {
 		// Collect changes/differences and call the callback on them
 
-		// Save the current visible and hidden elements
-		this.#restore = this.getVisible();
-
+		const restore = this.getVisible();
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
-		if (hids.length) {
-			// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI.
-			const restoreHidden = new Set(this.#restoreHidden ?? []);
-			for (const hid of hids) restoreHidden.add(hid);
-			this.#restoreHidden = Array.from(restoreHidden);
-		}
 
 		// Collect changed visible chunks by change id (derived from chunk index) into a batch
 		const chunks = {};
@@ -902,10 +894,19 @@ class Editor {
 			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
 
 		// If there were changes commit them at once (to get a single undo entry)
-		if (Object.keys(chunks).length > 0) return this.#onchangeCallback(chunks, values);
+		if (Object.keys(chunks).length > 0) {
+			// Save the current visible and hidden elements for the post-save render
+			this.#restore = restore;
 
-		this.#restore = null;
-		this.#restoreHidden = null;
+			if (hids.length) {
+				// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI.
+				const restoreHidden = new Set(this.#restoreHidden ?? []);
+				for (const hid of hids) restoreHidden.add(hid);
+				this.#restoreHidden = Array.from(restoreHidden);
+			}
+
+			return this.#onchangeCallback(chunks, values);
+		}
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
