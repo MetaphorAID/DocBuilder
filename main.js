@@ -877,7 +877,12 @@ class Editor {
 
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
-		if (hids.length) this.#restoreHidden = [...new Set([...(this.#restoreHidden ?? []), ...hids])];
+		if (hids.length) {
+			// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI.
+			const restoreHidden = new Set(this.#restoreHidden ?? []);
+			for (const hid of hids) restoreHidden.add(hid);
+			this.#restoreHidden = Array.from(restoreHidden);
+		}
 
 		// Collect changed visible chunks by change id (derived from chunk index) into a batch
 		const chunks = {};
