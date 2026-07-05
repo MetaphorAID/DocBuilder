@@ -709,7 +709,7 @@ class Editor {
 
 	}
 
-	applySavedDocument() {
+#applySavedDocument() {
 		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
 		// After the onchange callback applies the new values, rerender the saved view into the UI
 		// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
@@ -905,7 +905,13 @@ class Editor {
 				this.#restoreHidden = Array.from(restoreHidden);
 			}
 
-			return this.#onchangeCallback(chunks, values);
+			const documentId = this.id;
+			const commit = this.#onchangeCallback(chunks, values);
+
+			return Promise.resolve(commit).finally(() => {
+				// The commit is async; load() may switch this editor to another document before it finishes
+				if (this.id === documentId) this.#applySavedDocument();
+			});
 		}
 	}
 
@@ -1243,6 +1249,7 @@ const hist = {
 };
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// When the content changes in the editor
+	// Keep targeting the document that produced this edit even if another document is opened while saving
 	const documentId = editor.id;
 	// Store previous values in Undo history
 	hist.undo.add({
@@ -1261,10 +1268,7 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	}
 	// Persist changes
 	await persistDocument(documentId, tosave)
-		.catch((err) => addMsg(err.message, 'error'))
-		.finally(() => {
-			if (editor.id === documentId) editor.applySavedDocument();
-		});
+		.catch((err) => addMsg(err.message, 'error'));
 });
 const documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
