@@ -1162,7 +1162,9 @@ class UndoManager {
 			try {
 				await this.#saveFun(data.id, tosave);
 			} catch (err) {
-				// Keep the editor consistent with storage if persistence fails
+				// Undo/redo mutates the editor before saving. If that save fails, IndexedDB
+				// still has the pre-history-action state, so restore the editor to that state.
+				// Normal edit saves do not roll back their in-memory changes on failure.
 				const reverted = this.#applyChunks(reverseEntry);
 				renderCids = visible;
 				renderHidden = reverted.hidden;
