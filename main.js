@@ -996,7 +996,7 @@ class History {
 	#data
 	#backup_timestamp
 
-	constructor(name, max = History.#MAX_NUMBER, onchange = null) {
+	constructor(name, onchange = null, max = History.#MAX_NUMBER) {
 		this.#name = name;
 		// Implicit name convention for selector
 		this.#max = max;
@@ -1245,12 +1245,9 @@ class UndoManager {
 }
 
 const hist = {
-	recent: new History('ed_recent', undefined,
-		h => disable('.ed-recent', !!h.length)),
-	undo: new History('ed_undo', undefined,
-		h => disable('.ed-undo', !!h.length)),
-	redo: new History('ed_redo', undefined,
-		h => disable('.ed-redo', !!h.length))
+	recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
+	undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
+	redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
 };
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// When the content changes in the editor
