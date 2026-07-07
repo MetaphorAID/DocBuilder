@@ -709,19 +709,6 @@ class Editor {
 
 	}
 
-#applySavedDocument() {
-		// onchange() remembers the currently visible chunks and any hidden template state touched by the edit
-		// After the onchange callback applies the new values, rerender the saved view into the UI
-		// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
-		const cids = this.#restore;
-		this.#restore = null;
-
-		const hids = this.#restoreHidden ?? [];
-		this.#restoreHidden = null;
-
-		if (cids) this.renderPage(cids, hids);
-	}
-
 	#clearChunksView() {
 		// Clean up rendered chunks. Let templates release per-render state before their DOM disappears
 		each('[data-cid]', input => {
@@ -876,7 +863,7 @@ class Editor {
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
 
-		// Collect changed visible chunks by change id (derived from chunk index) into a batch
+		// Collect changed VISIBLE chunks by change id (derived from chunk index) into a batch
 		const chunks = {};
 		const values = {};
 		for (const cid of cids) {
@@ -889,9 +876,9 @@ class Editor {
 			}
 		}
 
-		// Collect changed hidden chunks by change id (derived from chunk index) into a batch
-		for (const hid in hiddenData)
-			this.#recordChangeForChunk(this.hidden[hid], hiddenData[hid], `h${hid}`, chunks, values);
+		// Collect changed HIDDEN chunks by change id (derived from chunk index) into a batch
+		for (const [hid, hidValue] of Object.entries(hiddenData))
+			this.#recordChangeForChunk(this.hidden[hid], hidValue, `h${hid}`, chunks, values);
 
 		// If there were changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) {
@@ -899,7 +886,7 @@ class Editor {
 			this.#restore = restore;
 
 			if (hids.length) {
-				// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI
+				// Preserve hidden chunk IDs from every pending change so the post-save render refreshes all template UI
 				const restoreHidden = new Set(this.#restoreHidden ?? []);
 				for (const hid of hids) restoreHidden.add(hid);
 				this.#restoreHidden = Array.from(restoreHidden);
@@ -910,7 +897,18 @@ class Editor {
 
 			return Promise.resolve(commit).finally(() => {
 				// The commit is async; load() may switch this editor to another document before it finishes
-				if (this.id === documentId) this.#applySavedDocument();
+				if (this.id === documentId) {
+					// The visible chunks and any hidden template state touched by the edit is stored before the callback
+					// After the onchange callback applies the new values, rerender the saved view into the UI
+					// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
+					const cids = this.#restore;
+					this.#restore = null;
+
+					const hids = this.#restoreHidden ?? [];
+					this.#restoreHidden = null;
+
+					if (cids) this.renderPage(cids, hids);
+				}
 			});
 		}
 	}
