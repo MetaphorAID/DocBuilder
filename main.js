@@ -1165,6 +1165,10 @@ class UndoManager {
 		try {
 			try {
 				await this.#persistFun(data.id, tosave);
+				// The user may open/create another document before the queued save finishes
+				// Only the still-active document should get save-completion UI updates
+				if (data.id !== this.#editor.id) addMsg(_('Document Saved'), 'success');
+
 				renderCids = data.cids;
 				renderHidden = hidden;
 			} catch (err) {
@@ -1270,8 +1274,11 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 		tosave.push(chunk);
 	}
 	// Persist changes
-	await persistDocument(documentId, tosave)
-		.catch((err) => addMsg(err.message, 'error'));
+	await documents.persist(documentId, tosave).then(() => {
+		// The user may open/create another document before the queued save finishes
+		// Only the still-active document should get save-completion UI updates
+		if (editor.id === documentId) addMsg(_('Document Saved'), 'success');
+	}).catch((err) => addMsg(err.message, 'error'));
 });
 const documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
@@ -1282,18 +1289,8 @@ const documents = new DocumentManager(editor, async (keys) => {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
-const undoManager = new UndoManager(editor, hist, persistDocument);
+const undoManager = new UndoManager(editor, hist, (documentId, chunks) => documents.persist(documentId, chunks));
 const templates = new TemplateManager();
-
-function persistDocument(documentId, chunks) {
-	return documents.persist(documentId, chunks).then(data => {
-		// The user may open/create another document before the queued save finishes
-		// Only the still-active document should get save-completion UI updates
-		if (editor.id === documentId) addMsg(_('Document Saved'), 'success');
-
-		return data;
-	});
-}
 
 function confirmDiscardChanges(callback) {
 	if (!documents.hasUnfinishedSave()) {
@@ -1384,12 +1381,14 @@ evt('.ed-recent', 'click', e => {
 evt('.ed-export', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
 	const documentId = editor.id;
-	persistDocument(documentId, editor.chunks)
+	documents.persist(documentId, editor.chunks)
 		.then(data => {
 			// Saving can finish after the user has moved on to another document
 			// Avoid downloading the stale export, but make the cancelled export visible
 			if (editor.id !== documentId)
 				return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
+
+			addMsg(_('Document Saved'), 'success');
 
 			documents.download(data);
 		})
