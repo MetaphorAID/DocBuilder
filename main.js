@@ -899,7 +899,7 @@ class Editor {
 			this.#restore = restore;
 
 			if (hids.length) {
-				// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI.
+				// Preserve hidden chunk ids from every pending change so the post-save render refreshes all template UI
 				const restoreHidden = new Set(this.#restoreHidden ?? []);
 				for (const hid of hids) restoreHidden.add(hid);
 				this.#restoreHidden = Array.from(restoreHidden);
@@ -1072,12 +1072,12 @@ class History {
 class UndoManager {
 	#editor;
 	#hist;
-	#saveFun;
+	#persistFun;
 
-	constructor(editor, hist, saveFun) {
+	constructor(editor, hist, persistFun) {
 		this.#editor = editor;
 		this.#hist = hist;
-		this.#saveFun = saveFun;
+		this.#persistFun = persistFun;
 	}
 
 	#createReverseHistoryEntry(data) {
@@ -1100,7 +1100,7 @@ class UndoManager {
 		return valid ? {chunks, values} : false;
 	}
 
-	#applyChunks(data) {
+	#applyChunksToEditor(data) {
 		const tosave = [];
 		const hidden = [];
 
@@ -1146,6 +1146,7 @@ class UndoManager {
 		// Create the corresponding reverse entry
 		const reverseEntry = this.#createReverseHistoryEntry(data);
 
+		// Document changed, history is invalid
 		if (!reverseEntry) {
 			from.clear();
 			to.clear();
@@ -1157,18 +1158,20 @@ class UndoManager {
 		}
 
 		// Apply a single history entry to the editor
-		const {tosave, hidden} = this.#applyChunks(data);
-		let renderCids = data.cids;
-		let renderHidden = hidden;
+		const {tosave, hidden} = this.#applyChunksToEditor(data);
+		let renderCids;
+		let renderHidden;
 
 		try {
 			try {
-				await this.#saveFun(data.id, tosave);
+				await this.#persistFun(data.id, tosave);
+				renderCids = data.cids;
+				renderHidden = hidden;
 			} catch (err) {
-				// Undo/redo mutates the editor before saving. If that save fails, IndexedDB
-				// still has the pre-history-action state, so restore the editor to that state.
-				// Normal edit saves do not roll back their in-memory changes on failure.
-				const reverted = this.#applyChunks(reverseEntry);
+				// Undo/redo mutates the editor before saving (see this.#applyChunksToEditor(data) above)
+				// If that persist fails, IndexedDB still has the pre-history-action state, so restore the editor to that state
+				// Normal edit saves do not roll back their in-memory changes on failure
+				const reverted = this.#applyChunksToEditor(reverseEntry);
 				renderCids = visible;
 				renderHidden = reverted.hidden;
 				throw err;
@@ -1194,6 +1197,8 @@ class UndoManager {
 		const data = from.get();
 		if (!data) return Promise.resolve();
 
+		// The entry (data) has already been popped from the source stack (undo or redo)
+		// If setup, rendering, or saving fails, put it back so the action can be retried
 		const restoreHistoryEntry = err => {
 			try {
 				from.add(data);
@@ -1204,8 +1209,6 @@ class UndoManager {
 			return Promise.reject(err);
 		};
 
-		// The entry has already been popped from the source stack (data)
-		// If setup, rendering, or saving fails, put it back so the action can be retried
 		try {
 			// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
 			// drop both stacks and stop instead of applying those indexes to the currently open document
