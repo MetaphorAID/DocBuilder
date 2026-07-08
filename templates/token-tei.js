@@ -270,7 +270,7 @@
 
 		// Create the config row for the sentence
 		const row = TOKEN.createSettingsRow(tableView, TOKEN.MORPH_HEADERS.length);
-		if (!sentence.getAttribute('sent')) row.classList.add(' unchecked');
+		if (!sentence.getAttribute('sent')) row.classList.add('unchecked');
 		sentenceEl.appendChild(row);
 
 		return tableView ? sentenceEl.parentNode : sentenceEl;
