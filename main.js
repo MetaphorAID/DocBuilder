@@ -1149,9 +1149,9 @@ class UndoManager {
 			from.clear();
 			to.clear();
 
-			addMsg(_('Document changed outside, history action is disabled'), 'error');
-
 			this.#editor.renderPage(visible);
+
+			addMsg(_('Document changed outside, history action is disabled'), 'error');
 			return;
 		}
 
