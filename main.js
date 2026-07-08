@@ -881,11 +881,11 @@ class Editor {
 
 		// If there were visible or hidden changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) {
-			// Save the current visible and hidden elements for the post-save render
+			// Remember the currently visible chunk ids so the post-save render keeps the same viewport
 			this.#restore = this.getVisible();
 
 			if (hids.length) {
-				// Preserve hidden chunk IDs from every pending change so the post-save render refreshes all template UI
+				// Hidden chunks may drive template-owned UI outside the visible page; refresh every touched one
 				const restoreHidden = new Set(this.#restoreHidden ?? []);
 				for (const hid of hids) restoreHidden.add(hid);
 				this.#restoreHidden = Array.from(restoreHidden);
@@ -897,16 +897,16 @@ class Editor {
 			return Promise.resolve(commit).finally(() => {
 				// The commit is async; load() may switch this editor to another document before it finishes
 				if (this.id === documentId) {
-					// The visible chunks and any hidden template state touched by the edit are stored before the callback
-					// After the onchange callback applies the new values, rerender the saved view into the UI
-					// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
+					// The callback stores undo data, applies the new values to the model, and persists them.
+					// Redraw the same visible chunk ids from the updated model; "restore" means viewport, not old content.
+					// [] is valid for hidden-only updates: renderPage([]) clears visible chunks and applies hidden updates.
 					const cids = this.#restore;
 					this.#restore = null;
 
 					const hids = this.#restoreHidden ?? [];
 					this.#restoreHidden = null;
 
-					if (cids) this.renderPage(cids, hids);
+					if (cids !== null) this.renderPage(cids, hids);
 				}
 			});
 		}
