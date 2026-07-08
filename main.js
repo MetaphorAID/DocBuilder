@@ -480,6 +480,10 @@ class DocumentManager {
 		this.#saveQueue.clearAll();
 	}
 
+	clearSaveFailure(fileName) {
+		this.#saveQueue.clearFailures(fileName);
+	}
+
 	hasUnfinishedSave() {
 		return this.#saveQueue.hasUnfinishedSave(this.#editor.id) || this.#editor.hasChanges();
 	}
@@ -897,7 +901,7 @@ class Editor {
 			return Promise.resolve(commit).finally(() => {
 				// The commit is async; load() may switch this editor to another document before it finishes
 				if (this.id === documentId) {
-					// The callback stores undo data, applies the new values to the model, and persists them.
+					// The callback persists the edit and leaves the model in the state that matches storage.
 					// Redraw the same visible chunk ids from the updated model; "restore" means viewport, not old content.
 					// [] is valid for hidden-only updates: renderPage([]) clears visible chunks and applies hidden updates.
 					const cids = this.#restore;
@@ -1070,11 +1074,13 @@ class UndoManager {
 	#editor;
 	#hist;
 	#persistFun;
+	#clearSaveFailureFun;
 
-	constructor(editor, hist, persistFun) {
+	constructor(editor, hist, persistFun, clearSaveFailureFun = null) {
 		this.#editor = editor;
 		this.#hist = hist;
 		this.#persistFun = persistFun;
+		this.#clearSaveFailureFun = clearSaveFailureFun;
 	}
 
 	#createReverseHistoryEntry(data) {
@@ -1171,8 +1177,9 @@ class UndoManager {
 			} catch (err) {
 				// Undo/redo mutates the editor before saving: this.#applyChunksToEditor(data) above writes into this.#editor.
 				// If that persist fails, IndexedDB still has the pre-history-action state, so restore the editor to that state
-				// Normal edit saves do not roll back their in-memory changes on failure
+				// Normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
 				const reverted = this.#applyChunksToEditor(reverseEntry);
+				this.#clearSaveFailureFun?.(data.id);
 				renderCids = visible;
 				renderHidden = reverted.hidden;
 				throw err;
@@ -1248,17 +1255,52 @@ const hist = {
 	undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
 	redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
 };
+
+function createEditHistoryEntry(documentId, chunks, values, cids) {
+	return {
+		id: documentId,
+		chunks: structuredClone(chunks),
+		values: structuredClone(values),
+		cids
+	};
+}
+
+function createRedoEntryFromEdit(editEntry) {
+	const chunks = {};
+	const values = {};
+
+	for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
+		const target = structuredClone(chunk);
+		target.value = editEntry.values[cid];
+
+		chunks[cid] = target;
+		values[cid] = chunk.value;
+	}
+
+	return {
+		id: editEntry.id,
+		chunks,
+		values,
+		cids: editEntry.cids
+	};
+}
+
+function applyHistoryEntryToEditor(entry) {
+	for (const [cid, chunk] of Object.entries(entry.chunks)) {
+		const hidden = cid[0] === 'h';
+		const store = hidden ? 'hidden' : 'chunks';
+		const index = cid.substring(1);
+
+		editor[store][index] = structuredClone(chunk);
+	}
+}
+
 const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	// When the content changes in the editor
 	// Keep targeting the document that produced this edit even if another document is opened while saving
 	const documentId = editor.id;
-	// Store previous values in Undo history
-	hist.undo.add({
-		id: documentId,
-		chunks: chunks,
-		values: values,
-		cids: editor.getVisible()
-	});
+	const editEntry = createEditHistoryEntry(documentId, chunks, values, editor.getVisible());
+	const redoEntry = createRedoEntryFromEdit(editEntry);
 	// Any new edit invalidates Redo history
 	hist.redo.clear();
 	// Apply changes to chunk objects
@@ -1271,8 +1313,19 @@ const editor = new Editor(sel('#editor'), async (chunks, values) => {
 	await documents.persist(documentId, tosave).then(() => {
 		// The user may open/create another document before the queued save finishes
 		// Only the still-active document should get save-completion UI updates
-		if (editor.id === documentId) addMsg(_('Document Saved'), 'success');
-	}).catch((err) => addMsg(err.message, 'error'));
+		if (editor.id === documentId) {
+			hist.undo.add(editEntry);
+			addMsg(_('Document Saved'), 'success');
+		}
+	}).catch((err) => {
+		if (editor.id === documentId) {
+			applyHistoryEntryToEditor(editEntry);
+			hist.redo.add(redoEntry);
+			documents.clearSaveFailure(documentId);
+		}
+
+		addMsg(err.message, 'error');
+	});
 });
 const documents = new DocumentManager(editor, async (keys) => {
 	// Setup initial history (if there is any)
@@ -1283,7 +1336,12 @@ const documents = new DocumentManager(editor, async (keys) => {
 		addMsg(_('Database error: ') + err, 'error');
 	}
 });
-const undoManager = new UndoManager(editor, hist, (documentId, chunks) => documents.persist(documentId, chunks));
+const undoManager = new UndoManager(
+	editor,
+	hist,
+	(documentId, chunks) => documents.persist(documentId, chunks),
+	documentId => documents.clearSaveFailure(documentId)
+);
 const templates = new TemplateManager();
 
 function confirmDiscardChanges(callback) {
