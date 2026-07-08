@@ -859,7 +859,6 @@ class Editor {
 	onchange(cids, hdata) {
 		// Collect changes/differences and call the callback on them
 
-		const restore = this.getVisible();
 		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
 
@@ -880,10 +879,10 @@ class Editor {
 		for (const [hid, hidValue] of Object.entries(hiddenData))
 			this.#recordChangeForChunk(this.hidden[hid], hidValue, `h${hid}`, chunks, values);
 
-		// If there were changes commit them at once (to get a single undo entry)
+		// If there were visible or hidden changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) {
 			// Save the current visible and hidden elements for the post-save render
-			this.#restore = restore;
+			this.#restore = this.getVisible();
 
 			if (hids.length) {
 				// Preserve hidden chunk IDs from every pending change so the post-save render refreshes all template UI
@@ -898,7 +897,7 @@ class Editor {
 			return Promise.resolve(commit).finally(() => {
 				// The commit is async; load() may switch this editor to another document before it finishes
 				if (this.id === documentId) {
-					// The visible chunks and any hidden template state touched by the edit is stored before the callback
+					// The visible chunks and any hidden template state touched by the edit are stored before the callback
 					// After the onchange callback applies the new values, rerender the saved view into the UI
 					// An empty restore list is valid: renderPage([]) clears visible chunks while still applying hidden updates
 					const cids = this.#restore;
