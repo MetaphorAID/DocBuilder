@@ -414,17 +414,128 @@ class DocumentManager {
 	#editor
 	#db
 	#saveQueue
+	#hist
+	#undoManager
 
-	constructor(editor, oninit, db = new AnnotationDB()) {
+	constructor(editor, db = new AnnotationDB()) {
 		this.#editor = editor;
 		this.#db = db;
 		this.#saveQueue = new SaveQueue();
+		this.#hist = {
+			recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
+			undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
+			redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
+		};
+		this.#undoManager = new UndoManager(
+			editor,
+			this.#hist,
+			(documentId, chunks) => this.persist(documentId, chunks),
+			documentId => this.clearSaveFailure(documentId)
+		);
+		this.#editor.setChangeHandler((chunks, values) => this.#handleEditorChange(chunks, values));
 
 		// Init the database
-		this.#db.init().then(async () => {
-			const keys = await this.#db.getAllKeys();
-			oninit(keys);
-		}).catch(err => addMsg(_('Database error: ') + err, 'error'));
+		this.#init().catch(err => addMsg(_('Database error: ') + err, 'error'));
+	}
+
+	async #init() {
+		await this.#db.init();
+		const keys = await this.#db.getAllKeys();
+		this.#syncRecentDocuments(keys);
+	}
+
+	#syncRecentDocuments(keys) {
+		const availableDocuments = new Set(keys);
+		const syncedDocuments = new Set();
+		const recentDocuments = [];
+
+		this.#hist.recent.walk(fileName => {
+			if (!availableDocuments.has(fileName) || syncedDocuments.has(fileName)) return;
+
+			syncedDocuments.add(fileName);
+			recentDocuments.push(fileName);
+		});
+
+		keys.forEach(fileName => {
+			if (syncedDocuments.has(fileName)) return;
+
+			syncedDocuments.add(fileName);
+			recentDocuments.push(fileName);
+		});
+
+		this.#hist.recent.replace(recentDocuments);
+	}
+
+	static #createEditHistoryEntry(documentId, chunks, values, cids) {
+		return {
+			id: documentId,
+			chunks: structuredClone(chunks),
+			values: structuredClone(values),
+			cids
+		};
+	}
+
+	static #createRedoEntryFromEdit(editEntry) {
+		const chunks = {};
+		const values = {};
+
+		for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
+			const target = structuredClone(chunk);
+			target.value = editEntry.values[cid];
+
+			chunks[cid] = target;
+			values[cid] = chunk.value;
+		}
+
+		return {
+			id: editEntry.id,
+			chunks,
+			values,
+			cids: editEntry.cids
+		};
+	}
+
+	#applyHistoryEntryToEditor(entry) {
+		for (const [cid, chunk] of Object.entries(entry.chunks)) {
+			const hidden = cid[0] === 'h';
+			const store = hidden ? 'hidden' : 'chunks';
+			const index = cid.substring(1);
+
+			this.#editor[store][index] = structuredClone(chunk);
+		}
+	}
+
+	async #handleEditorChange(chunks, values) {
+		// Keep targeting the document that produced this edit even if another document is opened while saving
+		const documentId = this.#editor.id;
+		const editEntry = DocumentManager.#createEditHistoryEntry(documentId, chunks, values, this.#editor.getVisible());
+		const redoEntry = DocumentManager.#createRedoEntryFromEdit(editEntry);
+		// Any new edit invalidates Redo history
+		this.#hist.redo.clear();
+		// Apply changes to chunk objects
+		const tosave = [];
+		for (const [cid, chunk] of Object.entries(chunks)) {
+			chunk.value = values[cid];
+			tosave.push(chunk);
+		}
+
+		try {
+			await this.persist(documentId, tosave);
+			// The user may open/create another document before the queued save finishes
+			// Only the still-active document should get save-completion UI updates
+			if (this.#editor.id === documentId) {
+				this.#hist.undo.add(editEntry);
+				addMsg(_('Document Saved'), 'success');
+			}
+		} catch (err) {
+			if (this.#editor.id === documentId) {
+				this.#applyHistoryEntryToEditor(editEntry);
+				this.#hist.redo.add(redoEntry);
+				this.clearSaveFailure(documentId);
+			}
+
+			addMsg(err.message, 'error');
+		}
 	}
 
 	async import(template) {
@@ -488,12 +599,56 @@ class DocumentManager {
 		return this.#saveQueue.hasUnfinishedSave(this.#editor.id) || this.#editor.hasChanges();
 	}
 
-	download(data) {
-		const fileName = data.id || this.#editor.id;
+	download(data, fileName = data.id || this.#editor.id) {
 		this.#saveQueue.clearFailures(fileName);
 
 		const blob = ChunkProcessor.createBlob(data.chunks);
 		downloadAsFile(fileName, blob);
+	}
+
+	async exportCurrentDocument() {
+		const documentId = this.#editor.id;
+		const data = await this.persist(documentId, this.#editor.chunks);
+
+		// Saving can finish after the user has moved on to another document
+		// Avoid downloading the stale export, but make the cancelled export visible
+		if (this.#editor.id !== documentId)
+			return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
+
+		addMsg(_('Document Saved'), 'success');
+		this.download(data, documentId);
+	}
+
+	displayDocument(data) {
+		// Loading a document replaces any pending/failed save state the editor was warning about
+		this.clearSaveState();
+
+		// Undo and redo only apply to edits made since this document was loaded
+		this.#hist.undo.clear();
+		this.#hist.redo.clear();
+		this.#editor.load(data);
+		this.#hist.recent.moveToTop(this.#editor.id);
+
+		// Enable export button
+		disable('.ed-export', !!this.#editor.id);
+
+		addMsg(_('Document Loaded'), 'success');
+	}
+
+	walkRecent(callback) {
+		this.#hist.recent.walk(callback);
+	}
+
+	getRecent(index, peek = false) {
+		return this.#hist.recent.get(index, peek);
+	}
+
+	undo() {
+		return this.#undoManager.undo();
+	}
+
+	redo() {
+		return this.#undoManager.redo();
 	}
 }
 
@@ -668,7 +823,7 @@ class Editor {
 	#restore
 	#restoreHidden
 
-	constructor(dom, onchangeFun) {
+	constructor(dom, onchangeFun = null) {
 		this.dom = dom;
 		this.#onchangeCallback = onchangeFun;
 		this.id = null;
@@ -711,6 +866,10 @@ class Editor {
 			}
 		});
 
+	}
+
+	setChangeHandler(onchangeFun) {
+		this.#onchangeCallback = onchangeFun;
 	}
 
 	#clearChunksView() {
@@ -895,6 +1054,8 @@ class Editor {
 				this.#restoreHidden = Array.from(restoreHidden);
 			}
 
+			if (!this.#onchangeCallback) throw new Error('Editor change handler is not configured');
+
 			const documentId = this.id;
 			const commit = this.#onchangeCallback(chunks, values);
 
@@ -1006,6 +1167,7 @@ class History {
 		this.#onchange = onchange;
 		this.#data = JSON.parse(localStorage[name] ?? '[]');
 		this.#backup_timestamp = Date.now();
+		window.addEventListener('beforeunload', () => this.flush());
 	}
 
 	#onHistChange() {
@@ -1034,6 +1196,22 @@ class History {
 
 	get length() {
 		return this.#data.length;
+	}
+
+	replace(data) {
+		const next = structuredClone(data).slice(0, this.#max);
+		if (JSON.stringify(this.#data) === JSON.stringify(next)) {
+			this.#onchange?.(this);
+			return;
+		}
+
+		this.#data = next;
+		this.#onHistChange();
+	}
+
+	flush() {
+		clearTimeout(this.timer);
+		this.#backup();
 	}
 
 	add(data) {
@@ -1170,7 +1348,7 @@ class UndoManager {
 				await this.#persistFun(data.id, tosave);
 				// The user may open/create another document before the queued save finishes
 				// Only the still-active document should get save-completion UI updates
-				if (data.id !== this.#editor.id) addMsg(_('Document Saved'), 'success');
+				if (data.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
 
 				renderCids = data.cids;
 				renderHidden = hidden;
@@ -1250,98 +1428,8 @@ class UndoManager {
 
 }
 
-const hist = {
-	recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
-	undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
-	redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
-};
-
-function createEditHistoryEntry(documentId, chunks, values, cids) {
-	return {
-		id: documentId,
-		chunks: structuredClone(chunks),
-		values: structuredClone(values),
-		cids
-	};
-}
-
-function createRedoEntryFromEdit(editEntry) {
-	const chunks = {};
-	const values = {};
-
-	for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
-		const target = structuredClone(chunk);
-		target.value = editEntry.values[cid];
-
-		chunks[cid] = target;
-		values[cid] = chunk.value;
-	}
-
-	return {
-		id: editEntry.id,
-		chunks,
-		values,
-		cids: editEntry.cids
-	};
-}
-
-function applyHistoryEntryToEditor(entry) {
-	for (const [cid, chunk] of Object.entries(entry.chunks)) {
-		const hidden = cid[0] === 'h';
-		const store = hidden ? 'hidden' : 'chunks';
-		const index = cid.substring(1);
-
-		editor[store][index] = structuredClone(chunk);
-	}
-}
-
-const editor = new Editor(sel('#editor'), async (chunks, values) => {
-	// When the content changes in the editor
-	// Keep targeting the document that produced this edit even if another document is opened while saving
-	const documentId = editor.id;
-	const editEntry = createEditHistoryEntry(documentId, chunks, values, editor.getVisible());
-	const redoEntry = createRedoEntryFromEdit(editEntry);
-	// Any new edit invalidates Redo history
-	hist.redo.clear();
-	// Apply changes to chunk objects
-	const tosave = [];
-	for (const [cid, chunk] of Object.entries(chunks)) {
-		chunk.value = values[cid];
-		tosave.push(chunk);
-	}
-	// Persist changes
-	await documents.persist(documentId, tosave).then(() => {
-		// The user may open/create another document before the queued save finishes
-		// Only the still-active document should get save-completion UI updates
-		if (editor.id === documentId) {
-			hist.undo.add(editEntry);
-			addMsg(_('Document Saved'), 'success');
-		}
-	}).catch((err) => {
-		if (editor.id === documentId) {
-			applyHistoryEntryToEditor(editEntry);
-			hist.redo.add(redoEntry);
-			documents.clearSaveFailure(documentId);
-		}
-
-		addMsg(err.message, 'error');
-	});
-});
-const documents = new DocumentManager(editor, async (keys) => {
-	// Setup initial history (if there is any)
-	try {
-		hist.recent.clear();
-		keys.forEach(key => hist.recent.add(key));
-	} catch (err) {
-		addMsg(_('Database error: ') + err, 'error');
-	}
-});
-const undoManager = new UndoManager(
-	editor,
-	hist,
-	(documentId, chunks) => documents.persist(documentId, chunks),
-	documentId => documents.clearSaveFailure(documentId)
-);
+const editor = new Editor(sel('#editor'));
+const documents = new DocumentManager(editor);
 const templates = new TemplateManager();
 
 function confirmDiscardChanges(callback) {
@@ -1352,34 +1440,18 @@ function confirmDiscardChanges(callback) {
 	}
 }
 
-async function displayDocument(data) {
-	// Loading a document replaces any pending/failed save state the editor was warning about
-	documents.clearSaveState();
-
-	// Undo and redo only apply to edits made since this document was loaded
-	hist.undo.clear();
-	hist.redo.clear();
-	editor.load(data);
-	hist.recent.moveToTop(editor.id);
-
-	// Enable export button
-	disable('.ed-export', !!editor.id);
-
-	addMsg(_('Document Loaded'), 'success');
-}
-
 async function openDocument(id) {
 	const data = await documents.openFromIDB(id);
 	// Information on the required template resources must be stored along the data
 	await templates.loadResources(data);
-	await displayDocument(data);
+	documents.displayDocument(data);
 }
 
 async function importDocument(templateInfo) {
 	const loadedTemplate = await templates.loadTemplate(templateInfo.path);
 	await templates.loadResources(loadedTemplate);
 	const data = await documents.import(loadedTemplate);
-	await displayDocument(data);
+	documents.displayDocument(data);
 }
 
 async function createNewDocument(templateInfo) {
@@ -1396,7 +1468,7 @@ async function createNewDocument(templateInfo) {
 	// Process the source returned by the template, then save and render the document
 	const [filename, data] = result;
 	const newData = await documents.createDocument(filename, data, template);
-	await displayDocument(newData);
+	documents.displayDocument(newData);
 }
 
 function showDocumentLoadError(err) {
@@ -1419,7 +1491,7 @@ evt('.ed-new', 'click', e => {
 });
 evt('.ed-recent', 'click', e => {
 	const t = ttip(e.target, e);
-	hist.recent.walk((data, id) => {
+	documents.walkRecent((data, id) => {
 		const a = document.createElement('a');
 		a.href = '#';
 		a.dataset.open = id;
@@ -1432,22 +1504,10 @@ evt('.ed-recent', 'click', e => {
 });
 evt('.ed-export', 'click', e => {
 	if (e.target.classList.contains('disabled')) return;
-	const documentId = editor.id;
-	documents.persist(documentId, editor.chunks)
-		.then(data => {
-			// Saving can finish after the user has moved on to another document
-			// Avoid downloading the stale export, but make the cancelled export visible
-			if (editor.id !== documentId)
-				return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
-
-			addMsg(_('Document Saved'), 'success');
-
-			documents.download(data);
-		})
-		.catch(err => addMsg(err.message, 'error'));
+	documents.exportCurrentDocument().catch(err => addMsg(err.message, 'error'));
 });
-evt('.ed-undo', 'click', () => undoManager.undo().catch(err => addMsg(err.message, 'error')));
-evt('.ed-redo', 'click', () => undoManager.redo().catch(err => addMsg(err.message, 'error')));
+evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message, 'error')));
+evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-exit', 'click', () => {
 	if (confirm(_('Do you want to exit?'))) window.location.href = 'about:blank';
 });
@@ -1455,7 +1515,7 @@ evt('.ed-exit', 'click', () => {
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document
 	confirmDiscardChanges(() => {
-		const recentDocumentFilename = hist.recent.get(Number(this.dataset.open), true);
+		const recentDocumentFilename = documents.getRecent(Number(this.dataset.open), true);
 		openDocument(recentDocumentFilename).catch(showDocumentLoadError);
 	});
 });
