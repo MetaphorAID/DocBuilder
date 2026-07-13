@@ -412,43 +412,40 @@ class SaveQueue {
 
 class DocumentManager {
 	#editor
+	#hist
+	#exportButtonName
 	#db
 	#saveQueue
-	#hist
 	#undoManager
 
-	constructor(editor, db = new AnnotationDB()) {
+	constructor(editor, hist, exportButtonName, db = new AnnotationDB(), saveQueue = new SaveQueue()) {
 		this.#editor = editor;
+		this.#hist = hist;
+		this.#exportButtonName = exportButtonName;
 		this.#db = db;
-		this.#saveQueue = new SaveQueue();
-		this.#hist = {
-			recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
-			undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
-			redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
-		};
+		this.#saveQueue = saveQueue;
 		this.#undoManager = new UndoManager(
 			editor,
 			this.#hist,
-			(documentId, chunks) => this.persist(documentId, chunks),
-			documentId => this.clearSaveFailure(documentId)
+			(documentId, chunks) => this.#persist(documentId, chunks),
+			documentId => this.#saveQueue.clearFailures(documentId)
 		);
 		this.#editor.setChangeHandler((chunks, values) => this.#handleEditorChange(chunks, values));
 
-		// Init the database
+		// Init the database and rebuild recent files list
 		this.#init().catch(err => addMsg(_('Database error: ') + err, 'error'));
 	}
 
 	async #init() {
 		await this.#db.init();
 		const keys = await this.#db.getAllKeys();
-		this.#syncRecentDocuments(keys);
-	}
 
-	#syncRecentDocuments(keys) {
+		// Sync recent documents
 		const availableDocuments = new Set(keys);
 		const syncedDocuments = new Set();
 		const recentDocuments = [];
 
+		// Filter unavailable and duplicate documents (from history)
 		this.#hist.recent.walk(fileName => {
 			if (!availableDocuments.has(fileName) || syncedDocuments.has(fileName)) return;
 
@@ -456,6 +453,7 @@ class DocumentManager {
 			recentDocuments.push(fileName);
 		});
 
+		// Filter duplicate documents (from database)
 		keys.forEach(fileName => {
 			if (syncedDocuments.has(fileName)) return;
 
@@ -463,55 +461,44 @@ class DocumentManager {
 			recentDocuments.push(fileName);
 		});
 
+		// Insert the newly built recent history
 		this.#hist.recent.replace(recentDocuments);
-	}
-
-	static #createEditHistoryEntry(documentId, chunks, values, cids) {
-		return {
-			id: documentId,
-			chunks: structuredClone(chunks),
-			values: structuredClone(values),
-			cids
-		};
-	}
-
-	static #createRedoEntryFromEdit(editEntry) {
-		const chunks = {};
-		const values = {};
-
-		for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
-			const target = structuredClone(chunk);
-			target.value = editEntry.values[cid];
-
-			chunks[cid] = target;
-			values[cid] = chunk.value;
-		}
-
-		return {
-			id: editEntry.id,
-			chunks,
-			values,
-			cids: editEntry.cids
-		};
-	}
-
-	#applyHistoryEntryToEditor(entry) {
-		for (const [cid, chunk] of Object.entries(entry.chunks)) {
-			const hidden = cid[0] === 'h';
-			const store = hidden ? 'hidden' : 'chunks';
-			const index = cid.substring(1);
-
-			this.#editor[store][index] = structuredClone(chunk);
-		}
 	}
 
 	async #handleEditorChange(chunks, values) {
 		// Keep targeting the document that produced this edit even if another document is opened while saving
 		const documentId = this.#editor.id;
-		const editEntry = DocumentManager.#createEditHistoryEntry(documentId, chunks, values, this.#editor.getVisible());
-		const redoEntry = DocumentManager.#createRedoEntryFromEdit(editEntry);
+
+		// Create edit history entry
+		const editEntry = {
+			id: documentId,
+			chunks: structuredClone(chunks),
+			values: structuredClone(values),
+			cids: this.#editor.getVisible()
+		};
+
+		// Create redo entry from edit entry
+		const redoChunks = {};
+		const redoValues = {};
+
+		for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
+			const target = structuredClone(chunk);
+			target.value = editEntry.values[cid];
+
+			redoChunks[cid] = target;
+			redoValues[cid] = chunk.value;
+		}
+
+		const redoEntry = {
+			id: editEntry.id,
+			chunks: redoChunks,
+			values: redoValues,
+			cids: editEntry.cids
+		};
+
 		// Any new edit invalidates Redo history
 		this.#hist.redo.clear();
+
 		// Apply changes to chunk objects
 		const tosave = [];
 		for (const [cid, chunk] of Object.entries(chunks)) {
@@ -520,7 +507,7 @@ class DocumentManager {
 		}
 
 		try {
-			await this.persist(documentId, tosave);
+			await this.#persist(documentId, tosave);
 			// The user may open/create another document before the queued save finishes
 			// Only the still-active document should get save-completion UI updates
 			if (this.#editor.id === documentId) {
@@ -528,22 +515,30 @@ class DocumentManager {
 				addMsg(_('Document Saved'), 'success');
 			}
 		} catch (err) {
+			// When Persist failed
 			if (this.#editor.id === documentId) {
-				this.#applyHistoryEntryToEditor(editEntry);
+				// Undo the changes (history entry) in the editor
+				for (const [cid, chunk] of Object.entries(editEntry.chunks)) {
+					// Clone the chunks to the appropriate store (hidden or chunks) with the ID (cid.slice(1))
+					this.#editor[cid[0] === 'h' ? 'hidden' : 'chunks'][cid.slice(1)] = structuredClone(chunk);
+				}
+				// Add a redo entry to allow manual retrying
 				this.#hist.redo.add(redoEntry);
-				this.clearSaveFailure(documentId);
+				// All failures are handled, clear flags
+				this.#saveQueue.clearFailures(documentId);
 			}
 
+			// In any case write the error
 			addMsg(err.message, 'error');
 		}
 	}
 
-	async import(template) {
+	async import(templatePath, loadTemplateFun) {
+		const template = await loadTemplateFun(templatePath);
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
 		const text = await readFile(file);
-
-		return this.createDocument(file.name, text, template);
+		await this.createDocument(file.name, text, template);
 	}
 
 	async createDocument(filename, data, template) {
@@ -553,26 +548,21 @@ class DocumentManager {
 		newData.css = template.css;
 		await this.#db.storeFile(filename, newData);
 
-		return newData;
+		this.displayDocument(newData);
 	}
 
-	async openFromIDB(fileName) {
+	async openFromIDB(fileName, loadResourcesFun) {
 		// Open file from IndexedDB
 		const doc = await this.#db.retrieveFile(fileName);
 		if (!doc) throw new Error(_('Document not found: ') + fileName);
 
-		return doc;
+		// Information on the required template resources must be stored along the data
+		await loadResourcesFun(doc);
+
+		this.displayDocument(doc);
 	}
 
-	async #saveToIDB(fileName, changes) {
-		return this.#db.updateFile(fileName, data => {
-			data.chunks = ChunkProcessor.merge(changes, data.chunks);
-
-			return data;
-		});
-	}
-
-	async persist(fileName, chunks) {
+	async #persist(fileName, chunks) {
 		// Capture the requested values before this save enters the queue
 		// The editor may mutate its chunk objects while earlier saves are still running
 		const changes = chunks.map(chunk => ({...chunk}));
@@ -580,35 +570,27 @@ class DocumentManager {
 		// Take care of the enqueuing of the save operation and handle the failures with the single save queue
 		return this.#saveQueue.enqueue(fileName, async () => {
 			try {
-				return await this.#saveToIDB(fileName, changes);
+				// Save to IndexedDB
+				return await this.#db.updateFile(fileName, data => {
+					data.chunks = ChunkProcessor.merge(changes, data.chunks);
+
+					return data;
+				});
 			} catch (err) {
 				throw new Error(_('Error saving: ') + (err.message || err));
 			}
 		});
 	}
 
-	clearSaveState() {
-		this.#saveQueue.clearAll();
-	}
-
-	clearSaveFailure(fileName) {
-		this.#saveQueue.clearFailures(fileName);
-	}
-
 	hasUnfinishedSave() {
 		return this.#saveQueue.hasUnfinishedSave(this.#editor.id) || this.#editor.hasChanges();
 	}
 
-	download(data, fileName = data.id || this.#editor.id) {
-		this.#saveQueue.clearFailures(fileName);
+	async export(disabled) {
+		if (disabled) return;
 
-		const blob = ChunkProcessor.createBlob(data.chunks);
-		downloadAsFile(fileName, blob);
-	}
-
-	async exportCurrentDocument() {
 		const documentId = this.#editor.id;
-		const data = await this.persist(documentId, this.#editor.chunks);
+		const data = await this.#persist(documentId, this.#editor.chunks);
 
 		// Saving can finish after the user has moved on to another document
 		// Avoid downloading the stale export, but make the cancelled export visible
@@ -616,12 +598,16 @@ class DocumentManager {
 			return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
 
 		addMsg(_('Document Saved'), 'success');
-		this.download(data, documentId);
+		this.#saveQueue.clearFailures(documentId);
+
+		// Download
+		const blob = ChunkProcessor.createBlob(data.chunks);
+		downloadAsFile(documentId, blob);
 	}
 
 	displayDocument(data) {
 		// Loading a document replaces any pending/failed save state the editor was warning about
-		this.clearSaveState();
+		this.#saveQueue.clearAll();
 
 		// Undo and redo only apply to edits made since this document was loaded
 		this.#hist.undo.clear();
@@ -630,7 +616,7 @@ class DocumentManager {
 		this.#hist.recent.moveToTop(this.#editor.id);
 
 		// Enable export button
-		disable('.ed-export', !!this.#editor.id);
+		disable(this.#exportButtonName, !!this.#editor.id);
 
 		addMsg(_('Document Loaded'), 'success');
 	}
@@ -639,8 +625,8 @@ class DocumentManager {
 		this.#hist.recent.walk(callback);
 	}
 
-	getRecent(index, peek = false) {
-		return this.#hist.recent.get(index, peek);
+	getRecent(index, peek = true) {
+		return this.#hist.recent.get(Number(index), peek);
 	}
 
 	undo() {
@@ -702,6 +688,8 @@ class TemplateManager {
 
 		template.css = template.css.map(file => `./${this.#templateDir}/${file}`);
 		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
+
+		await this.loadResources(template);
 
 		return template;
 	}
@@ -771,6 +759,7 @@ class TemplateManager {
 			a.innerHTML = template.name;
 
 			tt.appendChild(a);
+			event.stopPropagation();
 		}
 
 		return tt;
@@ -1044,7 +1033,7 @@ class Editor {
 
 		// If there were visible or hidden changes commit them at once (to get a single undo entry)
 		if (Object.keys(chunks).length > 0) {
-			// Remember the currently visible chunk ids so the post-save render keeps the same viewport
+			// Remember the currently visible chunk IDs so the post-save render keeps the same viewport
 			this.#restore = this.getVisible();
 
 			if (hids.length) {
@@ -1062,9 +1051,9 @@ class Editor {
 			return Promise.resolve(commit).finally(() => {
 				// The commit is async; load() may switch this editor to another document before it finishes
 				if (this.id === documentId) {
-					// The callback persists the edit and leaves the model in the state that matches storage.
-					// Redraw the same visible chunk ids from the updated model; "restore" means viewport, not old content.
-					// [] is valid for hidden-only updates: renderPage([]) clears visible chunks and applies hidden updates.
+					// The callback persists the edit and leaves the model in the state that matches storage
+					// Redraw the same visible chunk IDs from the updated model; "restore" means viewport, not old content
+					// [] is valid for hidden-only updates: renderPage([]) clears visible chunks and applies hidden updates
 					const cids = this.#restore;
 					this.#restore = null;
 
@@ -1167,7 +1156,10 @@ class History {
 		this.#onchange = onchange;
 		this.#data = JSON.parse(localStorage[name] ?? '[]');
 		this.#backup_timestamp = Date.now();
-		window.addEventListener('beforeunload', () => this.flush());
+		window.addEventListener('beforeunload', () => {
+			clearTimeout(this.timer);
+			this.#backup();
+		});
 	}
 
 	#onHistChange() {
@@ -1207,11 +1199,6 @@ class History {
 
 		this.#data = next;
 		this.#onHistChange();
-	}
-
-	flush() {
-		clearTimeout(this.timer);
-		this.#backup();
 	}
 
 	add(data) {
@@ -1334,8 +1321,7 @@ class UndoManager {
 
 			this.#editor.renderPage(visible);
 
-			addMsg(_('Document changed outside, history action is disabled'), 'error');
-			return;
+			return addMsg(_('Document changed outside, history action is disabled'), 'error');
 		}
 
 		// Apply a single history entry to the editor
@@ -1353,7 +1339,7 @@ class UndoManager {
 				renderCids = data.cids;
 				renderHidden = hidden;
 			} catch (err) {
-				// Undo/redo mutates the editor before saving: this.#applyChunksToEditor(data) above writes into this.#editor.
+				// Undo/redo mutates the editor before saving: this.#applyChunksToEditor(data) above writes into this.#editor
 				// If that persist fails, IndexedDB still has the pre-history-action state, so restore the editor to that state
 				// Normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
 				const reverted = this.#applyChunksToEditor(reverseEntry);
@@ -1429,7 +1415,12 @@ class UndoManager {
 }
 
 const editor = new Editor(sel('#editor'));
-const documents = new DocumentManager(editor);
+hist = {
+	recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
+	undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
+	redo: new History('ed_redo', h => disable('.ed-redo', !!h.length))
+};
+const documents = new DocumentManager(editor, hist, '.ed-export');
 const templates = new TemplateManager();
 
 function confirmDiscardChanges(callback) {
@@ -1440,24 +1431,9 @@ function confirmDiscardChanges(callback) {
 	}
 }
 
-async function openDocument(id) {
-	const data = await documents.openFromIDB(id);
-	// Information on the required template resources must be stored along the data
-	await templates.loadResources(data);
-	documents.displayDocument(data);
-}
-
-async function importDocument(templateInfo) {
-	const loadedTemplate = await templates.loadTemplate(templateInfo.path);
-	await templates.loadResources(loadedTemplate);
-	const data = await documents.import(loadedTemplate);
-	documents.displayDocument(data);
-}
-
 async function createNewDocument(templateInfo) {
 	// Load the resources that register this template's creation handler
 	const template = await templates.loadTemplate(templateInfo.path);
-	await templates.loadResources(template);
 
 	const creationHandler = Editor.getNewDocumentType(templateInfo.id);
 	if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
@@ -1467,8 +1443,7 @@ async function createNewDocument(templateInfo) {
 
 	// Process the source returned by the template, then save and render the document
 	const [filename, data] = result;
-	const newData = await documents.createDocument(filename, data, template);
-	documents.displayDocument(newData);
+	await documents.createDocument(filename, data, template);
 }
 
 function showDocumentLoadError(err) {
@@ -1481,14 +1456,8 @@ function showDocumentLoadError(err) {
 	addMsg(message, 'error');
 }
 
-evt('.ed-import', 'click', e => {
-	templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error'));
-	e.stopPropagation();
-});
-evt('.ed-new', 'click', e => {
-	templates.show('new', e.target, e).catch(err => addMsg(err.message, 'error'));
-	e.stopPropagation();
-});
+evt('.ed-import', 'click', e => templates.show('open', e.target, e).catch(err => addMsg(err.message, 'error')));
+evt('.ed-new', 'click', e => templates.show('new', e.target, e).catch(err => addMsg(err.message, 'error')));
 evt('.ed-recent', 'click', e => {
 	const t = ttip(e.target, e);
 	documents.walkRecent((data, id) => {
@@ -1502,10 +1471,8 @@ evt('.ed-recent', 'click', e => {
 	t.classList.add('dropdown');
 	e.stopPropagation();
 });
-evt('.ed-export', 'click', e => {
-	if (e.target.classList.contains('disabled')) return;
-	documents.exportCurrentDocument().catch(err => addMsg(err.message, 'error'));
-});
+evt('.ed-export', 'click', e =>
+	documents.export(e.target.classList.contains('disabled')).catch(err => addMsg(err.message, 'error')))
 evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-exit', 'click', () => {
@@ -1514,10 +1481,9 @@ evt('.ed-exit', 'click', () => {
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document
-	confirmDiscardChanges(() => {
-		const recentDocumentFilename = documents.getRecent(Number(this.dataset.open), true);
-		openDocument(recentDocumentFilename).catch(showDocumentLoadError);
-	});
+	confirmDiscardChanges(async () =>
+		await documents.openFromIDB(documents.getRecent(this.dataset.open), async data => templates.loadResources(data))
+			.catch(showDocumentLoadError));
 });
 
 evtDelegated(document, '.template-select', 'click', async function () {
@@ -1533,10 +1499,10 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		// Execute action on template
 		if (action === 'open') {
 			confirmDiscardChanges(() =>
-				importDocument(templateInfo).catch(showDocumentLoadError));
+				documents.import(templateInfo.path, async templatePath => templates.loadTemplate(templatePath))
+					.catch(showDocumentLoadError));
 		} else if (action === 'new') {
-			confirmDiscardChanges(() =>
-				createNewDocument(templateInfo).catch(showDocumentLoadError));
+			confirmDiscardChanges(() => createNewDocument(templateInfo).catch(showDocumentLoadError));
 		}
 
 	} catch (err) {
