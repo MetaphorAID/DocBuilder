@@ -475,7 +475,7 @@
 			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
 			if (tkn.length > 1) {
 				const split = {};
-				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
+				for (let i = 1; i < tkn.length; ++i) split[i] = tkn.slice(0, i) + ' | ' + tkn.slice(i);
 				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
@@ -810,8 +810,8 @@
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
 		const form = getTokenSurface(keepToken);
-		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
-			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);
+		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD, true)
+			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD, true);
 
 		// Join text
 		form.setAttribute('modified', 'True');

@@ -63,20 +63,20 @@ function parseXml(xml) {
 
 function encXml(t) {
 	return String(t)
-		.replace('&', '&amp;')
-		.replace("'", '&apos;')
-		.replace('"', '&quot;')
-		.replace('<', '&lt;')
-		.replace('>', '&gt;');
+		.replaceAll('&', '&amp;')
+		.replaceAll("'", '&apos;')
+		.replaceAll('"', '&quot;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;');
 }
 
 function decXml(t) {
 	return String(t)
-		.replace('&apos;', "'")
-		.replace('&quot;', '"')
-		.replace('&lt;', '<')
-		.replace('&gt;', '>')
-		.replace('&amp;', '&');
+		.replaceAll('&apos;', "'")
+		.replaceAll('&quot;', '"')
+		.replaceAll('&lt;', '<')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&amp;', '&');
 }
 
 function xmlToText(xml, decode) {
