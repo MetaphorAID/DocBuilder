@@ -499,15 +499,15 @@ class DocumentManager {
 		// Any new edit invalidates Redo history
 		this.#hist.redo.clear();
 
-		// Apply changes to chunk objects
-		const tosave = [];
+		// Apply the collected values to the live editor model and gather the changed chunks for persistence
+		const chunksToSave = [];
 		for (const [cid, chunk] of Object.entries(chunks)) {
 			chunk.value = values[cid];
-			tosave.push(chunk);
+			chunksToSave.push(chunk);
 		}
 
 		try {
-			await this.#persist(documentId, tosave);
+			await this.#persist(documentId, chunksToSave);
 			// The user may open/create another document before the queued save finishes
 			// Only the still-active document should get save-completion UI updates
 			if (this.#editor.id === documentId) {
@@ -828,9 +828,12 @@ class Editor {
 		// Initially disable save button since no file is open
 		disable('.ed-export', false);
 
-		// Rerender chunk when changed
+		// Commit the changed chunk; DOM event dispatch does not await the returned promise
 		evt(dom, 'change', e => {
-			if (e.target.matches('[data-cid]')) this.onchange([Number(e.target.dataset.cid)]);
+			if (!e.target.matches('[data-cid]')) return;
+
+			const commit = this.onchange([Number(e.target.dataset.cid)]);
+			commit?.catch(err => addMsg(err.message || err, 'error'));
 		});
 
 		evt(dom, 'click', e => {
