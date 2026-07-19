@@ -562,6 +562,37 @@ class DocumentManager {
 		this.displayDocument(doc);
 	}
 
+	async deleteDocument(fileName) {
+		if (!fileName) return;
+
+		const isActiveDocument = this.#editor.id === fileName;
+
+		// Stop the active editor from scheduling another save while deletion waits for
+		// any already queued saves to finish.
+		if (isActiveDocument) this.#closeDocument();
+
+		try {
+			await this.#saveQueue.enqueue(fileName, () => this.#db.delete(fileName));
+		} catch (err) {
+			throw new Error(_('Error removing document: ') + (err.message || err));
+		}
+
+		this.#saveQueue.clearFailures(fileName);
+		this.#hist.recent.remove(fileName);
+		addMsg(_('Document Removed'), 'success');
+	}
+
+	isOpen(fileName) {
+		return this.#editor.id === fileName;
+	}
+
+	#closeDocument() {
+		this.#editor.clear();
+		this.#hist.undo.clear();
+		this.#hist.redo.clear();
+		disable(this.#exportButtonName, false);
+	}
+
 	async #persist(fileName, chunks) {
 		// Capture the requested values before this save enters the queue
 		// The editor may mutate its chunk objects while earlier saves are still running
@@ -909,6 +940,13 @@ class Editor {
 		}
 	}
 
+	clear() {
+		// Run the same cleanup hooks as a document switch, then leave the editor empty.
+		this.#clearChunksView();
+		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
+		this.#resetEditorState(null, []);
+	}
+
 	renderPage(cids, hids = []) {
 		// Clear the current view
 		this.#clearChunksView();
@@ -1228,6 +1266,15 @@ class History {
 		this.add(value);
 	}
 
+	remove(value) {
+		const index = this.#data.indexOf(value);
+		if (index < 0) return false;
+
+		this.#data.splice(index, 1);
+		this.#onHistChange();
+		return true;
+	}
+
 	walk(callback) {
 		this.#data.forEach(callback);
 	}
@@ -1463,13 +1510,28 @@ evt('.ed-import', 'click', e => templates.show('open', e.target, e).catch(err =>
 evt('.ed-new', 'click', e => templates.show('new', e.target, e).catch(err => addMsg(err.message, 'error')));
 evt('.ed-recent', 'click', e => {
 	const t = ttip(e.target, e);
-	documents.walkRecent((data, id) => {
+	documents.walkRecent(data => {
+		const item = document.createElement('div');
+		item.className = 'recent-item';
+
 		const a = document.createElement('a');
 		a.href = '#';
-		a.dataset.open = id;
+		a.className = 'recent-open';
+		a.dataset.open = data;
 		// Use basename of the file
-		a.innerHTML = data.split('\t')[0].replace(/^.*?([^\\\/]+)$/, '$1');
-		t.appendChild(a);
+		const label = data.split('\t')[0].replace(/^.*?([^\\\/]+)$/, '$1');
+		a.textContent = label;
+
+		const remove = document.createElement('button');
+		remove.type = 'button';
+		remove.className = 'recent-remove';
+		remove.dataset.remove = data;
+		remove.textContent = '\u00d7';
+		remove.title = `${_('Remove from browser storage')}: ${label}`;
+		remove.setAttribute('aria-label', remove.title);
+
+		item.append(a, remove);
+		t.appendChild(item);
 	});
 	t.classList.add('dropdown');
 	e.stopPropagation();
@@ -1485,8 +1547,21 @@ evt('.ed-exit', 'click', () => {
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document
 	confirmDiscardChanges(async () =>
-		await documents.openFromIDB(documents.getRecent(this.dataset.open), async data => templates.loadResources(data))
+		await documents.openFromIDB(this.dataset.open, async data => templates.loadResources(data))
 			.catch(showDocumentLoadError));
+});
+
+evtDelegated(document, '[data-remove]', 'click', function (e) {
+	e.preventDefault();
+	e.stopPropagation();
+
+	const fileName = this.dataset.remove;
+	const message = documents.isOpen(fileName)
+		? _('Remove the open document from recent files and browser storage? Any unsaved changes will be lost. This cannot be undone.')
+		: _('Remove this document from recent files and browser storage? This cannot be undone.');
+
+	addConfirm(message, () => documents.deleteDocument(fileName)
+		.catch(err => addMsg(err.message, 'error')));
 });
 
 evtDelegated(document, '.template-select', 'click', async function () {
