@@ -1540,9 +1540,6 @@ evt('.ed-export', 'click', e =>
 	documents.export(e.target.classList.contains('disabled')).catch(err => addMsg(err.message, 'error')))
 evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
-evt('.ed-exit', 'click', () => {
-	if (confirm(_('Do you want to exit?'))) window.location.href = 'about:blank';
-});
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document

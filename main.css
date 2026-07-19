@@ -112,10 +112,6 @@ a.disabled.disabled, .dropdown a.disabled, .tooltip a.disabled {
   pointer-events: none;
 }
 
-.btn.ed-exit {
-  float: right;
-}
-
 .select {
   padding: .25em .5em;
   position: relative;
