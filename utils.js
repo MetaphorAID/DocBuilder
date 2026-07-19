@@ -216,8 +216,46 @@ function disable(s, enable, dom) {
 	if (el) el.classList.toggle('disabled', !enable);
 }
 
+const LANGUAGES = Object.freeze({
+	en: Object.freeze({label: 'ENG', locale: {}}),
+	hu: Object.freeze({label: 'HU', locale: window.Locale || {}})
+});
+const LANGUAGE_STORAGE_KEY = 'docbuilder_language';
+
+function isSupportedLanguage(language) {
+	return Object.hasOwn(LANGUAGES, language);
+}
+
+function getBrowserLanguage() {
+	const preferences = navigator.languages?.length ? navigator.languages : [navigator.language];
+
+	for (const preference of preferences) {
+		const language = preference?.toLowerCase().split('-')[0];
+		if (isSupportedLanguage(language)) return language;
+	}
+
+	return 'en';
+}
+
+const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+let activeLanguage = isSupportedLanguage(savedLanguage) ? savedLanguage : getBrowserLanguage();
+document.documentElement.lang = activeLanguage;
+
+function getLanguage() {
+	return activeLanguage;
+}
+
+function setLanguage(language) {
+	if (!isSupportedLanguage(language)) return false;
+
+	activeLanguage = language;
+	localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+	document.documentElement.lang = language;
+	return true;
+}
+
 function _(text) {
-	return window.Locale && Locale[text] || text;
+	return LANGUAGES[activeLanguage].locale[text] || text;
 }
 
 function pickFile({extension, multiple = false, accept} = {}) {

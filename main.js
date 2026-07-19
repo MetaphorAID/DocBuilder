@@ -64,7 +64,38 @@ document.addEventListener('close', ({target}) => {
 	requestAnimationFrame(() => target.remove());
 });
 
-window.addEventListener('DOMContentLoaded', () => each('.locale', el => el.innerHTML = _(el.innerHTML.trim())));
+function localizeStaticUI() {
+	each('.locale', el => {
+		const key = el.dataset.localeKey || el.innerHTML.trim();
+		el.dataset.localeKey = key;
+		el.innerHTML = _(key);
+	});
+}
+
+function updateLanguageSwitcher() {
+	const language = getLanguage();
+	const toggle = sel('.language-toggle');
+	if (!toggle) return;
+
+	sel('.language-active', toggle).textContent = LANGUAGES[language].label;
+	toggle.setAttribute('aria-label', `${_('Language')}: ${LANGUAGES[language].label}`);
+}
+
+function closeLanguageMenu(returnFocus = false) {
+	const toggle = sel('.language-toggle');
+	const menu = sel('.language-menu');
+	if (!toggle) return;
+
+	if (menu) trg(menu, 'close');
+	toggle.classList.remove('open');
+	toggle.setAttribute('aria-expanded', 'false');
+	if (returnFocus) toggle.focus();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+	localizeStaticUI();
+	updateLanguageSwitcher();
+});
 
 window.onerror = (errorMsg, url, lineNum, colNum, error) =>
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
@@ -1540,6 +1571,61 @@ evt('.ed-export', 'click', e =>
 	documents.export(e.target.classList.contains('disabled')).catch(err => addMsg(err.message, 'error')))
 evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message, 'error')));
 evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
+
+evt('.language-toggle', 'click', function (e) {
+	if (sel('.language-menu')) {
+		closeLanguageMenu();
+		e.stopPropagation();
+		return;
+	}
+
+	const menu = ttip(this);
+	menu.classList.add('dropdown', 'language-menu');
+	menu.setAttribute('role', 'menu');
+
+	for (const [language, {label}] of Object.entries(LANGUAGES)) {
+		const option = document.createElement('a');
+		const selected = language === getLanguage();
+
+		option.href = '#';
+		option.dataset.language = language;
+		option.setAttribute('role', 'menuitemradio');
+		option.setAttribute('aria-checked', String(selected));
+		option.textContent = `${label}${selected ? ' \u2713' : ''}`;
+		menu.appendChild(option);
+	}
+
+	menu.addEventListener('close', () => {
+		this.classList.remove('open');
+		this.setAttribute('aria-expanded', 'false');
+	});
+	this.classList.add('open');
+	this.setAttribute('aria-expanded', 'true');
+	e.stopPropagation();
+});
+
+evtDelegated(document, '.language-menu [data-language]', 'click', function (e) {
+	const language = this.dataset.language;
+	const visible = editor.id ? editor.getVisible() : [];
+
+	e.stopPropagation();
+	closeLanguageMenu();
+	if (language === getLanguage() || !setLanguage(language)) return;
+
+	localizeStaticUI();
+	updateLanguageSwitcher();
+	clean_ttip();
+
+	if (editor.id) editor.renderPage(visible, Object.keys(editor.hidden));
+
+	const viewButton = sel('header .btn-view');
+	if (viewButton)
+		viewButton.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
+});
+
+document.addEventListener('keydown', e => {
+	if (e.key === 'Escape' && sel('.language-menu')) closeLanguageMenu(true);
+});
 
 evtDelegated(document, '[data-open]', 'click', function () {
 	// Open recent document

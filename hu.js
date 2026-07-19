@@ -6,6 +6,7 @@ Locale = {
 	'Undo': 'Vissza',
 	'Redo': 'Előre',
 	'New': 'Új',
+	'Language': 'Nyelv',
 	'Yes': 'Igen',
 	'Cancel': 'Mégse',
 	'There are unsaved changes! Are you sure?': 'Vannak nem elmentett változtatások! Biztos folytatod?',
