@@ -64,23 +64,6 @@ document.addEventListener('close', ({target}) => {
 	requestAnimationFrame(() => target.remove());
 });
 
-function localizeStaticUI() {
-	each('.locale', el => {
-		const key = el.dataset.localeKey || el.innerHTML.trim();
-		el.dataset.localeKey = key;
-		el.innerHTML = _(key);
-	});
-}
-
-function updateLanguageSwitcher() {
-	const language = getLanguage();
-	const toggle = sel('.language-toggle');
-	if (!toggle) return;
-
-	sel('.language-active', toggle).textContent = LANGUAGES[language].label;
-	toggle.setAttribute('aria-label', `${_('Language')}: ${LANGUAGES[language].label}`);
-}
-
 function closeLanguageMenu(returnFocus = false) {
 	const toggle = sel('.language-toggle');
 	const menu = sel('.language-menu');
@@ -92,10 +75,7 @@ function closeLanguageMenu(returnFocus = false) {
 	if (returnFocus) toggle.focus();
 }
 
-window.addEventListener('DOMContentLoaded', () => {
-	localizeStaticUI();
-	updateLanguageSwitcher();
-});
+window.addEventListener('DOMContentLoaded', () => localizeStaticUI());
 
 window.onerror = (errorMsg, url, lineNum, colNum, error) =>
 	addMsg(_('Exception: ') + errorMsg + ' (' + url + ':' + lineNum + ')', 'error');
@@ -598,8 +578,7 @@ class DocumentManager {
 
 		const isActiveDocument = this.#editor.id === fileName;
 
-		// Stop the active editor from scheduling another save while deletion waits for
-		// any already queued saves to finish.
+		// Stop the active editor from scheduling another save while deletion waits for any already queued saves to finish
 		if (isActiveDocument) this.#closeDocument();
 
 		try {
@@ -972,7 +951,7 @@ class Editor {
 	}
 
 	clear() {
-		// Run the same cleanup hooks as a document switch, then leave the editor empty.
+		// Run the same cleanup hooks as a document switch, then leave the editor empty
 		this.#clearChunksView();
 		dispatchAppEvent(this.dom, new Event('document-before-render', {bubbles: true}));
 		this.#resetEditorState(null, []);
@@ -1557,7 +1536,7 @@ evt('.ed-recent', 'click', e => {
 		remove.type = 'button';
 		remove.className = 'recent-remove';
 		remove.dataset.remove = data;
-		remove.textContent = '\u00d7';
+		remove.textContent = '\u00d7';  // Multiplication sign simlar to x
 		remove.title = `${_('Remove from browser storage')}: ${label}`;
 		remove.setAttribute('aria-label', remove.title);
 
@@ -1575,8 +1554,7 @@ evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message,
 evt('.language-toggle', 'click', function (e) {
 	if (sel('.language-menu')) {
 		closeLanguageMenu();
-		e.stopPropagation();
-		return;
+		return e.stopPropagation();
 	}
 
 	const menu = ttip(this);
@@ -1591,7 +1569,7 @@ evt('.language-toggle', 'click', function (e) {
 		option.dataset.language = language;
 		option.setAttribute('role', 'menuitemradio');
 		option.setAttribute('aria-checked', String(selected));
-		option.textContent = `${label}${selected ? ' \u2713' : ''}`;
+		option.textContent = `${label}${selected ? ' \u2713' : ''}`;  // Checkmark character
 		menu.appendChild(option);
 	}
 
@@ -1612,8 +1590,8 @@ evtDelegated(document, '.language-menu [data-language]', 'click', function (e) {
 	closeLanguageMenu();
 	if (language === getLanguage() || !setLanguage(language)) return;
 
+	// Also update the LanguageSwitcher
 	localizeStaticUI();
-	updateLanguageSwitcher();
 	clean_ttip();
 
 	if (editor.id) editor.renderPage(visible, Object.keys(editor.hidden));
@@ -1640,7 +1618,8 @@ evtDelegated(document, '[data-remove]', 'click', function (e) {
 
 	const fileName = this.dataset.remove;
 	const message = documents.isOpen(fileName)
-		? _('Remove the open document from recent files and browser storage? Any unsaved changes will be lost. This cannot be undone.')
+		? _('Remove the open document from recent files and browser storage? Any unsaved changes will be lost.' +
+			' This cannot be undone.')
 		: _('Remove this document from recent files and browser storage? This cannot be undone.');
 
 	addConfirm(message, () => documents.deleteDocument(fileName)

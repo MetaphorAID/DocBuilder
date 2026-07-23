@@ -218,7 +218,7 @@ function disable(s, enable, dom) {
 
 const LANGUAGES = Object.freeze({
 	en: Object.freeze({label: 'ENG', locale: {}}),
-	hu: Object.freeze({label: 'HU', locale: window.Locale || {}})
+	hu: Object.freeze({label: 'HUN', locale: window.Locale || {}})
 });
 const LANGUAGE_STORAGE_KEY = 'docbuilder_language';
 
@@ -252,6 +252,26 @@ function setLanguage(language) {
 	localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
 	document.documentElement.lang = language;
 	return true;
+}
+
+function localizeStaticUI() {
+	each('.locale', el => {
+		const key = el.dataset.localeKey || el.innerHTML.trim();
+		el.dataset.localeKey = key;
+		el.innerHTML = _(key);
+	});
+
+	// Also update the LanguageSwitcher
+	updateLanguageSwitcher();
+}
+
+function updateLanguageSwitcher() {
+	const language = getLanguage();
+	const toggle = sel('.language-toggle');
+	if (!toggle) return;
+
+	sel('.language-active', toggle).textContent = LANGUAGES[language].label;
+	toggle.setAttribute('aria-label', `${_('Language')}: ${LANGUAGES[language].label}`);
 }
 
 function _(text) {

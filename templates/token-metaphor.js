@@ -100,7 +100,7 @@
 		return field === TOKEN_SURFACE_FIELD ? getTokenSurface(token) : sel(field, token);
 	}
 
-	function getTokenFieldText(token, field, decode) {
+	function getTokenFieldText(token, field, decode = true) {
 		return xmlToText(getTokenField(token, field)?.innerHTML, decode);
 	}
 
@@ -472,7 +472,7 @@
 			// Show reasoning if there is any
 			if (selToText(tokenXml, 'reasoning', true)) items.push(TOKEN.createLink(tokenId, 'show reason', 'Reasoning'));
 			// Setup possible token splittings
-			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
+			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
 			if (tkn.length > 1) {
 				const split = {};
 				for (let i = 1; i < tkn.length; ++i) split[i] = tkn.slice(0, i) + ' | ' + tkn.slice(i);
@@ -503,7 +503,7 @@
 		const cells = [];
 		// Setup elements for fields
 		for (const field of TOKEN_FIELDS) {
-			const fieldValue = getTokenFieldText(tokenXml, field, true);
+			const fieldValue = getTokenFieldText(tokenXml, field);
 			let td = null;
 			switch (field) {
 				case TOKEN_SURFACE_FIELD:
@@ -602,7 +602,7 @@
 
 	function handleInsertToken(e, sentence, tokenId, tokenXml) {
 		const tt = ttip(sel('.cfg', sentence), e, true);
-		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD, true);
+		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
 		tt.appendChild(TOKEN.createInput());
 		tt.appendChild(TOKEN.createCenter(
 			TOKEN.createLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form}),
@@ -810,8 +810,8 @@
 
 		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
 		const form = getTokenSurface(keepToken);
-		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD, true)
-			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD, true);
+		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
+			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);
 
 		// Join text
 		form.setAttribute('modified', 'True');
