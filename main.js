@@ -1384,7 +1384,7 @@ class UndoManager {
 			from.clear();
 			to.clear();
 
-			// Restore the currently visible chunks to the editor
+			// Restore the currently visible chunks to the editor (with empty page)
 			this.#editor.renderPage(currentlyVisible);
 
 			return addMsg(_('Document changed outside, history action is disabled'), 'error');
@@ -1396,31 +1396,39 @@ class UndoManager {
 		let renderHidden;
 
 		try {
-			try {
-				await this.#persistFun(data.id, tosave);
-				// The user may open/create another document before the queued save finishes
-				// Only the still-active document should get save-completion UI updates
-				if (data.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
+			// Editor is changed, persist changes
+			await this.#persistFun(data.id, tosave);
+			// The user may open/create another document before the queued save finishes
+			// Only the still-active document should get save-completion UI updates
+			if (data.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
 
-				renderCids = data.cids;
-				renderHidden = hidden;
-			} catch (err) {
-				// Undo/redo mutates the editor before saving: this.#applyChunksToEditor(data) above writes into this.#editor
-				// If that persist fails, IndexedDB still has the pre-history-action state, so restore the editor to that state
-				// Normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
-				const reverted = this.#applyChunksToEditor(reverseEntry);
-				this.#clearSaveFailureFun?.(data.id);
-				renderCids = currentlyVisible;
-				renderHidden = reverted.hidden;
-				throw err;
-			}
+			// Set render paramters
+			renderCids = data.cids;
+			renderHidden = hidden;
 
+			// Add reverse entry to the (undo/redo) history
 			to.add({
 				id: data.id,
 				chunks: reverseEntry.chunks,
 				values: reverseEntry.values,
 				cids: currentlyVisible
 			});
+
+		} catch (err) {
+			// If this.#persistFun() fails, IndexedDB has the pre-history-action state,
+			// so restore the editor mutated by this.#applyChunksToEditor(data)
+			const reverted = this.#applyChunksToEditor(reverseEntry);
+			// In this way the editor and the IndexedDB will be consistent: the state before the undo/redo
+			// Meanwhile, normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
+			this.#clearSaveFailureFun?.(data.id);
+
+			// Set fallback render paramters
+			renderCids = currentlyVisible;
+			renderHidden = reverted.hidden;
+
+			// Propragate the error
+			throw err;
+
 		} finally {
 			// Render both in normal and error cases, but with different parameters
 			this.#editor.renderPage(renderCids, renderHidden);
