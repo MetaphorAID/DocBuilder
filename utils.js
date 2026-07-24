@@ -166,7 +166,7 @@ function ttip(dom, event, modal = false) {
 }
 
 function clean_ttip(currentTooltip) {
-	document.querySelectorAll('.tooltip:not(.modal)').forEach(tooltip => {
+	find('.tooltip:not(.modal)').forEach(tooltip => {
 		// Skip the tooltip being created
 		if (tooltip === currentTooltip) return;
 

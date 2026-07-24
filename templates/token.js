@@ -10,7 +10,7 @@ class TOKEN {
 	}
 
 	static MORPH_HEADERS = Object.freeze(['Token', 'Lemma', 'Detailed', 'Simple', ''])
-	static EMPTY_TEXT = '\xa0'
+	static EMPTY_TEXT = '\xa0'  // Non-breaking space
 
 	static initalize() {
 		// Common
@@ -45,6 +45,7 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
+		// Register custom event handlers
 		evt(editor.dom, 'document-before-render', () => {
 			sel('#header').replaceChildren();
 			sel('#footer').replaceChildren();

@@ -1333,12 +1333,12 @@ class UndoManager {
 		}
 	}
 
-	#createReverseHistoryEntry(data) {
+	#createReverseHistoryEntry(entry) {
 		const chunks = {};
 		const values = {};
 		let valid = true;
 
-		this.#forEachHistoryChunk(data, item => {
+		this.#forEachHistoryChunk(entry, item => {
 			// Verify that the document has not changed since the history entry was created
 			if (!item.current || item.current.value !== item.expected) {
 				valid = false;
@@ -1371,44 +1371,47 @@ class UndoManager {
 		return {tosave, hidden};
 	}
 
-	async #applyHistoryEntry(data, currentlyVisible, from, to) {
+	async #applyHistoryEntry(entry, from, to) {
+		// Save the view
+		const currentlyVisible = this.#editor.getVisible();
+
 		// Intentionally render an empty page first: renderPage([]) clears the current view, closes editor-owned tooltips,
 		// and lets templates run remove hooks against the currently rendered chunks before the history entry mutates them
 		this.#editor.renderPage([]);
 
 		// Create the corresponding reverse entry
-		const reverseEntry = this.#createReverseHistoryEntry(data);
+		const reverseEntry = this.#createReverseHistoryEntry(entry);
 
 		// Document changed, history is invalid
 		if (!reverseEntry) {
 			from.clear();
 			to.clear();
 
-			// Restore the currently visible chunks to the editor (with empty page)
+			// Restore the currently visible chunks to the editor (with now empty page)
 			this.#editor.renderPage(currentlyVisible);
 
 			return addMsg(_('Document changed outside, history action is disabled'), 'error');
 		}
 
-		// Apply a single history entry to the editor
-		const {tosave, hidden} = this.#applyChunksToEditor(data);
+		// Apply the history entry to the editor
+		const {tosave, hidden} = this.#applyChunksToEditor(entry);
 		let renderCids;
 		let renderHidden;
 
 		try {
 			// Editor is changed, persist changes
-			await this.#persistFun(data.id, tosave);
+			await this.#persistFun(entry.id, tosave);
 			// The user may open/create another document before the queued save finishes
 			// Only the still-active document should get save-completion UI updates
-			if (data.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
+			if (entry.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
 
 			// Set render paramters
-			renderCids = data.cids;
+			renderCids = entry.cids;
 			renderHidden = hidden;
 
 			// Add reverse entry to the (undo/redo) history
 			to.add({
-				id: data.id,
+				id: entry.id,
 				chunks: reverseEntry.chunks,
 				values: reverseEntry.values,
 				cids: currentlyVisible
@@ -1416,11 +1419,11 @@ class UndoManager {
 
 		} catch (err) {
 			// If this.#persistFun() fails, IndexedDB has the pre-history-action state,
-			// so restore the editor mutated by this.#applyChunksToEditor(data)
+			// so restore the editor mutated by this.#applyChunksToEditor(entry)
 			const reverted = this.#applyChunksToEditor(reverseEntry);
 			// In this way the editor and the IndexedDB will be consistent: the state before the undo/redo
 			// Meanwhile, normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
-			this.#clearSaveFailureFun?.(data.id);
+			this.#clearSaveFailureFun?.(entry.id);
 
 			// Set fallback render paramters
 			renderCids = currentlyVisible;
@@ -1436,46 +1439,38 @@ class UndoManager {
 	}
 
 	#apply(reverse) {
-		const from = this.#hist[reverse ? 'redo' : 'undo'];
-		const to = this.#hist[reverse ? 'undo' : 'redo'];
+		const sourceStack = reverse ? 'redo' : 'undo';
+		const targetStack = reverse ? 'undo' : 'redo';
 
-		// Get history (undo or redo) if any
-		const data = from.get();
-		if (!data) return Promise.resolve();
+		const from = this.#hist[sourceStack];
+		const to = this.#hist[targetStack];
 
-		// The entry (data) has already been popped from the source stack (undo or redo)
-		// If setup, rendering, or saving fails, put it back so the action can be retried
-		const restoreHistoryEntry = err => {
-			try {
-				from.add(data);
-			} catch (restoreErr) {
-				return Promise.reject(restoreErr);
-			}
+		// Pop history (undo or redo) if any
+		const entry = from.get();
+		if (!entry) return Promise.resolve();
 
-			return Promise.reject(err);
-		};
-
-		try {
-			// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
-			// drop both stacks and stop instead of applying those indexes to the currently open document
-			if (data.id !== this.#editor.id) {
-				console.error('Undo/redo history belongs to another document; clearing history stacks.', {
-					activeDocumentId: this.#editor.id,
-					historyDocumentId: data.id,
-					sourceStack: reverse ? 'redo' : 'undo',
-					targetStack: reverse ? 'undo' : 'redo',
-					entry: data
-				});
-				from.clear();
-				to.clear();
-				return Promise.resolve();
-			}
-
-			const currentlyVisible = this.#editor.getVisible();
-			return this.#applyHistoryEntry(data, currentlyVisible, from, to).catch(restoreHistoryEntry);
-		} catch (err) {
-			return restoreHistoryEntry(err);
+		// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
+		// drop both stacks and stop instead of applying those indexes to the currently open document
+		if (entry.id !== this.#editor.id) {
+			console.error('Undo/redo history belongs to another document; clearing history stacks.', {
+				activeDocumentId: this.#editor.id,
+				historyDocumentId: entry.id,
+				sourceStack,
+				targetStack,
+				entry
+			});
+			from.clear();
+			to.clear();
+			return Promise.resolve();
 		}
+
+		// Actually apply the history entry (to the editor, persitence and view)
+		return this.#applyHistoryEntry(entry, from, to).catch(err => {
+			// entry has already been popped from the source stack (undo or redo)
+			// If setup, rendering, or saving fails, put it back so the action can be retried
+			from.add(entry);
+			throw err;
+		});
 	}
 
 	undo() {
@@ -1615,8 +1610,7 @@ evtDelegated(document, '.language-menu [data-language]', 'click', function (e) {
 	if (editor.id) editor.renderPage(currentlyVisible, Object.keys(editor.hidden));
 
 	const viewButton = sel('header .btn-view');
-	if (viewButton)
-		viewButton.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
+	if (viewButton) viewButton.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
 });
 
 document.addEventListener('keydown', e => {
