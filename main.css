@@ -112,9 +112,10 @@ a.disabled.disabled, .dropdown a.disabled, .tooltip a.disabled {
   pointer-events: none;
 }
 
-.language-switcher {
-  position: relative;
+.btn.ed-language {
   float: right;
+  min-width: 3.5em;
+  text-align: left;
 }
 
 .select {
