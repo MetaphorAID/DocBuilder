@@ -441,7 +441,7 @@ class DocumentManager {
 		const recentDocuments = [];
 
 		// Filter unavailable and duplicate documents (according to the history)
-		this.#hist.recent.walk(fileName => {
+		this.#hist.recent.forEachEntry(fileName => {
 			if (!availableDocuments.has(fileName) || syncedDocuments.has(fileName)) return;
 
 			syncedDocuments.add(fileName);
@@ -457,7 +457,7 @@ class DocumentManager {
 		});
 
 		// Insert the newly built recent history
-		this.#hist.recent.replace(recentDocuments);
+		this.#hist.recent.replaceEntries(recentDocuments);
 	}
 
 	async #handleEditorChange(chunks, values) {
@@ -499,7 +499,7 @@ class DocumentManager {
 		};
 
 		// Any new edit invalidates Redo history
-		this.#hist.redo.clear();
+		this.#hist.redo.clearEntries();
 
 		// Apply the collected values to the live editor model and gather the changed chunks for persistence
 		const chunksToSave = [];
@@ -513,7 +513,7 @@ class DocumentManager {
 			// The user may open/create another document before the queued save finishes
 			// Only the still-active document should get save-completion UI updates
 			if (this.#editor.id === documentId) {
-				this.#hist.undo.add(editEntry);
+				this.#hist.undo.addEntry(editEntry);
 				addMsg(_('Document Saved'), 'success');
 			}
 		} catch (err) {
@@ -525,7 +525,7 @@ class DocumentManager {
 					this.#editor[cid[0] === 'h' ? 'hidden' : 'chunks'][cid.slice(1)] = structuredClone(chunk);
 				}
 				// Add a redo entry to allow manual retrying
-				this.#hist.redo.add(redoEntry);
+				this.#hist.redo.addEntry(redoEntry);
 				// All failures are handled, clear flags
 				this.#saveQueue.clearFailures(documentId);
 			}
@@ -571,8 +571,8 @@ class DocumentManager {
 		// Stop the active editor from scheduling another save while deletion waits for any already queued saves to finish
 		if (isActiveDocument) {
 			this.#editor.clear();
-			this.#hist.undo.clear();
-			this.#hist.redo.clear();
+			this.#hist.undo.clearEntries();
+			this.#hist.redo.clearEntries();
 			disable(this.#exportButtonName, false);
 		}
 
@@ -583,7 +583,7 @@ class DocumentManager {
 		}
 
 		this.#saveQueue.clearFailures(fileName);
-		this.#hist.recent.remove(fileName);
+		this.#hist.recent.removeEntry(fileName);
 		addMsg(_('Document Removed'), 'success');
 	}
 
@@ -640,10 +640,10 @@ class DocumentManager {
 		this.#saveQueue.clearAll();
 
 		// Undo and redo only apply to edits made since this document was loaded
-		this.#hist.undo.clear();
-		this.#hist.redo.clear();
+		this.#hist.undo.clearEntries();
+		this.#hist.redo.clearEntries();
 		this.#editor.load(data);
-		this.#hist.recent.moveToTop(this.#editor.id);
+		this.#hist.recent.moveEntryToTop(this.#editor.id);
 
 		// Enable export button
 		disable(this.#exportButtonName, !!this.#editor.id);
@@ -652,7 +652,7 @@ class DocumentManager {
 	}
 
 	walkRecent(callback) {
-		this.#hist.recent.walk(callback);
+		this.#hist.recent.forEachEntry(callback);
 	}
 
 	undo() {
@@ -1233,7 +1233,7 @@ class History {
 		return this.#data.length;
 	}
 
-	replace(data) {
+	replaceEntries(data) {
 		const next = structuredClone(data).slice(0, this.#max);
 		if (JSON.stringify(this.#data) === JSON.stringify(next)) {
 			this.#onchange?.(this);
@@ -1244,14 +1244,14 @@ class History {
 		this.#onHistChange();
 	}
 
-	add(data) {
+	addEntry(data) {
 		// Add new data while maintaining maximum size in place
 		this.#data.unshift(structuredClone(data));
 		if (this.#data.length > this.#max) this.#data.length = this.#max;
 		this.#onHistChange();
 	}
 
-	get() {
+	takeLatestEntry() {
 		// Remove and return the latest history entry
 		if (!this.#data.length) return;
 
@@ -1260,13 +1260,13 @@ class History {
 		return data;
 	}
 
-	moveToTop(value) {
+	moveEntryToTop(value) {
 		const index = this.#data.indexOf(value);
 		if (index >= 0) this.#data.splice(index, 1);
-		this.add(value);
+		this.addEntry(value);
 	}
 
-	remove(value) {
+	removeEntry(value) {
 		const index = this.#data.indexOf(value);
 		if (index < 0) return false;
 
@@ -1275,11 +1275,11 @@ class History {
 		return true;
 	}
 
-	walk(callback) {
+	forEachEntry(callback) {
 		this.#data.forEach(callback);
 	}
 
-	clear() {
+	clearEntries() {
 		this.#data = [];
 		this.#onHistChange();
 	}
@@ -1369,8 +1369,8 @@ class UndoManager {
 
 		// Document changed, history is invalid
 		if (!reverseEntry) {
-			from.clear();
-			to.clear();
+			from.clearEntries();
+			to.clearEntries();
 
 			// Restore the currently visible chunks to the editor (with now empty page)
 			this.#editor.renderPage(currentlyVisible);
@@ -1395,7 +1395,7 @@ class UndoManager {
 			renderHidden = hidden;
 
 			// Add reverse entry to the (undo/redo) history
-			to.add({
+			to.addEntry({
 				id: entry.id,
 				chunks: reverseEntry.chunks,
 				values: reverseEntry.values,
@@ -1431,7 +1431,7 @@ class UndoManager {
 		const to = this.#hist[targetStack];
 
 		// Pop history (undo or redo) if any
-		const entry = from.get();
+		const entry = from.takeLatestEntry();
 		if (!entry) return Promise.resolve();
 
 		// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
@@ -1444,8 +1444,8 @@ class UndoManager {
 				targetStack,
 				entry
 			});
-			from.clear();
-			to.clear();
+			from.clearEntries();
+			to.clearEntries();
 			return Promise.resolve();
 		}
 
@@ -1453,7 +1453,7 @@ class UndoManager {
 		return this.#applyHistoryEntry(entry, from, to).catch(err => {
 			// entry has already been popped from the source stack (undo or redo)
 			// If setup, rendering, or saving fails, put it back so the action can be retried
-			from.add(entry);
+			from.addEntry(entry);
 			throw err;
 		});
 	}
