@@ -1251,14 +1251,12 @@ class History {
 		this.#onHistChange();
 	}
 
-	get(index = 0, peek = false) {
-		// Return element by index (pop or peek, the latest element is 0)
-		const data = this.#data[index];
-		if (data && !peek) {
-			this.#data.splice(index, 1);
-			this.#onHistChange();
-		}
+	get() {
+		// Remove and return the latest history entry
+		if (!this.#data.length) return;
 
+		const data = this.#data.shift();
+		this.#onHistChange();
 		return data;
 	}
 
