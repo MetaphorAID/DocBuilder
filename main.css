@@ -222,6 +222,7 @@ a.disabled.disabled, .dropdown a.disabled, .tooltip a.disabled {
 }
 
 .confirm {
+  position: fixed;
   z-index: 3;
   top: 30%;
   left: 0;
