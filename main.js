@@ -1338,25 +1338,32 @@ class UndoManager {
 		return valid ? {chunks, values} : false;
 	}
 
+	#isEditorStateActive(editorState) {
+		// Checking the ID alone is not enough: the same document may have been reloaded while the save was queued
+		return this.#editor.id === editorState.id &&
+			this.#editor.chunks === editorState.chunks &&
+			this.#editor.hidden === editorState.hidden;
+	}
+
 	#applyChunksToEditor(data) {
-		const tosave = [];
-		const hidden = [];
+		const chunksToSave = [];
+		const hiddenToRender = [];
 
 		this.#forEachHistoryChunk(data, item => {
 			// Apply the item to the appropriate category (visible or hidden)
 			this.#editor[item.store][item.index] = item.target;
 
-			// Changes should be saved
-			tosave.push(item.target);
+			// Persist every changed history chunk, regardless of whether it is visible or hidden
+			chunksToSave.push(item.target);
 
 			// Hidden sections that need rerendering
-			if (item.store === 'hidden') hidden.push(item.index);
+			if (item.store === 'hidden') hiddenToRender.push(item.index);
 		});
 
-		return {tosave, hidden};
+		return {chunksToSave, hiddenToRender};
 	}
 
-	async #applyHistoryEntry(entry, from, to) {
+	async #applyHistoryEntry(entry, from, to, editorState) {
 		// Save the view
 		const currentlyVisible = this.#editor.getVisible();
 
@@ -1379,20 +1386,22 @@ class UndoManager {
 		}
 
 		// Apply the history entry to the editor
-		const {tosave, hidden} = this.#applyChunksToEditor(entry);
+		const {chunksToSave, hiddenToRender} = this.#applyChunksToEditor(entry);
 		let renderCids;
 		let renderHidden;
 
 		try {
 			// Editor is changed, persist changes
-			await this.#persistFun(entry.id, tosave);
-			// The user may open/create another document before the queued save finishes
-			// Only the still-active document should get save-completion UI updates
-			if (entry.id === this.#editor.id) addMsg(_('Document Saved'), 'success');
+			await this.#persistFun(entry.id, chunksToSave);
 
-			// Set render paramters
+			// Persistence still targets the document captured by entry.id, but load() may have replaced the shared editor
+			// while the save was queued. A stale history action must not update the new view or its history stacks.
+			if (!this.#isEditorStateActive(editorState)) return;
+			addMsg(_('Document Saved'), 'success');
+
+			// Set render parameters
 			renderCids = entry.cids;
-			renderHidden = hidden;
+			renderHidden = hiddenToRender;
 
 			// Add reverse entry to the (undo/redo) history
 			to.addEntry({
@@ -1403,23 +1412,22 @@ class UndoManager {
 			});
 
 		} catch (err) {
-			// If this.#persistFun() fails, IndexedDB has the pre-history-action state,
-			// so restore the editor mutated by this.#applyChunksToEditor(entry)
-			const reverted = this.#applyChunksToEditor(reverseEntry);
-			// In this way the editor and the IndexedDB will be consistent: the state before the undo/redo
-			// Meanwhile, normal edits follow the same consistency invariant: failed saves leave a retryable redo entry
 			this.#clearSaveFailureFun?.(entry.id);
 
-			// Set fallback render paramters
-			renderCids = currentlyVisible;
-			renderHidden = reverted.hidden;
+			if (this.#isEditorStateActive(editorState)) {
+				// IndexedDB has the pre-history-action state, so restore only the editor that initiated the action
+				const reverted = this.#applyChunksToEditor(reverseEntry);
+				// In this way the editor and IndexedDB remain consistent; the history entry is restored by #apply()
+				renderCids = currentlyVisible;
+				renderHidden = reverted.hiddenToRender;
+			}
 
-			// Propragate the error
+			// Propagate the error
 			throw err;
 
 		} finally {
-			// Render both in normal and error cases, but with different parameters
-			this.#editor.renderPage(renderCids, renderHidden);
+			// Render success or rollback only if this operation still owns the active editor state
+			if (this.#isEditorStateActive(editorState)) this.#editor.renderPage(renderCids, renderHidden);
 		}
 	}
 
@@ -1449,11 +1457,18 @@ class UndoManager {
 			return Promise.resolve();
 		}
 
-		// Actually apply the history entry (to the editor, persitence and view)
-		return this.#applyHistoryEntry(entry, from, to).catch(err => {
+		// Keep an identity token for the loaded editor state, not just its document ID
+		const editorState = {
+			id: this.#editor.id,
+			chunks: this.#editor.chunks,
+			hidden: this.#editor.hidden
+		};
+
+		// Actually apply the history entry (to the editor, persistence and view)
+		return this.#applyHistoryEntry(entry, from, to, editorState).catch(err => {
 			// entry has already been popped from the source stack (undo or redo)
-			// If setup, rendering, or saving fails, put it back so the action can be retried
-			from.addEntry(entry);
+			// If the same editor state is still active, put it back so the action can be retried
+			if (this.#isEditorStateActive(editorState)) from.addEntry(entry);
 			throw err;
 		});
 	}
