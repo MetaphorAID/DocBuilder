@@ -135,7 +135,9 @@ class LanguageManager extends EventTarget {
 
 			validated[code] = Object.freeze({
 				label: definition.label,
-				locale: Object.freeze({...definition.locale})
+				// Templates are loaded on demand and extend their locale at runtime.
+				// Keep the validated dictionary reference live so those additions are visible.
+				locale: definition.locale
 			});
 		}
 
