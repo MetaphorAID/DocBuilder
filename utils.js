@@ -119,7 +119,7 @@ function addConfirm(message, onconfirm) {
 	sel('body').appendChild(m);
 }
 
-function ttip(dom, event, modal = false) {
+function ttip(dom, event = null, modal = false) {
 	const tooltip = document.createElement('div');
 	tooltip.className = `tooltip${modal ? ' modal' : ''}`;
 
