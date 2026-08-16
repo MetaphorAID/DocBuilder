@@ -45,6 +45,12 @@ class TOKEN {
 		Locale['Edit'] = 'Szerkeszt';
 		Locale['Save'] = 'Elment';
 
+		const updateViewButtonLabel = () => {
+			const viewButton = sel('header .btn-view');
+			if (viewButton)
+				viewButton.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
+		};
+
 		// Register custom event handlers
 		evt(editor.dom, 'document-before-render', () => {
 			sel('#header').replaceChildren();
@@ -58,11 +64,13 @@ class TOKEN {
 				const a = document.createElement('a');
 				a.href = '#';
 				a.className = 'btn btn-view';
-				a.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
 
 				sel('header').appendChild(a);
 			}
+			updateViewButtonLabel();
 		});
+
+		languageManager.addEventListener('change', updateViewButtonLabel);
 
 		document.addEventListener('click', (e) => {
 			const t = e.target;
@@ -71,7 +79,7 @@ class TOKEN {
 			// Change view
 			if (t.matches('.btn-view')) {
 				localStorage.tableview = localStorage.tableview ? '' : '1';
-				sel('header .btn-view').textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
+				updateViewButtonLabel();
 				editor.renderPage(editor.getVisible());
 			}
 		});

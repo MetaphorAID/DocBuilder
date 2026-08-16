@@ -1682,9 +1682,6 @@ languageManager.addEventListener('change', () => {
 	const currentlyVisible = editor.id ? editor.getVisible() : [];
 
 	if (editor.id) editor.renderPage(currentlyVisible, Object.keys(editor.hidden));
-
-	const viewButton = sel('header .btn-view');
-	if (viewButton) viewButton.textContent = _(localStorage.tableview ? 'Normal View' : 'Table View');
 });
 
 evtDelegated(document, '[data-open]', 'click', function () {
