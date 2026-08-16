@@ -29,6 +29,7 @@ Locale = {
 	'Export cancelled because another document became active before the save finished.': 'Az export megszakadt, mert a mentés befejezése előtt másik dokumentumra váltottál.',
 	'Document changed outside, history action is disabled': 'A dokumentum megváltozott, az előre/hátra lépés le lett tiltva',
 	'Document not found: ': 'Dokumentum nem található: ',
+	'Template not found: ': 'A sablon nem található: ',
 	'Could not open the document. The file content is invalid or does not match the selected template.': 'Nem sikerült megnyitni a dokumentumot. A fájl tartalma hibás, vagy nem illik a kiválasztott sablonhoz.',
 	'The selected template could not split this file into editable sections. Check that you chose the right template and that the file is not empty or missing required content.': 'A kiválasztott sablon nem tudja szerkeszthető részekre bontani ezt a fájlt. Ellenőrizd, hogy jó sablont választottál-e, és hogy a fájl nem üres vagy hiányos.',
 	'Show +1 sentence': '+1 mondat mutatása',

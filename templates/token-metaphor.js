@@ -971,6 +971,15 @@
 		// Create new metaphor documents
 		return new Promise((resolve) => {
 			const tt = ttip(sel('header'), null, true);
+			let settled = false;
+			const finish = result => {
+				if (settled) return;
+				settled = true;
+				resolve(result);
+			};
+
+			// Closing the modal by either Cancel or the close button cancels document creation.
+			tt.addEventListener('close', () => finish(null), {once: true});
 
 			const defaultFilename = 'uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_')
 				.replace(/Z$/, '') + '.xml';
@@ -1013,10 +1022,7 @@
 			const submitBtn = sel('.metaphor-new-submit', tt);
 			const cancelBtn = sel('.metaphor-new-cancel', tt);
 
-			cancelBtn.onclick = () => {
-				trg(tt, 'close');
-				resolve(null);
-			};
+			cancelBtn.onclick = () => trg(tt, 'close');
 
 			submitBtn.onclick = async () => {
 				let filename = sel('[name="filename"]', tt).value.trim();
@@ -1072,8 +1078,8 @@
 
 					const data = await r.text();
 
+					finish([filename, normalizeDocumentTitle(data, filename)]);
 					trg(tt, 'close');
-					resolve([filename, normalizeDocumentTitle(data, filename)]);
 				} catch (err) {
 					// Catch network errors and invalid bearer token errors
 					let errorMsg = err.message;

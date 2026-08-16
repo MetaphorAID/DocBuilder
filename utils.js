@@ -216,6 +216,8 @@ function disable(s, enable, dom) {
 	if (el) el.classList.toggle('disabled', !enable);
 }
 
+class FileSelectionCancelledError extends Error {}
+
 function pickFile({extension, multiple = false, accept} = {}) {
 	return new Promise((resolve, reject) => {
 		const input = document.createElement('input');
@@ -237,7 +239,7 @@ function pickFile({extension, multiple = false, accept} = {}) {
 
 		const fail = () => {
 			cleanup();
-			reject(new Error('No file chosen'));
+			reject(new FileSelectionCancelledError('No file chosen'));
 		};
 
 		input.addEventListener('change', () => {

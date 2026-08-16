@@ -1620,7 +1620,8 @@ async function createNewDocument(templateInfo) {
 	if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
 
 	const result = await creationHandler();
-	if (!result) return;
+	// Creation handlers return null only when the user cancels the operation; errors are reported or rejected.
+	if (result === null) return;
 
 	// Process the source returned by the template, then save and render the document
 	const [filename, data] = result;
@@ -1628,12 +1629,15 @@ async function createNewDocument(templateInfo) {
 }
 
 function showDocumentLoadError(err) {
+	// Closing the file picker is expected user cancellation, not a load failure.
+	if (err instanceof FileSelectionCancelledError) return;
+
 	const message = err?.message || String(err || '');
 	const hasCause = err && typeof err === 'object' && 'cause' in err;
-	if (!message || !hasCause) return;
+	if (!message) return;
 
-	// Wrapped load errors keep their low-level cause here, while the UI shows the friendly top-level message
-	console.error('Error during file open process:', err.cause);
+	// Wrapped load errors keep their low-level cause here; otherwise log the original error.
+	console.error('Error during file open process:', hasCause ? err.cause : err);
 	addMsg(message, 'error');
 }
 
@@ -1709,8 +1713,8 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		const action = this.dataset.action;
 
 		// Find and load the selected template
-		const templateInfo = await templates.getTemplateById(this.dataset.template)
-		if (!templateInfo) return;
+		const templateInfo = await templates.getTemplateById(this.dataset.template);
+		if (!templateInfo) return addMsg(_('Template not found: ') + this.dataset.template, 'error');
 
 		trg(this.closest('.tooltip'), 'close');
 
