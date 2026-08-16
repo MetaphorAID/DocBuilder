@@ -1561,6 +1561,7 @@ class UndoManager {
 		// History entries store chunk indexes for one document only. If a stale entry survived a document switch,
 		// drop both stacks and stop instead of applying those indexes to the currently open document
 		if (entry.id !== this.#editor.id) {
+			const err = new Error(_('Undo/redo history belongs to another document; history was cleared.'));
 			console.error('Undo/redo history belongs to another document; clearing history stacks.', {
 				activeDocumentId: this.#editor.id,
 				historyDocumentId: entry.id,
@@ -1570,7 +1571,7 @@ class UndoManager {
 			});
 			from.clearEntries();
 			to.clearEntries();
-			return Promise.resolve();
+			return Promise.reject(err);
 		}
 
 		// Actually apply the history entry (to the editor, persistence and view)

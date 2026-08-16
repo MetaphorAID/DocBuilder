@@ -28,6 +28,7 @@ Locale = {
 	'Remove the open document from recent files and browser storage? Any unsaved changes will be lost. This cannot be undone.': 'Törli a megnyitott dokumentumot a legutóbbi fájlok közül és a böngésző tárhelyéről? A nem mentett változtatások elvesznek. Ez nem vonható vissza.',
 	'Export cancelled because another document became active before the save finished.': 'Az export megszakadt, mert a mentés befejezése előtt másik dokumentumra váltottál.',
 	'Document changed outside, history action is disabled': 'A dokumentum megváltozott, az előre/hátra lépés le lett tiltva',
+	'Undo/redo history belongs to another document; history was cleared.': 'Az előzmények másik dokumentumhoz tartoznak; a visszavonási és ismétlési előzmények törölve lettek.',
 	'Document not found: ': 'Dokumentum nem található: ',
 	'Template not found: ': 'A sablon nem található: ',
 	'Could not open the document. The file content is invalid or does not match the selected template.': 'Nem sikerült megnyitni a dokumentumot. A fájl tartalma hibás, vagy nem illik a kiválasztott sablonhoz.',
