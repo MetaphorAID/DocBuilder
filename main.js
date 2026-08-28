@@ -425,6 +425,7 @@ class DocumentManager {
 			(documentId, chunks) => this.#persist(documentId, chunks),
 			documentId => this.#saveQueue.clearFailures(documentId)
 		);
+
 		this.#editor.setChangeHandler((chunks, values, context) =>
 			this.#undoManager.commitEdit(chunks, values, context));
 
@@ -539,8 +540,7 @@ class DocumentManager {
 
 	hasUnfinishedSave() {
 		return this.#undoManager.hasPendingOperation(this.#editor.id) ||
-			this.#saveQueue.hasUnfinishedSave(this.#editor.id) ||
-			this.#editor.hasChanges();
+			this.#saveQueue.hasUnfinishedSave(this.#editor.id) || this.#editor.hasChanges();
 	}
 
 	async export(disabled) {
@@ -767,7 +767,7 @@ class Editor {
 
 	#onchangeCallback
 
-	constructor(dom, onchangeFun = null) {
+	constructor(dom, exportButtonName, onchangeFun = null) {
 		this.dom = dom;
 		this.#onchangeCallback = onchangeFun;
 		this.id = null;
@@ -779,7 +779,7 @@ class Editor {
 		dom.classList.add('editor');
 
 		// Initially disable save button since no file is open
-		disable('.ed-export', false);
+		disable(exportButtonName, false);
 
 		// Commit the changed chunk; DOM event dispatch does not await the returned promise
 		evt(dom, 'change', e => {
@@ -972,10 +972,8 @@ class Editor {
 		return false;
 	}
 
-	onchange(cids, hdata) {
+	onchange(cids, hiddenData = {}) {
 		// Collect changes/differences and call the callback on them
-
-		const hiddenData = hdata || {};
 		const hids = Object.keys(hiddenData);
 
 		// Collect changed VISIBLE chunks by change ID (derived from chunk index) into a batch
@@ -1388,9 +1386,10 @@ class UndoManager {
 	}
 
 	async commitEdit(chunks, values, context = {}) {
-		const editorState = context.editorState || this.#captureEditorState();
 		const changeIds = Object.keys(chunks);
 		const nextValues = structuredClone(values);
+		// Context consists of editorState, cids and hids
+		const editorState = context.editorState || this.#captureEditorState();
 		const cids = structuredClone(context.cids ?? this.#editor.getVisible());
 		const hids = structuredClone(context.hids ?? changeIds.filter(cid => cid[0] === 'h').map(cid => cid.substring(1)));
 
@@ -1596,7 +1595,7 @@ class UndoManager {
 
 }
 
-const editor = new Editor(sel('#editor'));
+const editor = new Editor(sel('#editor'), '.ed-export');
 hist = {
 	recent: new History('ed_recent', h => disable('.ed-recent', !!h.length)),
 	undo: new History('ed_undo', h => disable('.ed-undo', !!h.length)),
