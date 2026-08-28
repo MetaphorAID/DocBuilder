@@ -978,7 +978,7 @@
 				resolve(result);
 			};
 
-			// Closing the modal by either Cancel or the close button cancels document creation.
+			// Closing the modal by either Cancel or the close button cancels document creation
 			tt.addEventListener('close', () => finish(null), {once: true});
 
 			const defaultFilename = 'uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_')
