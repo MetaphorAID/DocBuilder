@@ -5,6 +5,16 @@
   border-bottom: 2px dashed;
 }
 
+.par.table {
+  box-sizing: border-box;
+  position: relative;
+  left: 50%;
+  width: calc(100vw - 2rem);
+  max-width: 75rem;
+  margin-inline: 0;
+  transform: translateX(-50%);
+}
+
 .par h4 {
   text-align: center;
   margin-top: 1rem;
@@ -37,8 +47,29 @@
   border-right-style: dotted;
 }
 
-.par .modified {
-  color: #00A;
+.par div.s .t.modified::after,
+.par table.s .t > td.modified::after,
+#header .legend-modified::after {
+  content: "\270E";
+  display: inline-block;
+  margin-left: .25em;
+  color: #6A1B9A;
+  font-size: .8em;
+  line-height: 1;
+  vertical-align: super;
+}
+
+#header .legend-modified {
+  display: inline-block;
+  margin-right: 0;
+  text-align: center;
+  vertical-align: middle;
+}
+
+#header .legend-modified::after {
+  margin-left: 0;
+  font-size: 1em;
+  vertical-align: middle;
 }
 
 .par .unchecked {
@@ -127,9 +158,14 @@ table.s td {
   vertical-align: middle;
 }
 
-table.s td:nth-child(5),
-table.s th:nth-child(5) {
+table.s td:nth-child(5) {
   text-align: left;
+}
+
+table.s .reasoning-preview {
+  width: 12em;
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 table.s .cfg td {

@@ -1,798 +1,1096 @@
 (function () {
-  function encXml(t) {
-    return ('' + t).replace('&', '&amp;').replace("'", '&apos;').replace('"', '&quot;').replace('<', '&lt;')
-      .replace('>', '&gt;');
-  }
+	const PRIMARY_MEANING_INDEX = '1';
+	const REASONING_PREVIEW_WORDS = 15;
+	const TOKEN_SURFACE_FIELD = 'form';
+	const LEGACY_TOKEN_SURFACE_FIELD = 'word';
+	const MEANING_FIELD = Object.freeze({
+		PRIMARY: 'primary',
+		OTHER: 'other',
+		CONTEXTUAL_INDEX: 'contextualIndex',
+	});
 
-  function decXml(t) {
-    return ('' + t).replace('&apos;', "'").replace('&quot;', '"').replace('&lt;', '<').replace('&gt;', '>')
-      .replace('&amp;', '&');
-  }
+	const MEANING_FIELDS = Object.freeze([
+		MEANING_FIELD.PRIMARY,
+		MEANING_FIELD.OTHER,
+		MEANING_FIELD.CONTEXTUAL_INDEX,
+	]);
 
-  function xmlToText(xml, decode) {
-    var t = (xml || '').replace(/<[^>]+>/sg, ' ').trim();
-    return decode ? decXml(t) : t.replace("'", '&apos;').replace('"', '&quot;');
-  }
+	const INDIRECT = {
+		'0': '-',
+		'1': 'Metonymy',
+		'2': 'Generalization',
+		'3': 'Specification'
+	}
 
-  function selToText(dom, s, decode) {
-    return xmlToText(sel(s, dom, {}).innerHTML, decode);
-  }
+	const TOKEN_FIELDS = Object.freeze([
+		TOKEN_SURFACE_FIELD,
+		'lemma',
+		'pos',
+		'nerTag',
+		'meanings',
+		'metaphor',
+		'otherIndirect',
+		'comment',
+	]);
+	const TABLE_FIELDS = Object.freeze([...TOKEN_FIELDS.slice(0, -1), 'reasoning', 'comment']);
 
-  var INDIRECT = {
-    '0': '-',
-    '1': 'metonímia',
-    '2': 'generalizáció',
-    '3': 'specifikáció'
-  }
+	Locale[TOKEN_SURFACE_FIELD] = 'szó';
+	Locale['lemma'] = 'lemma';
+	Locale['pos'] = 'szófaj';
+	Locale['nerTag'] = 'névelem';
+	Locale['meanings'] = 'jelentés';
+	Locale['metaphor'] = 'metafora';
+	Locale['otherIndirect'] = 'indirekt';
+	Locale['comment'] = 'megjegyzés';
+	Locale['reasoning'] = 'érvelés';
+	Locale[MEANING_FIELD.PRIMARY] = 'elsődleges';
+	Locale[MEANING_FIELD.OTHER] = 'többi';
+	Locale[MEANING_FIELD.CONTEXTUAL_INDEX] = 'jelenleg';
+	Locale['Metonymy'] = 'metonímia';
+	Locale['Generalization'] = 'generalizáció';
+	Locale['Specification'] = 'specifikáció';
+	Locale['Meanings'] = 'Jelentések';
+	Locale['Reasoning'] = 'Érvelés';
+	Locale['Content'] = 'Tartalom (szöveges)';
+	Locale['Set Paragraph...'] = 'Bekezdés felülírása';
+	Locale['New Text for Metaphor Detection'] = 'Új szöveg metafora detektáláshoz';
+	Locale['File Name'] = 'Fájlnév';
+	Locale['Content'] = 'Tartalom';
+	Locale['Submit'] = 'Beküldés';
+	Locale['Please fill in all fields'] = 'Kérjük, töltse ki az összes mezőt';
+	Locale['Network error'] = 'Hálózati hiba';
+	Locale['New document creation not supported for this template'] = 'Új dokumentum létrehozása nem támogatott' +
+		' ennél a sablonnál';
+	Locale['Token Legend'] = 'Tokenek jelmagyarázata';
+	Locale['Metaphor'] = 'Metafora';
+	Locale['Other Indirect Meaning'] = 'Egyéb indirekt jelentés';
+	Locale['Direct meaning'] = 'Közvetlen jelentés';
+	Locale['API response format is incorrect'] = 'Az API válasz formátuma helytelen';
+	Locale['API server error'] = 'API szerver hiba';
+	Locale['Processing...'] = 'Feldolgozás...';
+	Locale['Please provide API URL'] = 'Kérjük adjon meg API URL-t';
+	Locale['Please provide content'] = 'Kérjük adjon meg szöveget';
+	Locale['Invalid API response'] = 'Érvénytelen API válasz';
+	Locale['Invalid or wrong API URL'] = 'Érvénytelen vagy hibás API URL';
+	Locale['unknown error'] = 'ismeretlen hiba';
+	Locale['Invalid bearer token'] = 'Érvénytelen API token';
+	Locale['Request timeout'] = 'Kérés időtúllépése';
+	Locale['Network error:'] = 'Hálózati hiba:';
 
-  var COLS = {
-    'word': 'szó',
-    'lemma': 'lemma',
-    'pos': 'szófaj',
-    'nerTag': 'névelem',
-    'meanings': 'jelentés',
-    'metaphor': 'metafora',
-    'otherIndirect': 'indirekt',
-    'comment': 'megjegyzés'
-  }
+	Locale['Manually modified'] = 'Kézzel módosítva';
 
-  var MEANING = {
-    'primary': 'elsődleges',
-    'other': 'többi',
-    'contextualIndex': 'jelenleg',
-  }
+	function normalizeText(value) {
+		return value
+			.replaceAll('\\n', '\n')
+			.replaceAll('\\t', '\t')
+			.trim()
+			.replace(/[\t ]+/g, ' ')
+			.replace(/ *\n */g, '\n');
+	}
 
-  Locale['Meanings'] = 'Jelentések';
-  Locale['Reasoning'] = 'Érvelés';
-  Locale['Content'] = 'Tartalom (szöveges)';
-  Locale['Set Paragraph...'] = 'Bekezdés felülírása';
-  Locale['New Text for Metaphor Detection'] = 'Új szöveg metafora detektáláshoz';
-  Locale['File Name'] = 'Fájlnév';
-  Locale['Content'] = 'Tartalom';
-  Locale['Submit'] = 'Beküldés';
-  Locale['Please fill in all fields'] = 'Kérjük, töltse ki az összes mezőt';
-  Locale['Network error'] = 'Hálózati hiba';
-  Locale['New document creation not supported for this template'] = 'Új dokumentum létrehozása nem támogatott ennél' +
-    ' a sablonnál';
-  Locale['Token Color Legend'] = 'Token szín jelmagyarázat';
-  Locale['Metaphor'] = 'Metafora';
-  Locale['Other Indirect Meaning'] = 'Egyéb indirekt jelentés';
-  Locale['Direct meaning'] = 'Közvetlen jelentés';
-  Locale['API response format is incorrect'] = 'Az API válasz formátuma helytelen';
-  Locale['API server error'] = 'API szerver hiba';
-  Locale['Processing...'] = 'Feldolgozás...';
-  Locale['Please provide API URL'] = 'Kérjük adjon meg API URL-t';
-  Locale['Please provide content'] = 'Kérjük adjon meg szöveget';
-  Locale['Invalid API response'] = 'Érvénytelen API válasz';
-  Locale['Invalid or wrong API URL'] = 'Érvénytelen vagy hibás API URL';
-  Locale['unknown error'] = 'ismeretlen hiba';
-  Locale['Invalid bearer token'] = 'Érvénytelen API token';
-  Locale['Request timeout'] = 'Kérés időtúllépése';
-  Locale['Network error:'] = 'Hálózati hiba:';
+	function getText(el) {
+		return el ? normalizeText(el.textContent) : '';
+	}
 
-  function format(name, el) {
-    if (!el) return '&nbsp;';
-    switch (name) {
-      case 'metaphor':
-        return _(TOKEN.SEL_BOOL[el.textContent] || '&nbsp;');
-      case 'otherIndirect':
-        let val = el.textContent.trim();
-        if (val === 'None' || val === 'none') val = '0';
-        return INDIRECT[val] || '&nbsp;';
-      case 'meanings':
-        let c = sel('contextualIndex', el);
-        if (!c || 1 == c.textContent) return format('', sel('primary', el));
-        return format('', sel('other', el))
-          .replace(new RegExp('.*(?:^|\n)(' + c.textContent + '\\..*?)(?:\n.*|$)', 's'), '$1');
-    }
-    return el.textContent.replaceAll('\\n', '\n').replaceAll('\\t', '\t').trim().replaceAll(/[\t ]+/g, ' ')
-      .replaceAll(/ *\n */g, '\n');
-  }
+	function getTokenSurface(token) {
+		return sel(TOKEN_SURFACE_FIELD, token) || sel(LEGACY_TOKEN_SURFACE_FIELD, token);
+	}
 
-  var _active = {};
-  var _content = {};
+	function getTokenField(token, field) {
+		return field === TOKEN_SURFACE_FIELD ? getTokenSurface(token) : sel(field, token);
+	}
 
-  Editor.TYPES.mm_p = {
-    remove: function (input, chunk) {
-      delete _active[input.dataset.cid];
-    },
-    getValue: function (input, chunk) {
-      let x = _content[input.dataset.cid];
-      if (x) {
-        delete _content[input.dataset.cid];
-        return x;
-      }
-      x = _active[input.dataset.cid];
-      return x ? x.documentElement.outerHTML : chunk.value;
-    },
-    render: function (chunk, cid) {
-      let pr = 0;
-      for (let cid2 in _active) pr = Math.max(pr, editor.chunks[cid2].id || 0);
-      let h = '';
-      for (let i in editor.hidden) {
-        i = editor.hidden[i];
-        if ((i.id || 0) > (editor.chunks[cid].id || 0)) break;
-        if ((i.id || 0) < pr) continue;
-        if (i.name == '.mm_head') h = i.value;
-      }
+	function getTokenFieldText(token, field, decode = true) {
+		return xmlToText(getTokenField(token, field)?.innerHTML, decode);
+	}
 
-      let x = parseXml(chunk.value);
-      _active[parseInt(cid)] = x;
-      let ep = parsePar(x);
-      if (!ep.children.length) {
-        ep.innerHTML = xmlToText(chunk.value) || '<em>' + _('EMPTY') + '</em>';
-      } else {
-        ep.classList.add('par', 'tei');
-      }
-      if (h) ep.innerHTML = '<h4>' + h + '</h4>' + ep.innerHTML;
-      return ep;
-    },
-  }
+	function format(name, el) {
+		// Extract value from the element, and return a human-readable formatted version
+		const value = getText(el);
+		switch (name) {
+			case 'metaphor':
+				return TOKEN.SEL_BOOL[value] ? _(TOKEN.SEL_BOOL[value]) : '&nbsp;';
+			case 'otherIndirect':
+				const indirect = INDIRECT[['None', 'none'].includes(value) ? '0' : value];
+				return indirect ? _(indirect) : '&nbsp;';
+			case 'meanings':
+				if (!el) return '&nbsp;';
+				// Find the line whose numbering matches the contextual index
+				const primary = selToText(el, MEANING_FIELD.PRIMARY, true);
+				const other = selToText(el, MEANING_FIELD.OTHER, true);
+				const index = selToText(el, MEANING_FIELD.CONTEXTUAL_INDEX, true);
+				return (!index || index === PRIMARY_MEANING_INDEX ?
+					primary : other.split('\n').find(line => line.trimStart().startsWith(`${index}.`))) || '&nbsp;';
+			default:
+				return value || '&nbsp;';
+		}
+	}
 
-  evt(editor.dom, 'change-hidden', function () {
-    for (let i in editor.render_hidden) {
-      let hid = editor.render_hidden[i];
-      let h = editor.hidden[hid];
-      if (h.name == '.mm_header') {
-        let html = '';
-        let x = parseXml(h.value);
-        let legend = '<div class="legend">'
-          + '<h4>' + _('Token Color Legend') + '</h4>'
-          + '<div class="legend-item"><span class="legend-color metaphor-token"></span> ' + _('Metaphor') + '</div>'
-          + '<div class="legend-item"><span class="legend-color indirect-token"></span> ' + _('Other Indirect Meaning')
-          + '</div>'
-          + '<div class="legend-item"><span class="legend-color direct-token"></span> ' + _('Direct meaning') + '</div>'
-          + '</div>';
-        html = '<img class="logo" src="./templates/assets/metaphor-aid.webp" class="logo" style="height:3em"/>'
-          + '<h2>' + selToText(x, 'title') + '</h2>'
-          + '<h3>' + selToText(x, 'author') + '</h3>'
-          + legend
-          + html;
-        sel('#header').innerHTML = html;
-      }
-    }
-  });
+	const _active = {};
+	const _content = {};
 
-  function parseXml(xml) {
-    return (new DOMParser()).parseFromString(xml, 'text/xml');
-  }
+	Editor.TYPES.mm_p = {
+		remove: function (input, chunk) {
+			delete _active[input.dataset.cid];
+		},
+		getValue: function (input, chunk) {
+			const cid = input.dataset.cid;
+			const value = _content[cid];
+			if (value) {
+				delete _content[cid];
+				return value;
+			}
+			return _active[cid]?.documentElement.outerHTML ?? chunk.value;
+		},
+		render: function (chunk, cid) {
+			// Find the largest active chunk Id
+			const currentId = editor.chunks[cid].id || 0;
+			let previousId = 0;
+			for (const activeCid in _active) previousId = Math.max(previousId, editor.chunks[activeCid].id || 0);
 
-  function getUID(xml, prefix, start) {
-    if (!sel('[*|id="' + prefix + (start ? '_' + start : '') + '"]', xml)) {
-      return prefix + (start ? '_' + start : '');
-    }
-    return getUID(xml, prefix, start ? start + 1 : 2);
-  }
+			// Find the current section heading
+			let header = '';
+			for (const hidden of editor.hidden) {
+				const hiddenId = hidden.id || 0;
 
-  function delNode(s) {
-    if (s.previousSibling && s.previousSibling.nodeName == '#text') s.previousSibling.remove();
-    s.remove();
-  }
+				if (hiddenId > currentId) break;
+				if (hiddenId < previousId) continue;
 
-  function parsePar(dom) {
-    let tv = localStorage.tableview;
-    let ep = document.createElement('div');
-    if (tv) ep.className = 'table';
-    each('s', function (s, si) {
-      let es = document.createElement(tv ? 'table' : 'div');
-      es.className = 's';
-      es.dataset.sid = si;
-      if (tv) {
-        es.innerHTML = '<tbody><tr><th>' + Object.values(COLS).join('</th><th>') + '</th></tr></tbody>'
-        es = es.children[0];
-      }
-      each('token', function (w, wi) {
-        let ew = document.createElement(tv ? 'tr' : 'span');
-        let j = w.getAttribute('join') || '';
-        ew.className = 't';
-        if (['left', 'both'].indexOf(j) != -1) ew.className += ' left';
-        if (['right', 'both'].indexOf(j) != -1) ew.className += ' right';
-        ew.dataset.tid = wi;
-        let tkn = sel('word', w);
-        if (!tkn) return;
-        if (tv) {
-          for (f in COLS) {
-            let et = document.createElement('td');
-            let el = sel(f, w);
-            et.innerHTML = format(f, el).replaceAll('\n', '<br>');
-            et.className = 'as-parent';
-            ew.appendChild(et);
-          }
-        } else {
-          ew.innerHTML = tkn.innerHTML || '&nbsp;';
-        }
-        // Add background color based on metaphor and otherIndirect (applies to both table and normal view)
-        let metaphorEl = sel('metaphor', w);
-        let otherIndirectEl = sel('otherIndirect', w);
-        let metaphor = metaphorEl ? metaphorEl.textContent.trim() : '';
-        let otherIndirect = otherIndirectEl ? otherIndirectEl.textContent.trim() : '';
-        if (otherIndirect === 'None' || otherIndirect === 'none') otherIndirect = '0';
+				if (hidden.name === '.mm_head') header = hidden.value;
+			}
 
-        ew.classList.remove('metaphor-token', 'indirect-token', 'direct-token');
-        if (metaphor === 'True') {
-          ew.classList.add('metaphor-token');
-        } else if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') {
-          ew.classList.add('indirect-token');
-        } else {
-          ew.classList.add('direct-token');
-        }
-        es.appendChild(ew);
-      }, s);
-      let ew = document.createElement(tv ? 'tr' : 'span');
-      ew.className = 'cfg';
-      ew.innerHTML = tv ? '<td colspan="42" class="as-parent">⚙</td>' : '⚙';
-      es.appendChild(ew);
-      ep.appendChild(tv ? es.parentNode : es);
-    }, dom);
-    return ep;
-  }
+			// Parse the XML to paragraph format
+			const x = parseXml(chunk.value);
+			_active[Number(cid)] = x;
+			const ep = parsePar(x);
 
-  function savePar(cids) {
-    let hdata = {};
-    editor.onchange(cids, hdata);
-  }
+			// Empty paragraph handling
+			if (!ep.children.length) {
+				const content = xmlToText(chunk.value, true);
+				if (content) {
+					ep.textContent = content;
+				} else {
+					ep.appendChild(TOKEN.createTextElement('em', _('EMPTY')));
+				}
+			} else {
+				ep.classList.add('par', 'tei');
+			}
 
-  function refresh(cids) {
-    //TODO: update from API
-  }
+			// Add heading
+			if (header) ep.prepend(TOKEN.createTextElement('h4', xmlToText(header, true) || header));
+			return ep;
+		},
+	}
 
-  document.addEventListener('click', function (e) {
-    let t = e.target;
-    if (!t) return;
+	evt(editor.dom, 'change-hidden', e => {
+		// Find the header and print the legend
+		// The value of hids is in e.detail
+		const headerChunk = e.detail.map(hid => editor.hidden[hid]).find(h => h?.name === '.mm_header');
+		if (!headerChunk) return;
+		const x = parseXml(headerChunk.value);
+		const legend = document.createElement('div');
+		legend.className = 'legend';
+		legend.appendChild(TOKEN.createTextElement('h4', _('Token Legend')));
 
-    if (t && t.matches('.new-cancel')) {
-      trg(t.closest('.tooltip'), 'close');
-      return;
-    }
+		const addLegendItem = (indicatorClass, label, hidden = false) => {
+			const item = document.createElement('div');
+			item.className = 'legend-item';
+			const indicator = document.createElement('span');
+			indicator.className = indicatorClass;
+			if (hidden) indicator.setAttribute('aria-hidden', 'true');
+			item.append(indicator, document.createTextNode(_(label)));
+			legend.appendChild(item);
+		};
 
-    // Only handle clicks within paragraph containers
-    let c = t.closest('.par.tei');
-    if (!c) return;
+		addLegendItem('legend-color metaphor-token', 'Metaphor');
+		addLegendItem('legend-color indirect-token', 'Other Indirect Meaning');
+		addLegendItem('legend-color direct-token', 'Direct meaning');
+		addLegendItem('legend-modified', 'Manually modified', true);
 
-    // Only handle clicks on elements inside sentences (.s)
-    if (!t.closest('.s')) return;
+		const logo = document.createElement('img');
+		logo.alt = 'MetaphorAID logo';
+		logo.className = 'logo';
+		logo.src = './templates/assets/metaphor-aid.webp';
+		logo.style.height = '3em';
 
-    if (localStorage.tableview && t.classList.contains('as-parent')) t = t.parentNode;
+		sel('#header').replaceChildren(
+			logo,
+			TOKEN.createTextElement('h2', selToText(x, 'title', true)),
+			TOKEN.createTextElement('h3', selToText(x, 'author', true)),
+			legend
+		);
+	});
 
-    let cid = parseInt(c.dataset.cid);
-    let x = _active[cid];
-    let s = t.closest('.s');
-    let sid = parseInt(s.dataset.sid);
-    let xsl = find('s,l', x);
-    let xs = xsl[sid];
-    let tid = t.dataset.tid;
-    let xtl = find('token', xs);
-    let xt = tid ? xtl[tid] : false;
+	function getUID(xml, prefix) {
+		// IDs are document-wide even though the editor stores the XML in chunks
+		const ids = new Set();
+		const collectIds = documentXml => {
+			for (const element of documentXml.getElementsByTagName('*')) {
+				const id = element.getAttribute('xml:id');
+				if (id) ids.add(id);
+			}
+		};
 
-    // open tooltip
-    if (t.matches('.t, .cfg')) {
-      each('.par .active', function (i) {
-        i.classList.remove('active');
-      });
-      let html = '';
-      if (xt) { //token
-        t.classList.add('active');
-        html += TOKEN.getLink(tid, 'show info', 'Edit');
-        html += TOKEN.getLink(tid, 'show meaning', 'Meanings');
-        if (format('', sel('reasoning', xt))) {
-          html += TOKEN.getLink(tid, 'show reason', 'Reasoning');
-        }
-        let tkn = format('', sel('word', xt));
-        if (tkn.length > 1) {
-          let split = {};
-          for (let i = 1; i < tkn.length; ++i) {
-            split[i] = encXml(tkn.substr(0, i)) + ' | ' + encXml(tkn.substr(i));
-          }
-          html += TOKEN.getSelect(tid, 'split token', '', 'Split Token...', split);
-        }
-        html += TOKEN.getSelect(tid, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE);
-        html += TOKEN.getLink(tid, 'ins token disabled', 'Insert Token');
-        html += TOKEN.getLink(tid, 'del token disabled', 'Delete Token');
-      } else {
-        s.classList.add('active');
-      }
-      if (xt) {
-        html += TOKEN.getSelect(tid, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE);
-      } else {
-        html += TOKEN.getSelect(tid, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE);
-        html += TOKEN.getSelect(tid, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE);
-        html += TOKEN.getLink(tid, 'set content', 'Set Paragraph...');
-      }
+		collectIds(xml);
+		for (const activeXml of Object.values(_active)) if (activeXml !== xml) collectIds(activeXml);
+		for (const [cid, chunk] of editor.chunks.entries()) if (!_active[cid]) collectIds(parseXml(chunk.value));
+		for (const hidden of editor.hidden) collectIds(parseXml(hidden.value));
 
-      let tt = ttip(t, e);
-      tt.classList.add('dropdown');
-      tt.innerHTML = html;
-      return;
-    }
+		let n = 1;
+		let id = `${prefix}_${n}`;
+		while (ids.has(id)) id = `${prefix}_${++n}`;
 
-    if (t.matches('.show.info')) {
-      let tt = ttip(sel('.cfg', s), e, true);
-      let html = ['', ''];
-      for (f in COLS) {
-        let td = '';
-        switch (f) {
-          case 'word':
-          case 'lemma':
-          case 'pos':
-          case 'nerTag':
-            td = '<input type="text" name="' + f + '" class="input" value="' + format('', sel(f, xt)) + '">';
-            break;
-          case 'meanings':
-            // let v = format(f, sel(f, xt));
-            // html += (format('', sel('primary', xt)) + '\n' + format('', sel('other', xt))).replace(v, '<strong>'
-            // + v + '</strong>').replaceAll('\n', '<br>');
-            break;
-          case 'comment':
-            td = '<textarea name="' + f + '" class="input">' + encXml(format('', sel(f, xt))) + '</textarea>';
-            break;
-          case 'metaphor':
-            td = '<input type="checkbox" name="' + f + '" class="input" value="True"'
-              + ('True' == format('', sel(f, xt)) ? ' checked' : '') + '>';
-            break;
-          case 'otherIndirect':
-            let el = sel(f, xt);
-            let value = el ? el.textContent.trim() : '';
-            if (value === 'None' || value === 'none' || !INDIRECT[value]) value = '0';
-            let s = select(value, '', INDIRECT);
-            s.className += ' input';
-            s.dataset.name = f;
-            td = s.outerHTML;
-            break;
-          default:
-            td = format(f, sel(f, xt));
-        }
-        if (td) {
-          html[0] += '<th>' + COLS[f] + '</th>';
-          html[1] += '<td>' + td + '</td>';
-        }
-      }
-      html = '<table><tr>' + html[0] + '</tr><tr>' + html[1] + '</tr></table>';
-      html += '<div class="center">' + TOKEN.getLink(tid, 'btn info save', 'Save') + '</div>';
-      tt.innerHTML += html;
-      return;
-    }
+		return id;
+	}
 
-    if (t.matches('.show.meaning')) {
-      let tt = ttip(sel('.cfg', s), e, true);
-      let html = '';
-      html = ['', ''];
-      for (f in MEANING) {
-        html[0] += '<th>' + MEANING[f] + '</th>';
-        switch (f) {
-          case 'primary':
-          case 'other':
-            html[1] += '<td><textarea name="' + f + '" class="input">' + encXml(format('', sel(f, xt)))
-              + '</textarea></td>';
-            break;
-          default:
-            html[1] += '<td><input type="text" name="' + f + '" class="input" value="' + format('', sel(f, xt))
-              + '"></td>';
-        }
-      }
-      html = '<table><tr>' + html[0] + '</tr><tr>' + html[1] + '</tr></table>';
-      html += '<div class="center">' + TOKEN.getLink(tid, 'btn meaning save', 'Save') + '</div>';
-      tt.innerHTML += html;
-      // let tt = ttip(s, e);
-      // let v = format(f, sel(f, xt));
-      // tt.innerHTML += (format('', sel('primary', xt)) + '\n' + format('', sel('other', xt))).replace(v, '<strong>'
-      // + v + '</strong>').replaceAll('\n', '<br>');
-      return;
-    }
+	function delNode(node) {
+		const prev = node.previousSibling;
+		if (prev?.nodeName === '#text') prev.remove();
+		node.remove();
+	}
 
-    if (t.matches('.show.reason')) {
-      let tt = ttip(sel('.cfg', s), e, true);
-      let html = '';
-      html += '<textarea name="reasoning" class="input">' + encXml(format('', sel('reasoning', xt))) + '</textarea>';
-      html += '<div class="center">' + TOKEN.getLink(tid, 'btn reason save', 'Save') + '</div>';
-      tt.innerHTML += html;
-      // let tt = ttip(s, e);
-      // tt.innerHTML += format('', sel('reasoning', xt)).replaceAll('\n', '<br>');
-      return;
-    }
+	function createTdElement(content = '&nbsp;', className = 'as-parent') {
+		const el = document.createElement('td');
+		el.className = className;
+		TOKEN.appendContent(el, content);
+		return el;
+	}
 
-    if (t.matches('.save.info,.save.meaning,.save.reason')) {
-      let changed = false;
-      each('[name],[data-name]', function (i) {
-        let x = sel(i.dataset.name || i.name, xt);
-        let v = (i.dataset.value || i.value).trim();
-        if (i.type == 'checkbox' && !i.checked) v = 'False';
-        if (v != format('', x).trim()) {
-          changed = true;
-          x.setAttribute('modified', 'True');
-          console.log(v);
-          x.textContent = v;
-        }
-      }, t.closest('.tooltip'));
-      if (changed) {
-        if (t.matches('.info')) refresh([cid]);
-        savePar([cid]);
-      } else {
-        trg(t.closest('.tooltip'), 'close');
-      }
-      return;
-    }
+	function isModified(node) {
+		return !!node && (node.getAttribute('modified') === 'True' || !!sel('[modified="True"]', node));
+	}
 
-    if (t.matches('.ins.token')) {
-      let tt = ttip(sel('.cfg', s), e, true);
-      let html = '';
-      html += '<input type="text" class="input" value="">';
-      html += '<div class="center">'
-        + TOKEN.getLink(tid, 'btn token ins-save left', 'Insert Before <b>%word%</b>')
-          .replace('%word%', selToText(xt, 'form'))
-        + TOKEN.getLink(tid, 'btn token ins-save right', 'Insert After <b>%word%</b>')
-          .replace('%word%', selToText(xt, 'form'))
-        + '</div>';
-      tt.innerHTML += html;
-      return;
-    }
+	function getTokenClass(token) {
+		// Add background color based on metaphor and otherIndirect (applies to both table and normal view)
+		// Use getText() instead of format(): these checks need the raw True/False and numeric values,
+		// while format() converts them to localized display labels
+		let otherIndirect = getText(sel('otherIndirect', token));
+		if (['None', 'none'].includes(otherIndirect)) otherIndirect = '0';
 
-    if (t.matches('.ins-save.token')) {
-      let input = sel('input', t.closest('.tooltip'));
-      let val = input.value.trim();
-      if (!val.length || val.indexOf(' ') != -1) {
-        addMsg(_('Invalid Format'), null, input);
-        return;
-      }
-      let xt2 = parseXml(xt.outerHTML).documentElement;
-      xt2.setAttribute('xml:id', getUID(x, xt.getAttribute('xml:id').split('_')[0]));
-      let tkn = sel('word', xt2);
-      tkn.textContent = val;
-      tkn.setAttribute('modified', 'True');
-      let tn = xt.previousSibling && xt.previousSibling.nodeName == '#text' ? xt.previousSibling.textContent : '';
-      xs.insertBefore(xt2, t.classList.contains('left') ? xt : xt.nextSibling);
-      if (tn.length) xs.insertBefore(x.createTextNode(tn), t.classList.contains('left') ? xt : xt.nextSibling);
-      refresh([cid]);
-      savePar([cid]);
-      return;
-    }
+		const metaphor = getText(sel('metaphor', token));
+		if (metaphor === 'True') return 'metaphor-token';
+		if (metaphor === 'False' && otherIndirect && otherIndirect !== '0') return 'indirect-token';
 
-    if (t.matches('.del.token')) {
-      delNode(xt);
-      refresh([cid]);
-      savePar([cid]);
-      return;
-    }
+		return 'direct-token';
+	}
 
-    if (t.matches('.set.content')) {
-      let tt = ttip(sel('.cfg', s), e, true);
-      let html = '';
-      html += '<input type="url" name="api" class="input" placeholder="API URL" value="'
-        + (localStorage['metaphor_api'] || '') + '">';
-      html += '<input type="password" name="token" class="input" placeholder="API Token" value="'
-        + (localStorage['metaphor_token'] || '') + '">';
-      html += '<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>';
-      html += '<div class="center">'
-        + TOKEN.getLink(tid, 'btn save content', 'Save')
-        + '</div>';
-      tt.innerHTML += html;
-      return;
-    }
+	function normalizeFieldValue(field, value) {
+		value = normalizeText(value);
+		return field === 'otherIndirect' && (['None', 'none'].includes(value) || !INDIRECT[value]) ? '0' : value;
+	}
 
-    if (t.matches('.save.content')) {
-      localStorage['metaphor_api'] = sel('[name="api"]', t.closest('.tooltip')).value;
-      localStorage['metaphor_token'] = sel('[name="token"]', t.closest('.tooltip')).value;
-      let txt = sel('[name="content"]', t.closest('.tooltip')).value.trim();
-      if (!txt.length) {
-        addMsg(_('Please provide content'), false, sel('[name="content"]', t.closest('.tooltip')));
-        return;
-      }
-      if (!localStorage['metaphor_api']) {
-        addMsg(_('Please provide API URL'), false, sel('[name="api"]', t.closest('.tooltip')));
-        return;
-      }
-      // Show loading state
-      let btn = t;
-      let originalText = btn.textContent;
-      btn.textContent = _('Processing...');
-      btn.classList.add('disabled');
-      fetch(localStorage['metaphor_api'], {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Authorization': 'Bearer ' + localStorage['metaphor_token']
-        },
-        body: JSON.stringify({text: txt})
-      }).then(r => {
-        if (!r.ok) {
-          if (r.status === 404) {
-            return Promise.reject(_('Invalid or wrong API URL'));
-          } else if (r.status >= 500) {
-            return Promise.reject(_('API server error'));
-          }
-          return r.text().catch(() => _('Invalid API response')).then(text => {
-            try {
-              var data = JSON.parse(text);
-              return Promise.reject(_(data.detail || 'unknown error'));
-            } catch (e) {
-              return Promise.reject(_('Invalid or wrong API URL'));
-            }
-          });
-        }
-        return r.text();
-      }).then(function (data) {
-        if (typeof data == 'string') {
-          try {
-            let xml = sel('body', parseXml(data));
-            _content[cid] = xml.innerHTML;
-            editor.forceReload = true;
-            savePar([cid]);
-          } catch (e) {
-            addMsg(_('API response format is incorrect'), false, sel('[name="content"]', t.closest('.tooltip')));
-          }
-        } else {
-          addMsg(_(data.detail || 'unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
-        }
-        // Restore button state
-        btn.textContent = originalText;
-        btn.classList.remove('disabled');
-      }).catch(err => {
-        addMsg(err || _('unknown error'), false, sel('[name="content"]', t.closest('.tooltip')));
-        // Restore button state
-        btn.textContent = originalText;
-        btn.classList.remove('disabled');
-      });
-    }
-  });
+	function formatReasoningPreview(reasoning, tid) {
+		const text = getText(reasoning);
+		if (!text) return '&nbsp;';
 
-  document.addEventListener('change', function (e) {
-    let t = e.target;
-    if (!t) return;
+		const words = text.split(/\s+/);
+		const preview = words.slice(0, REASONING_PREVIEW_WORDS).join(' ');
+		if (words.length <= REASONING_PREVIEW_WORDS) return preview;
 
-    // Only handle changes within paragraph containers
-    let c = t.closest('.par.tei');
-    if (!c) return;
+		const fragment = document.createDocumentFragment();
+		fragment.appendChild(document.createTextNode(`${preview} `));
+		const link = TOKEN.createLink(tid, 'show reason', '\u2026');
+		link.title = _('Reasoning');
+		fragment.appendChild(link);
+		return fragment;
+	}
 
-    // Only handle changes on elements inside sentences (.s)
-    if (!t.closest('.s')) return;
+	function renderToken(token, tid, tableView) {
+		// Create word element
+		const wordEl = document.createElement(tableView ? 'tr' : 'span');
+		wordEl.className = 't';
+		wordEl.dataset.tid = tid;
 
-    let cid = parseInt(c.dataset.cid);
-    let x = _active[cid];
-    let s = t.closest('.s');
-    let sid = parseInt(s.dataset.sid);
-    let xsl = find('s,l', x);
-    let xs = xsl[sid];
-    let tid = t.dataset.tid;
-    let xtl = find('token', xs);
-    let xt = tid ? xtl[tid] : false;
+		// Add joins if needed
+		const joinType = token.getAttribute('join') || '';
+		if (['left', 'both'].includes(joinType)) wordEl.classList.add('left');
+		if (['right', 'both'].includes(joinType)) wordEl.classList.add('right');
 
-    let val = t.dataset.value || t.value;
-    if (t.classList.contains('multiple')) val = JSON.parse(t.dataset.value);
+		// Construct tableView for word
+		const word = getTokenSurface(token);
+		if (!word) return null;
 
-    if (t.matches('.split.token')) {
-      if (val == '') return;
-      let tkn = sel('word', xt);
-      tkn.setAttribute('modified', 'True');
-      let xt2 = parseXml(xt.outerHTML).documentElement;
-      sel('word', xt2).textContent = tkn.textContent.substr(val);
-      let id1 = xt.getAttribute('xml:id');
-      if (id1) xt2.setAttribute('xml:id', getUID(x, id1.split('_')[0]));
-      tkn.textContent = tkn.textContent.substr(0, val);
-      xs.insertBefore(xt2, xt.nextSibling);
-      if (xt.previousSibling && xt.previousSibling.nodeName == '#text') {
-        xs.insertBefore(x.createTextNode(xt.previousSibling.textContent), xt.nextSibling);
-      }
-      refresh([cid]);
-      savePar([cid]);
-      return;
-    }
+		// Highlight the token when it or any of its fields was changed manually
+		if (isModified(token)) wordEl.classList.add('modified');
 
-    if (t.matches('.join.token')) {
-      if (val == '') return;
-      let off = val == '0' ? -1 : 1;
-      let xt2 = xtl[parseInt(tid) + off];
-      if (!xt2) {
-        addMsg(_('Invalid Action'));
-        return;
-      }
-      let u = off > 0 ? [xt, xt2] : [xt2, xt];
-      let tkn = sel('word', u[0]);
-      tkn.setAttribute('modified', 'True');
-      tkn.textContent = format('', sel('word', u[0])) + format('', sel('word', u[1]));
-      let id2 = u[1].getAttribute('xml:id').split('_');
-      delNode(u[1]);
-      let id1 = u[0].getAttribute('xml:id').split('_');
-      if (id1.length > 1) {
-        if (id2.length > 1) {
-          u[0].setAttribute('xml:id', '');
-          u[0].setAttribute('xml:id', getUID(x, id1[0]));
-        } else {
-          u[0].setAttribute('xml:id', id2[0]);
-        }
-      }
-      refresh([cid]);
-      savePar([cid]);
-      return;
-    }
+		if (tableView) {
+			for (const field of TABLE_FIELDS) {
+				const fieldXml = getTokenField(token, field);
+				const content = field === 'reasoning'
+					? formatReasoningPreview(fieldXml, tid)
+					: TOKEN.createMultilineContent(format(field, fieldXml));
+				const fieldEl = createTdElement(content);
+				if (field === 'reasoning') fieldEl.classList.add('reasoning-preview');
+				if (isModified(fieldXml)) fieldEl.classList.add('modified');
+				wordEl.appendChild(fieldEl);
+			}
+		} else {
+			TOKEN.replaceContent(wordEl, word.textContent || TOKEN.EMPTY_TEXT);
+		}
 
-    if (t.matches('.split.sent')) {
-      if (val == '') return;
-      let xt2 = xtl[parseInt(tid) + (val == '0' ? 0 : 1)];
-      if (!xt2 || xt2 == xtl[0]) {
-        addMsg(_('Invalid Action'));
-        return;
-      }
-      let indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
-      xs.setAttribute('modified', 'True');
-      xs.insertBefore(x.createElement('split'), xt2);
-      let xe = x.documentElement;
-      let id = xs.getAttribute('xml:id').split('_')[0];
-      xe.innerHTML = xe.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/
-        , indent + '</' + xs.nodeName + '>' + indent + '<' + xs.nodeName
-        + (id ? ' xml:id="' + getUID(x, id) + '"' : '') + ' modified="True"> $1');
-      refresh([cid]);
-      savePar([cid]);
-      return;
-    }
+		// Add background coloring based on token class
+		wordEl.classList.add(getTokenClass(token));
+		return wordEl;
+	}
 
-    if (t.matches('.join.sent')) {
-      if (val == '') return;
-      let off = val == '0' ? -1 : 1;
-      let u, cids;
-      if (xsl[sid + off]) {
-        u = off > 0 ? [xs, xsl[sid + off]] : [xsl[sid + off], xs];
-        cids = [cid];
-      } else {
-        if (!_active[cid + off]) {
-          let e = editor.renderChunk(cid + off);
-          if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
-        }
-        if (!_active[cid + off]) {
-          addMsg(_('Invalid Action'));
-          return;
-        }
-        u = off > 0 ? [xs, sel('s', _active[cid + off])] : [sel('s:last-of-type', _active[cid + off]), xs];
-        cids = off > 0 ? [cid, cid + off] : [cid + off, cid];
-      }
-      if (!u[0] || !u[1]) {
-        addMsg(_('Invalid Action'));
-        return;
-      }
-      u[0].setAttribute('modified', 'True');
-      u[0].innerHTML = u[0].innerHTML.replace(/[ \r\n\t]+$/, '') + u[1].innerHTML;
-      let id2 = u[1].getAttribute('xml:id').split('_');
-      delNode(u[1]);
-      let id1 = u[0].getAttribute('xml:id').split('_');
-      if (id1.length > 1) {
-        if (id2.length > 1) {
-          u[0].setAttribute('xml:id', '');
-          u[0].setAttribute('xml:id', getUID(x, id1[0]));
-        } else {
-          u[0].setAttribute('xml:id', id2[0]);
-        }
-      }
-      refresh([cids[0]]);
-      savePar(cids);
-      return;
-    }
+	function renderSentence(sentence, sid, tableView) {
+		// Create and setup sentence element
+		let sentenceEl = document.createElement(tableView ? 'table' : 'div');
+		sentenceEl.className = 's';
+		sentenceEl.dataset.sid = sid;
+		if (tableView) {
+			const tbody = document.createElement('tbody');
+			tbody.appendChild(TOKEN.createHeaderRow(TABLE_FIELDS));
+			sentenceEl.appendChild(tbody);
+			// Change from <table> to <tbody>
+			sentenceEl = sentenceEl.children[0];
+		}
+		// Put each token into the sentence element
+		each('token', (token, tid) => {
+			const renderedToken = renderToken(token, tid, tableView);
 
-    if (t.matches('.move.sent')) {
-      if (val == '') return;
-      let off = val == '0' ? -1 : 1;
-      if (!_active[cid + off]) {
-        let e = editor.renderChunk(cid + off);
-        if (e) c.parentNode.insertBefore(e, off > 0 ? c.nextSibling : c);
-      }
-      if (!_active[cid + off] || (off > 0 && xsl.length > sid + 1) || (off < 0 && sid > 0)) {
-        addMsg(_('Invalid Action'));
-        return;
-      }
-      let x2 = _active[cid + off].documentElement
-      if (off > 0) {
-        x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)</, '$1' + xs.outerHTML + '$1<');
-      } else {
-        let indent = xs.previousSibling && xs.previousSibling.nodeName == '#text' ? xs.previousSibling.textContent : '';
-        x2.innerHTML = x2.innerHTML.replace(/([ \t\r\n]*)$/, indent + xs.outerHTML + '$1');
-      }
-      delNode(xs);
-      savePar(off > 0 ? [cid, cid + off] : [cid + off, cid]);
-    }
-  });
+			if (renderedToken) sentenceEl.appendChild(renderedToken);
+		}, sentence);
 
-  function normalizeDocumentTitle(xml, filename) {
-    let title = filename.replace(/\.xml$/i, '');
-    if (!title) return xml;
-    if (/<title\b[^>]*>/i.test(xml)) {
-      return xml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, '<title>' + encXml(title) + '</title>');
-    }
-    return xml;
-  }
+		// Create the config row for the sentence
+		const row = TOKEN.createSettingsRow(tableView, TABLE_FIELDS.length);
+		sentenceEl.appendChild(row);
 
-  // Add new method for creating new metaphor documents
-  TOKEN.new = function () {
-    return new Promise((resolve, reject) => {
-      let tt = ttip(sel('header'), null, true);
-      tt.innerHTML = '<h3 style="text-align: center;">' + _('New Text for Metaphor Detection') + '</h3>' +
-        '<input type="text" name="filename" class="input" placeholder="' + _('File Name') + '" value="uj-metafora-'
-        + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace(/Z$/, '') + '.xml">' +
-        '<input type="url" name="api" class="input" placeholder="API URL" value="'
-        + (localStorage['metaphor_api'] || '') + '">' +
-        '<input type="password" name="token" class="input" placeholder="API Token" value="'
-        + (localStorage['metaphor_token'] || '') + '">' +
-        '<textarea name="content" class="input" placeholder="' + _('Content') + '"></textarea>' +
-        '<div class="center">' +
-        '<a href="#" class="btn metaphor-new-submit">' + _('Submit') + '</a>' +
-        '<a href="#" class="btn metaphor-new-cancel">' + _('Cancel') + '</a>' +
-        '</div>';
+		return tableView ? sentenceEl.parentNode : sentenceEl;
+	}
 
-      // Set minimum height for the modal to fit content
-      tt.style.minHeight = '400px';
-      tt.style.display = 'flex';
-      tt.style.flexDirection = 'column';
+	function parsePar(dom) {
+		// Create paragraph element
+		const tableView = localStorage.tableview;
+		const root = document.createElement('div');
+		if (tableView) root.className = 'table';
 
-      // Handle the submit button
-      let submitBtn = sel('.metaphor-new-submit', tt);
-      let cancelBtn = sel('.metaphor-new-cancel', tt);
+		// Put sentences into the paragraph element
+		each('s,l', (sentence, sid) => root.appendChild(renderSentence(sentence, sid, tableView)), dom);
 
-      cancelBtn.addEventListener('click', function () {
-        trg(tt, 'close');
-        resolve(null);
-      });
+		return root;
+	}
 
-      submitBtn.addEventListener('click', function () {
-        let filename = sel('[name="filename"]', tt).value.trim();
-        let api = sel('[name="api"]', tt).value.trim();
-        let token = sel('[name="token"]', tt).value.trim();
-        let content = sel('[name="content"]', tt).value.trim();
+	function savePar(paragraphIds) {
+		// No hidden data to change
+		const hdata = {};
+		return editor.onchange(paragraphIds, hdata);
+	}
 
-        if (!filename || !content || !api) {
-          addMsg(_('Please fill in all fields'), 'error', tt);
-          return;
-        }
-        if (!filename.toLowerCase().endsWith('.xml')) {
-          filename += '.xml';
-        }
+	function resolveParagraphContext(target) {
+		// Only handle events within paragraph containers
+		const paragraph = target.closest('.par.tei');
+		if (!paragraph) return null;
 
-        localStorage['metaphor_api'] = api;
-        localStorage['metaphor_token'] = token;
+		const paragraphId = Number(paragraph.dataset.cid);
+		const paragraphXml = _active[paragraphId];
 
-        // Show loading state
-        let originalText = submitBtn.textContent;
-        submitBtn.textContent = _('Processing...');
-        submitBtn.classList.add('disabled');
+		if (!paragraphXml) return null;
 
-        fetch(api, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Authorization': 'Bearer ' + token
-          },
-          body: JSON.stringify({text: content})
-        }).then(r => {
-          // Check for authentication errors first
-          if (r.status === 401) {
-            return Promise.reject(new Error(_('Invalid bearer token')));
-          }
-          if (!r.ok) {
-            return r.json().then(err => {
-              return Promise.reject(new Error(err.detail || err.message || _('API server error')));
-            }).catch(e => {
-              // If JSON parsing fails, return status error
-              return Promise.reject(new Error(_('API server error')));
-            });
-          }
-          return r.text();
-        }).then(function (data) {
-          if (typeof data == 'string') {
-            trg(tt, 'close');
-            resolve([filename, normalizeDocumentTitle(data, filename)]);
-          } else {
-            addMsg(data.detail || _('unknown error'), 'error', tt);
-            submitBtn.textContent = originalText;
-            submitBtn.classList.remove('disabled');
-          }
-        }).catch(err => {
-          // Catch network errors and invalid bearer token errors
-          let errorMsg = err.message;
-          if (err.name === 'TypeError') {
-            // Network error (could be CORS, connection refused, etc.)
-            errorMsg = _('Network error:') + ' ' + err.message;
-          }
-          addMsg(errorMsg, 'error', tt);
-          // Reset button state
-          submitBtn.textContent = originalText;
-          submitBtn.classList.remove('disabled');
-        });
-      });
-    });
-  };
+		return {paragraph, paragraphId, paragraphXml};
+	}
+
+	function resolveTokenContext(target, paragraphCtx, resolveTableCellParent = false) {
+
+		// In table view the click lands on a <td class="as-parent">,
+		// while the token class and data-tid live on its parent <tr>
+		// Both nodes have the same .s ancestor, so this normalization is needed for token lookup,
+		// not for resolving the sentence
+		if (resolveTableCellParent && localStorage.tableview && target.classList.contains('as-parent'))
+			target = target.parentNode;
+
+		// Only handle events on elements inside sentences (.s)
+		const sentence = target.closest('.s');
+		if (!sentence) return null;
+
+		const sentenceId = Number(sentence.dataset.sid);
+		const sentences = find('s,l', paragraphCtx.paragraphXml);
+		const sentenceXml = sentences[sentenceId];
+
+		if (!sentenceXml) return null;
+
+		const tokenId = target.dataset.tid;
+		const tokens = find('token', sentenceXml);
+		const tokenXml = tokenId ? tokens[Number(tokenId)] : null;
+
+		return {
+			target,
+			...paragraphCtx,
+			sentences,
+			sentence,
+			sentenceId,
+			sentenceXml,
+			tokens,
+			tokenId,
+			tokenXml
+		};
+	}
+
+	function resolveChangeValue(target) {
+		let value = target.dataset.value ?? target.value;
+
+		if (target.classList.contains('multiple')) {
+			try {
+				value = JSON.parse(target.dataset.value);
+			} catch {
+				value = null;
+			}
+		}
+
+		if (value === '') return null;
+
+		return value;
+	}
+
+	function resolveContext(target, {includeValue = false, resolveTableCellParent = false} = {}) {
+		const paragraphCtx = resolveParagraphContext(target);
+		if (!paragraphCtx) return null;
+
+		const tokenCtx = resolveTokenContext(target, paragraphCtx, resolveTableCellParent);
+		if (!tokenCtx) return null;
+
+		if (!includeValue) return tokenCtx;
+
+		const value = resolveChangeValue(target);
+		if (value == null) return null;
+
+		return {...tokenCtx, value};
+	}
+
+	function handleTokenContextMenu(e, target, sentence, tokenId, tokenXml) {
+		// Clear active
+		each('.par .active', i => i.classList.remove('active'));
+
+		const items = [];
+		if (tokenXml) {  // Token
+			// Set the current tooltip active
+			target.classList.add('active');
+
+			// Setup elements
+			items.push(TOKEN.createLink(tokenId, 'show info', 'Edit'));
+			items.push(TOKEN.createLink(tokenId, 'show meaning', 'Meanings'));
+			// Show reasoning if there is any
+			if (selToText(tokenXml, 'reasoning', true)) items.push(TOKEN.createLink(tokenId, 'show reason', 'Reasoning'));
+			// Setup possible token splittings
+			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
+			if (tkn.length > 1) {
+				const split = {};
+				for (let i = 1; i < tkn.length; ++i) split[i] = tkn.slice(0, i) + ' | ' + tkn.slice(i);
+				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
+			}
+			// Setup other elements
+			items.push(TOKEN.createSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'ins token disabled', 'Insert Token'));
+			items.push(TOKEN.createLink(tokenId, 'del token disabled', 'Delete Token'));
+			items.push(TOKEN.createSelect(tokenId, 'split sent', '', 'Split Sentence...', TOKEN.SEL_WHERE));
+		} else {
+			// Setup elements for the cogwheel (sentence-wide) menu
+			sentence.classList.add('active');
+			items.push(TOKEN.createSelect(tokenId, 'join sent', '', 'Join Sentence...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createSelect(tokenId, 'move sent', '', 'Move Sentence...', TOKEN.SEL_WHERE));
+			items.push(TOKEN.createLink(tokenId, 'set content', 'Set Paragraph...'));
+		}
+
+		// Show the tooltip a dropdown menu
+		const tt = ttip(target, e);
+		tt.classList.add('dropdown');
+		for (const item of items) tt.appendChild(item);
+	}
+
+	function handleEditTokenInfo(e, sentence, tokenId, tokenXml) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		const headers = [];
+		const cells = [];
+		// Setup elements for fields
+		for (const field of TOKEN_FIELDS) {
+			const fieldValue = getTokenFieldText(tokenXml, field);
+			let td = null;
+			switch (field) {
+				case TOKEN_SURFACE_FIELD:
+				case 'lemma':
+				case 'pos':
+				case 'nerTag':
+					td = TOKEN.createInput({type: 'text', name: field, value: fieldValue});
+					break;
+				case 'meanings':
+					// Meanings are edited in the dedicated Meanings tooltip
+					break;
+				case 'comment':
+					td = TOKEN.createTextarea({name: field, value: fieldValue});
+					break;
+				case 'metaphor':
+					const checked = fieldValue === 'True';
+					td = TOKEN.createInput({type: 'checkbox', name: field, value: 'True', checked});
+					break;
+				case 'otherIndirect':
+					// Setup select element
+					let oIValue = sel(field, tokenXml)?.textContent.trim() || '';
+					if (['None', 'none'].includes(oIValue) || !INDIRECT[oIValue]) oIValue = '0';
+					const selectEl = select(oIValue, '', INDIRECT);
+					selectEl.classList.add('input');
+					selectEl.dataset.name = field;
+					td = selectEl;
+					break;
+				default:
+					td = TOKEN.createMultilineContent(format(field, sel(field, tokenXml)));
+			}
+			// Collect header value cell pairs
+			if (td) {
+				headers.push(field);
+				cells.push(td);
+			}
+		}
+		tt.appendChild(TOKEN.createTable(headers, [cells]));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn info save', 'Save')));
+	}
+
+	function handleEditMeaning(e, sentence, tokenId, tokenXml) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		const headers = [];
+		const cells = [];
+		const hasMeanings = [MEANING_FIELD.PRIMARY, MEANING_FIELD.OTHER].some(field => selToText(tokenXml, field, true));
+
+		for (const field of MEANING_FIELDS) {
+			const value = field === MEANING_FIELD.CONTEXTUAL_INDEX && !hasMeanings ? '' : selToText(tokenXml, field, true);
+			headers.push(field);
+			switch (field) {
+				case MEANING_FIELD.PRIMARY:
+				case MEANING_FIELD.OTHER:
+					cells.push(TOKEN.createTextarea({name: field, value}));
+					break;
+				default:  // CONTEXTUAL_INDEX
+					cells.push(TOKEN.createInput({type: 'text', name: field, value}));
+			}
+		}
+		tt.appendChild(TOKEN.createTable(headers, [cells]));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn meaning save', 'Save')));
+	}
+
+	function handleEditReason(e, sentence, tokenId, tokenXml) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		tt.appendChild(TOKEN.createTextarea({name: 'reasoning', value: selToText(tokenXml, 'reasoning', true)}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn reason save', 'Save')));
+	}
+
+	function handleSaveTokenFields(e, target, paragraphId, tokenXml) {
+		// Handle saving the changes made in Token Info, Meaning and Reason
+		const tooltip = target.closest('.tooltip');
+		let changed = false;
+		each('[name],[data-name]', i => {
+			const field = i.dataset.name || i.name;
+			// Get the old value
+			const paragraphXml = getTokenField(tokenXml, field);
+			if (!paragraphXml) return;
+			// Convert checkbox value if it is checkbox type
+			const value = i.type === 'checkbox' ? (i.checked ? 'True' : 'False') : (i.dataset.value || i.value).trim();
+			// Compare old and new value
+			if (normalizeFieldValue(field, value) !== normalizeFieldValue(field, getText(paragraphXml))) {
+				changed = true;
+				// Note the modification in the XML
+				paragraphXml.setAttribute('modified', 'True');
+				// console.log(value);
+				paragraphXml.textContent = value;
+			}
+		}, tooltip);
+
+		// Nothing is changed
+		if (!changed) return trg(tooltip, 'close');
+
+		// Save paragraph
+		savePar([paragraphId]);
+	}
+
+	function handleInsertToken(e, sentence, tokenId, tokenXml) {
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		const form = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
+		tt.appendChild(TOKEN.createInput());
+		tt.appendChild(TOKEN.createCenter(
+			TOKEN.createLink(tokenId, 'btn token ins-save left', 'Insert Before <b>%word%</b>', {word: form}),
+			TOKEN.createLink(tokenId, 'btn token ins-save right', 'Insert After <b>%word%</b>', {word: form})
+		));
+	}
+
+	function handleSaveInsertedToken(target, paragraphId, paragraphXml, sentenceXml, tokenXml) {
+		// Get the new token and validate it
+		const input = sel('input', target.closest('.tooltip'));
+		const value = input.value.trim();
+
+		// Validation
+		if (!value || value.includes(' ')) return addMsg(_('Invalid Format'), null, input);
+
+		// Clone the original token XML
+		const newTokenXml = tokenXml.cloneNode(true);
+
+		// Create new unique ID, store value and note modified status
+		const tokenId = tokenXml.getAttribute('xml:id');
+		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
+
+		const token = getTokenSurface(newTokenXml);
+		token.textContent = value;
+		token.setAttribute('modified', 'True');
+
+		// Determine the insertion point
+		const insertBefore = target.classList.contains('left');
+		const referenceNode = insertBefore ? tokenXml : tokenXml.nextSibling;
+		// Preserve whitespace
+		const previousText = tokenXml.previousSibling?.nodeName === '#text' ? tokenXml.previousSibling.textContent : '';
+		// Insert the new token and reinsert the whitespace
+		sentenceXml.insertBefore(newTokenXml, referenceNode);
+		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
+		// Save changes and refress the UI
+		savePar([paragraphId]);
+	}
+
+	function handleSetContent(e, sentence, tokenId) {
+		// Display the set content dialog
+		const tt = ttip(sel('.cfg', sentence), e, true);
+		tt.appendChild(TOKEN.createInput({
+			type: 'url',
+			name: 'api',
+			placeholder: 'API URL',
+			value: localStorage['metaphor_api'] || ''
+		}));
+		tt.appendChild(TOKEN.createInput({
+			type: 'password',
+			name: 'token',
+			placeholder: 'API Token',
+			value: localStorage['metaphor_token'] || ''
+		}));
+		tt.appendChild(TOKEN.createTextarea({name: 'content', placeholder: 'Content'}));
+		tt.appendChild(TOKEN.createCenter(TOKEN.createLink(tokenId, 'btn save content', 'Save')));
+	}
+
+	function handleSaveContent(e, target, paragraphId) {
+		// Get and store the input values
+		const tooltip = target.closest('.tooltip');
+		const apiInput = sel('[name="api"]', tooltip);
+		const apiInputValue = apiInput.value;
+		localStorage['metaphor_api'] = apiInput.value;
+		const apiTokenValue = sel('[name="token"]', tooltip).value;
+		localStorage['metaphor_token'] = apiTokenValue;
+		const contentInput = sel('[name="content"]', tooltip);
+		const text = contentInput.value.trim();
+		if (!text) return addMsg(_('Please provide content'), false, contentInput);
+		if (!apiInputValue) return addMsg(_('Please provide API URL'), false, apiInput);
+
+		// Show loading state
+		const originalText = target.textContent;
+		target.textContent = _('Processing...');
+		target.classList.add('disabled');
+		fetch(apiInputValue, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json; charset=utf-8',
+				'Authorization': `Bearer ${apiTokenValue}`
+			},
+			body: JSON.stringify({text})
+		}).then(r => {
+			// Handle errors
+			if (!r.ok) {
+				if (r.status === 404) {
+					return Promise.reject(_('Invalid or wrong API URL'));
+				} else if (r.status >= 500) {
+					return Promise.reject(_('API server error'));
+				}
+				return r.text().catch(() => _('Invalid API response')).then(text => {
+					try {
+						const data = JSON.parse(text);
+						return Promise.reject(_(data.detail || 'unknown error'));
+					} catch {
+						return Promise.reject(_('Invalid or wrong API URL'));
+					}
+				});
+			}
+			return r.text();
+		}).then(data => {
+			if (typeof data !== 'string') return addMsg(_(data.detail || 'unknown error'), false, contentInput);
+			try {
+				// Handle success
+				const xml = sel('body', parseXml(data));
+				_content[paragraphId] = xml.innerHTML;
+				return savePar([paragraphId]);
+			} catch {
+				addMsg(_('API response format is incorrect'), false, contentInput);
+			}
+		}).catch(err => addMsg(err || _('unknown error'), false, contentInput))
+			.finally(() => {
+				// Restore button state
+				target.textContent = originalText;
+				target.classList.remove('disabled');
+			});
+	}
+
+	document.addEventListener('click', e => {
+		const target = e.target;
+		if (!target) return;
+
+		// Cancel new document creation
+		if (target && target.matches('.new-cancel')) return trg(target.closest('.tooltip'), 'close');
+
+		const ctx = resolveContext(target, {resolveTableCellParent: true});
+		if (!ctx) return;
+
+		// Open tooltip
+		if (ctx.target.matches('.t, .cfg'))
+			return handleTokenContextMenu(e, ctx.target, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+
+		if (ctx.target.matches('.show.info')) return handleEditTokenInfo(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+
+		if (ctx.target.matches('.show.meaning')) return handleEditMeaning(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+
+		if (ctx.target.matches('.show.reason')) return handleEditReason(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+
+		if (ctx.target.matches('.save.info,.save.meaning,.save.reason'))
+			return handleSaveTokenFields(e, ctx.target, ctx.paragraphId, ctx.tokenXml);
+
+		if (ctx.target.matches('.ins.token')) return handleInsertToken(e, ctx.sentence, ctx.tokenId, ctx.tokenXml);
+
+		if (ctx.target.matches('.ins-save.token'))
+			return handleSaveInsertedToken(ctx.target, ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml);
+
+		if (ctx.target.matches('.del.token')) {
+			delNode(ctx.tokenXml);
+			savePar([ctx.paragraphId]);
+			return;
+		}
+
+		if (ctx.target.matches('.set.content')) return handleSetContent(e, ctx.sentence, ctx.tokenId);
+
+		if (ctx.target.matches('.save.content')) return handleSaveContent(e, ctx.target, ctx.paragraphId)
+	});
+
+	function handleSplitToken(paragraphId, paragraphXml, sentenceXml, tokenXml, value) {
+		// Select token to modify
+		const wordEl = getTokenSurface(tokenXml);
+		const text = wordEl.textContent;
+
+		const index = Number(value);
+		if (isNaN(index) || index < 0 || index > text.length) return;
+
+		// Split text
+		const left = text.slice(0, index);
+		const right = text.slice(index);
+
+		// Clone the original token XML
+		const newTokenXml = tokenXml.cloneNode(true);
+
+		// Create new unique ID, store value and note modified status
+		const tokenId = tokenXml.getAttribute('xml:id');
+		if (tokenId) newTokenXml.setAttribute('xml:id', getUID(paragraphXml, tokenId));
+
+		const newWordEl = getTokenSurface(newTokenXml);
+
+		// Update original + new token
+		wordEl.textContent = left;
+		wordEl.setAttribute('modified', 'True');
+
+		newWordEl.textContent = right;
+		newWordEl.setAttribute('modified', 'True');
+
+		// Insertion point (insert after current token)
+		const referenceNode = tokenXml.nextSibling;
+
+		// Preserve whitespace
+		const previousText = tokenXml.previousSibling?.nodeName === '#text' ? tokenXml.previousSibling.textContent : '';
+
+		// Insert new token and reinsert whitespace
+		sentenceXml.insertBefore(newTokenXml, referenceNode);
+		if (previousText) sentenceXml.insertBefore(paragraphXml.createTextNode(previousText), referenceNode);
+
+		// Save changes and refresh UI
+		savePar([paragraphId]);
+	}
+
+	function handleJoinToken(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, tokenXml, value) {
+		// Find neighbouring token
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
+		const tokenXml2 = tokens[Number(tokenId) + offset];
+		if (!tokenXml2) return addMsg(_('Invalid Action'));
+
+		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
+		const form = getTokenSurface(keepToken);
+		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
+			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);
+
+		// Join text
+		form.setAttribute('modified', 'True');
+		form.textContent = joinedWord;
+
+		// Preserve an existing ID on the merged token
+		// Prefer the survivor's ID; if it lacks one, reuse the removed token's ID
+		const keepId = keepToken.getAttribute('xml:id');
+		const removeId = removeToken.getAttribute('xml:id');
+		delNode(removeToken);
+		if (!keepId && removeId) keepToken.setAttribute('xml:id', removeId);
+
+		// Save changes and refresh UI
+		savePar([paragraphId]);
+	}
+
+	function handleSplitSentence(paragraphId, paragraphXml, sentenceXml, tokens, tokenId, value) {
+		// Determine split point
+		const offset = value === '0' ? 0 : 1;
+		const splitToken = tokens[Number(tokenId) + offset];
+		if (!splitToken || splitToken === tokens[0]) return addMsg(_('Invalid Action'));
+
+		// Preserve indentation
+		const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+
+		// Mark sentence and insert split marker
+		sentenceXml.setAttribute('modified', 'True');
+		sentenceXml.insertBefore(paragraphXml.createElement('split'), splitToken);
+
+		// Create new sentence ID
+		const root = paragraphXml.documentElement;
+		const idBase = sentenceXml.getAttribute('xml:id');
+		const newSentence = `</${sentenceXml.nodeName}>` + indent + `<${sentenceXml.nodeName}`
+			+ (idBase ? ` xml:id="${getUID(paragraphXml, idBase)}"` : '') + ' modified="True"> ';
+
+		// Replace marker with sentence boundary
+		root.innerHTML = root.innerHTML.replace(/([ \t\r\n]*)<split[^>]*>/, indent + newSentence + '$1');
+
+		// Save changes and refresh UI
+		savePar([paragraphId]);
+	}
+
+	function handleJoinSentence(paragraph, paragraphId, paragraphXml, sentences, sentenceId, sentenceXml, value) {
+		// Determine direction
+		const joinRight = value !== '0';
+		const offset = joinRight ? 1 : -1;
+
+		let keepSentence;
+		let removeSentence;
+		let paragraphIds;
+
+		// Determine survivor and removed node
+		const adjacentSentence = sentences[sentenceId + offset];
+		if (adjacentSentence) {
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, adjacentSentence] : [adjacentSentence, sentenceXml];
+			paragraphIds = [paragraphId];
+		} else {
+			const adjacentParagraphId = paragraphId + offset;
+			if (!_active[adjacentParagraphId]) {
+				const chunk = editor.renderChunk(adjacentParagraphId);
+				if (chunk) paragraph.parentNode.insertBefore(chunk, joinRight ? paragraph.nextSibling : paragraph);
+			}
+			if (!_active[adjacentParagraphId]) return addMsg(_('Invalid Action'));
+
+			[keepSentence, removeSentence] = joinRight ? [sentenceXml, sel('s', _active[adjacentParagraphId])]
+				: [sel('s:last-of-type', _active[adjacentParagraphId]), sentenceXml];
+			paragraphIds = joinRight ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId];
+		}
+		if (!keepSentence || !removeSentence) return addMsg(_('Invalid Action'));
+
+		// Merge sentences
+		keepSentence.setAttribute('modified', 'True');
+		keepSentence.innerHTML = keepSentence.innerHTML.replace(/[ \r\n\t]+$/, '') + removeSentence.innerHTML;
+
+		// Preserve an existing ID on the merged sentence
+		// Prefer the survivor's ID; if it lacks one, reuse the removed sentence's ID
+		const keepId = keepSentence.getAttribute('xml:id');
+		const removeId = removeSentence.getAttribute('xml:id');
+		delNode(removeSentence);
+		if (!keepId && removeId) keepSentence.setAttribute('xml:id', removeId);
+
+		savePar(paragraphIds);
+	}
+
+	function handleMoveSentence(paragraph, paragraphId, paragraphXml, sentences, sentenceId, sentenceXml, value) {
+		// Determine destination paragraph
+		const moveToNextParagraph = value !== '0';
+		const offset = moveToNextParagraph ? 1 : -1;
+		const adjacentParagraphId = paragraphId + offset;
+
+		// Ensure target paragraph is loaded
+		if (!_active[adjacentParagraphId]) {
+			const chunk = editor.renderChunk(adjacentParagraphId);
+			if (chunk) paragraph.parentNode.insertBefore(chunk, moveToNextParagraph ? paragraph.nextSibling : paragraph);
+		}
+
+		// Validate move
+		const isLastSentence = sentenceId === sentences.length - 1;
+		const isFirstSentence = sentenceId === 0;
+		if (!_active[adjacentParagraphId] || (moveToNextParagraph && !isLastSentence) || (offset < 0 && !isFirstSentence))
+			return addMsg(_('Invalid Action'));
+
+		// Move sentence
+		const targetParagraph = _active[adjacentParagraphId].documentElement
+		if (moveToNextParagraph) {
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)</, '$1' + sentenceXml.outerHTML + '$1<');
+		} else {
+			const indent = sentenceXml.previousSibling?.nodeName === '#text' ? sentenceXml.previousSibling.textContent : '';
+			targetParagraph.innerHTML =
+				targetParagraph.innerHTML.replace(/([ \t\r\n]*)$/, indent + sentenceXml.outerHTML + '$1');
+		}
+		delNode(sentenceXml);
+
+		// Save changes
+		savePar(moveToNextParagraph ? [paragraphId, adjacentParagraphId] : [adjacentParagraphId, paragraphId]);
+	}
+
+	document.addEventListener('change', e => {
+		const target = e.target;
+		if (!target) return;
+
+		const ctx = resolveContext(target, {includeValue: true});
+		if (!ctx) return;
+
+		// Token stuff
+		if (target.matches('.split.token'))
+			return handleSplitToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokenXml, ctx.value);
+
+		if (target.matches('.join.token'))
+			return handleJoinToken(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokens, ctx.tokenId, ctx.tokenXml,
+				ctx.value);
+
+		// Sentence stuff
+		if (target.matches('.split.sent'))
+			return handleSplitSentence(ctx.paragraphId, ctx.paragraphXml, ctx.sentenceXml, ctx.tokens, ctx.tokenId,
+				ctx.value);
+
+		if (target.matches('.join.sent'))
+			return handleJoinSentence(ctx.paragraph, ctx.paragraphId, ctx.paragraphXml, ctx.sentences, ctx.sentenceId,
+				ctx.sentenceXml, ctx.value);
+
+		if (target.matches('.move.sent'))
+			return handleMoveSentence(ctx.paragraph, ctx.paragraphId, ctx.paragraphXml, ctx.sentences, ctx.sentenceId,
+				ctx.sentenceXml, ctx.value);
+	});
+
+	function normalizeDocumentTitle(xml, filename) {
+		// Derive a title from the filename
+		const title = filename.replace(/\.xml$/i, '');
+		if (!title) return xml;
+		// If there is a title tag replace with the value of title else return the XML unchanged
+		return xml.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${encXml(title)}</title>`);
+	}
+
+	Editor.registerNewDocumentType('metaphor', () => {
+		// Create new metaphor documents
+		return new Promise((resolve) => {
+			const tt = ttip(sel('header'), null, true);
+			let settled = false;
+			const finish = result => {
+				if (settled) return;
+				settled = true;
+				resolve(result);
+			};
+
+			// Closing the modal by either Cancel or the close button cancels document creation
+			tt.addEventListener('close', () => finish(null), {once: true});
+
+			const defaultFilename = 'uj-metafora-' + new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_')
+				.replace(/Z$/, '') + '.xml';
+
+			const title = TOKEN.createTextElement('h3', _('New Text for Metaphor Detection'));
+			title.style.textAlign = 'center';
+			tt.append(
+				title,
+				TOKEN.createInput({
+					type: 'text',
+					name: 'filename',
+					placeholder: 'File Name',
+					value: defaultFilename
+				}),
+				TOKEN.createInput({
+					type: 'url',
+					name: 'api',
+					placeholder: 'API URL',
+					value: localStorage['metaphor_api'] || ''
+				}),
+				TOKEN.createInput({
+					type: 'password',
+					name: 'token',
+					placeholder: 'API Token',
+					value: localStorage['metaphor_token'] || ''
+				}),
+				TOKEN.createTextarea({name: 'content', placeholder: 'Content'}),
+				TOKEN.createCenter(
+					TOKEN.createLink(null, 'btn metaphor-new-submit', 'Submit'),
+					TOKEN.createLink(null, 'btn metaphor-new-cancel', 'Cancel')
+				)
+			);
+
+			// Set minimum height for the modal to fit content
+			tt.style.minHeight = '400px';
+			tt.style.display = 'flex';
+			tt.style.flexDirection = 'column';
+
+			// Handle the submit button
+			const submitBtn = sel('.metaphor-new-submit', tt);
+			const cancelBtn = sel('.metaphor-new-cancel', tt);
+
+			cancelBtn.onclick = () => trg(tt, 'close');
+
+			submitBtn.onclick = async () => {
+				let filename = sel('[name="filename"]', tt).value.trim();
+				const api = sel('[name="api"]', tt).value.trim();
+				const token = sel('[name="token"]', tt).value.trim();
+				const content = sel('[name="content"]', tt).value.trim();
+
+				if (!filename || !api || !content) return addMsg(_('Please fill in all fields'), 'error', tt);
+
+				if (!filename.toLowerCase().endsWith('.xml')) filename += '.xml';
+
+				localStorage['metaphor_api'] = api;
+				localStorage['metaphor_token'] = token;
+
+				// Show loading state
+				const originalText = submitBtn.textContent;
+				submitBtn.textContent = _('Processing...');
+				submitBtn.classList.add('disabled');
+
+				try {
+					const r = await fetch(api, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json; charset=utf-8',
+							'Authorization': 'Bearer ' + token
+						},
+						body: JSON.stringify({text: content})
+					});
+
+					// Check for authentication errors first
+					if (r.status === 401) {
+						addMsg(_('Invalid bearer token'), 'error', tt);
+						// Reset button state
+						submitBtn.textContent = originalText;
+						submitBtn.classList.remove('disabled');
+						return;
+					}
+
+					if (!r.ok) {
+						// If JSON parsing fails, return status error
+						let msg = _('API server error');
+						try {
+							const err = await r.json();
+							msg = err.detail || err.message || msg;
+						} catch {  // Extract the error message from JSON, do nothing if parsing fails, see unified handling below
+						}
+						addMsg(msg, 'error', tt);
+						// Reset button state
+						submitBtn.textContent = originalText;
+						submitBtn.classList.remove('disabled');
+						return;
+					}
+
+					const data = await r.text();
+
+					finish([filename, normalizeDocumentTitle(data, filename)]);
+					trg(tt, 'close');
+				} catch (err) {
+					// Catch network errors and invalid bearer token errors
+					let errorMsg = err.message;
+					// Network error (could be CORS, connection refused, etc.)
+					if (err.name === 'TypeError') errorMsg = `${_('Network error:')} ${err.message}`;
+					addMsg(errorMsg, 'error', tt);
+					// Reset button state
+					submitBtn.textContent = originalText;
+					submitBtn.classList.remove('disabled');
+				}
+			};
+		});
+	});
 })();
