@@ -462,8 +462,22 @@ class DocumentManager {
 		this.#hist.recent.replaceEntries(recentDocuments);
 	}
 
-	async import(templatePath, loadTemplateFun) {
-		const template = await loadTemplateFun(templatePath);
+	async createNewDocument(template) {
+		// Before calling this function must load resources that register this template's creation handler in Editor
+		const creationHandler = this.#editor.getNewDocumentType(template.templateInfo.id);
+		if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
+
+		const result = await creationHandler();
+		// Creation handlers return null only when the user cancels the operation; errors are reported or rejected
+		if (result === null) return;
+
+		// Process the source returned by the template, then save and render the document
+		const [filename, data] = result;
+		await this.createDocument(filename, data, template);
+	}
+
+	async import(template) {
+		// Before calling this function must load resources that register this template's properties
 		// Import file from disk
 		const file = await pickFile({extension: template.extension});
 		const data = await readFile(file);
@@ -637,7 +651,8 @@ class TemplateManager {
 		return templates.find(t => t.id === templateId);
 	}
 
-	async loadTemplate(path) {
+	async loadTemplate(templateInfo) {
+		const path = templateInfo.path;
 		const template = await this.#loadJSON(`./${this.#templateDir}/${path}`);
 
 		if (typeof template.css === 'string') template.css = template.css.split(',');
@@ -647,6 +662,9 @@ class TemplateManager {
 		template.js = template.js.map(file => `./${this.#templateDir}/${file}`);
 
 		await this.loadResources(template);
+
+		// Put all info into template for future reference
+		template.templateInfo = templateInfo;
 
 		return template;
 	}
@@ -1090,7 +1108,7 @@ class History {
 	static #MAX_NUMBER = 10;
 	#name
 	#max
-	#onchange
+	#onchange  // Handle the enabling and disabling of the respective buttons
 	#data
 	#backupTimestamp
 	#timer
@@ -1140,11 +1158,13 @@ class History {
 
 	replaceEntries(data) {
 		const next = structuredClone(data).slice(0, this.#max);
+		// Nothing changed, just call the callback
 		if (JSON.stringify(this.#data) === JSON.stringify(next)) {
 			this.#onchange?.(this);
 			return;
 		}
 
+		// Store new history and call the callback
 		this.#data = next;
 		this.#onHistChange();
 	}
@@ -1152,6 +1172,7 @@ class History {
 	addEntry(data) {
 		// Add new data while maintaining maximum size in place
 		this.#data.unshift(structuredClone(data));
+		// Truncate if needed
 		if (this.#data.length > this.#max) this.#data.length = this.#max;
 		this.#onHistChange();
 	}
@@ -1167,7 +1188,9 @@ class History {
 
 	moveEntryToTop(value) {
 		const index = this.#data.indexOf(value);
+		// Remove item if it is already in the array (no call to this.#onHistChange() yet)
 		if (index >= 0) this.#data.splice(index, 1);
+		// Insert Entry to top and call this.#onHistChange()
 		this.addEntry(value);
 	}
 
@@ -1175,6 +1198,7 @@ class History {
 		const index = this.#data.indexOf(value);
 		if (index < 0) return false;
 
+		// Remove item if it is in the array and call to this.#onHistChange()
 		this.#data.splice(index, 1);
 		this.#onHistChange();
 		return true;
@@ -1262,7 +1286,7 @@ class UndoManager {
 		this.#markOperationPending(editorState.id, 1);
 
 		// Serialize the whole state transition, not only its IndexedDB write. This keeps a failed operation's
-		// rollback ahead of every later editor mutation and makes the pre-operation snapshot authoritative.
+		// rollback ahead of every later editor mutation and makes the pre-operation snapshot authoritative
 		const queued = this.#operationQueue.then(() => {
 			if (!this.#isEditorStateActive(editorState)) return;
 			return operation();
@@ -1306,6 +1330,7 @@ class UndoManager {
 	#entryMatchesEditor(data, targetValues = false) {
 		let matches = true;
 
+		// Check if each history chunk corresponds to the current editor (no outer change that invalidates history)
 		this.#forEachHistoryChunk(data, item => {
 			const expected = targetValues ? item.target?.value : item.expected;
 			if (!item.current || item.current.value !== expected) {
@@ -1342,7 +1367,7 @@ class UndoManager {
 		for (const cid of changeIds) {
 			const store = cid[0] === 'h' ? 'hidden' : 'chunks';
 			const current = this.#editor[store][cid.substring(1)];
-			if (!current) throw new Error(`History chunk not found: ${cid}`);
+			if (!current) throw new Error(`History chunk not found in editor store: ${cid}`);
 
 			const nextValue = values[cid];
 			if (current.value === nextValue) continue;
@@ -1394,12 +1419,12 @@ class UndoManager {
 		const hids = structuredClone(context.hids ?? changeIds.filter(cid => cid[0] === 'h').map(cid => cid.substring(1)));
 
 		// Rendering is delayed until the operation queue becomes idle, preventing an intermediate edit render
-		// from overwriting the empty view or final viewport owned by a following undo/redo action.
+		// from overwriting the empty view or final viewport owned by a following undo/redo action
 		this.#queueEditRender(editorState, cids, hids);
 
 		return this.#enqueueOperation(editorState, async () => {
 			// Build the pair when this operation reaches the head of the queue. If an earlier edit failed,
-			// its rollback has already completed and therefore becomes the correct baseline for this edit.
+			// its rollback has already completed and therefore becomes the correct baseline for this edit
 			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids);
 			if (!entries) return;
 
@@ -1412,7 +1437,7 @@ class UndoManager {
 			} catch (err) {
 				if (this.#isEditorStateActive(editorState)) {
 					// The operation queue prevents later managed edits from mutating the model before this rollback.
-					// Still verify the applied values so an unknown external mutation is never overwritten silently.
+					// Still verify the applied values so an unknown external mutation is never overwritten silently
 					if (this.#entryMatchesEditor(entries.forward, true)) {
 						this.#applyChunksToEditor(entries.reverse);
 						// Persistence failed atomically and rollback restored the persisted model, so the failure is handled
@@ -1454,7 +1479,8 @@ class UndoManager {
 
 		// Intentionally render an empty page first: renderPage([]) clears the current view, closes editor-owned tooltips,
 		// and lets templates run remove hooks against the currently rendered chunks before the history entry mutates them
-		// Hidden UI is left intact here because its model has not changed yet; touched hidden chunks are refreshed on completion
+		// Hidden UI is left intact here because its model has not changed yet;
+		// touched hidden chunks are refreshed on completion
 		this.#editor.renderPage([]);
 
 		// Create the corresponding reverse entry
@@ -1483,7 +1509,7 @@ class UndoManager {
 			} catch (err) {
 				if (this.#isEditorStateActive(editorState)) {
 					// IndexedDB transactions are atomic, and the operation queue has completed every earlier rollback
-					// before this action started. Therefore reverseEntry is the persisted pre-action model.
+					// before this action started. Therefore reverseEntry contains the persisted (pre-action) model
 					if (!this.#entryMatchesEditor(entry, true)) {
 						// Do not overwrite an unexpected mutation with a snapshot whose ownership can no longer be proven
 						from.clearEntries();
@@ -1500,7 +1526,7 @@ class UndoManager {
 					// Persistence failed atomically and rollback restored the persisted model, so the failure is handled
 					this.#clearSaveFailureFun?.(entry.id);
 					// Rollback restores model values, not a viewport. A failed action must keep the chunk IDs that
-					// were visible before it started; the changed chunks may belong to a completely different page.
+					// were visible before it started; the changed chunks may belong to a completely different page
 					renderCids = currentlyVisible;
 					// Hidden chunks drive template-owned UI outside the page, so refresh those touched by the rollback
 					renderHidden = reverted.hiddenToRender;
@@ -1514,7 +1540,7 @@ class UndoManager {
 			}
 
 			// Persistence still targets the document captured by entry.id, but load() may have replaced the shared editor
-			// while the save was queued. A stale history action must not update the new view or its history stacks.
+			// while the save was queued. A stale history action must not update the new view or its history stacks
 			if (!this.#isEditorStateActive(editorState)) return;
 
 			// A successful history action restores the viewport recorded with the target entry
@@ -1612,31 +1638,15 @@ function confirmDiscardChanges(callback) {
 	}
 }
 
-async function createNewDocument(templateInfo) {
-	// Load the resources that register this template's creation handler
-	const template = await templates.loadTemplate(templateInfo.path);
-
-	const creationHandler = Editor.getNewDocumentType(templateInfo.id);
-	if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
-
-	const result = await creationHandler();
-	// Creation handlers return null only when the user cancels the operation; errors are reported or rejected.
-	if (result === null) return;
-
-	// Process the source returned by the template, then save and render the document
-	const [filename, data] = result;
-	await documents.createDocument(filename, data, template);
-}
-
 function showDocumentLoadError(err) {
-	// Closing the file picker is expected user cancellation, not a load failure.
+	// Closing the file picker is expected user cancellation, not a load failure
 	if (err instanceof FileSelectionCancelledError) return;
 
 	const message = err?.message || String(err || '');
 	const hasCause = err && typeof err === 'object' && 'cause' in err;
 	if (!message) return;
 
-	// Wrapped load errors keep their low-level cause here; otherwise log the original error.
+	// Wrapped load errors keep their low-level cause here; otherwise log the original error
 	console.error('Error during file open process:', hasCause ? err.cause : err);
 	addMsg(message, 'error');
 }
@@ -1716,13 +1726,22 @@ evtDelegated(document, '.template-select', 'click', async function () {
 		trg(this.closest('.tooltip'), 'close');
 
 		// Execute action on template
-		if (action === 'open') {
-			confirmDiscardChanges(() =>
-				documents.import(templateInfo.path, async templatePath => templates.loadTemplate(templatePath))
-					.catch(showDocumentLoadError));
-		} else if (action === 'new') {
-			confirmDiscardChanges(() => createNewDocument(templateInfo).catch(showDocumentLoadError));
-		}
+		confirmDiscardChanges(async () => {
+			// Load template
+			const template = await templates.loadTemplate(templateInfo);
+			switch (action) {
+				case 'open':
+					documents.import(template).catch(showDocumentLoadError);
+					break;
+
+				case 'new':
+					documents.createNewDocument(template).catch(showDocumentLoadError);
+					break;
+
+				default:
+					throw Error(`Unknown action with template: ${action}`);
+			}
+		});
 
 	} catch (err) {
 		showDocumentLoadError(err);
