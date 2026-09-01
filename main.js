@@ -420,7 +420,7 @@ class DocumentManager {
 		this.#db = db;
 		this.#saveQueue = saveQueue;
 		this.#undoManager = new UndoManager(
-			editor,
+			this.#editor,
 			this.#hist,
 			(documentId, chunks) => this.#persist(documentId, chunks),
 			documentId => this.#saveQueue.clearFailures(documentId)
@@ -1259,7 +1259,13 @@ class UndoManager {
 			this.#pendingOperations.delete(documentId);
 		}
 
-		if (!this.#pendingOperationCount) this.#flushPendingRender();
+		if (!this.#pendingOperationCount) {
+			// Flush pending render
+			const pending = this.#pendingRender;
+			this.#pendingRender = null;
+			if (pending && this.#isEditorStateActive(pending.editorState))
+				this.#editor.renderPage(pending.cids, Array.from(pending.hids));
+		}
 	}
 
 	#queueEditRender(editorState, cids, hids) {
@@ -1273,13 +1279,6 @@ class UndoManager {
 		// Keep the latest viewport, but accumulate every hidden chunk touched by the pending edit batch
 		pending.cids = cids;
 		for (const hid of hids) pending.hids.add(hid);
-	}
-
-	#flushPendingRender() {
-		const pending = this.#pendingRender;
-		this.#pendingRender = null;
-		if (pending && this.#isEditorStateActive(pending.editorState))
-			this.#editor.renderPage(pending.cids, Array.from(pending.hids));
 	}
 
 	#enqueueOperation(editorState, operation) {
@@ -1689,9 +1688,10 @@ evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message,
 evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
 
 languageManager.addEventListener('change', () => {
-	const currentlyVisible = editor.id ? editor.getVisible() : [];
+	if (!editor.id) return;
 
-	if (editor.id) editor.renderPage(currentlyVisible, Object.keys(editor.hidden));
+	const currentlyVisible = editor.getVisible();
+	editor.renderPage(currentlyVisible, Object.keys(editor.hidden));
 });
 
 evtDelegated(document, '[data-open]', 'click', function () {
