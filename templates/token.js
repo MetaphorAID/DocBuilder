@@ -80,6 +80,7 @@ class TOKEN {
 			if (t.matches('.btn-view')) {
 				localStorage.tableview = localStorage.tableview ? '' : '1';
 				updateViewButtonLabel();
+				// Rerender the visible chunks
 				editor.renderPage(editor.getVisible());
 			}
 		});
@@ -102,7 +103,8 @@ class TOKEN {
 		return row;
 	}
 
-	static #renderHeaderCells(headers) {
+	static createHeaderRow(headers) {
+		// Create header cells
 		const cells = document.createDocumentFragment();
 
 		for (const header of headers) {
@@ -111,12 +113,10 @@ class TOKEN {
 			cells.appendChild(cell);
 		}
 
-		return cells;
-	}
-
-	static createHeaderRow(headers) {
+		// Append cells to the row
 		const row = document.createElement('tr');
-		row.appendChild(this.#renderHeaderCells(headers));
+		row.appendChild(cells);
+
 		return row;
 	}
 

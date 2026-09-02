@@ -183,11 +183,7 @@
 	}
 
 	evt(editor.dom, 'change-hidden', e => {
-		// Find the header and print the legend
-		// The value of hids is in e.detail
-		const headerChunk = e.detail.map(hid => editor.hidden[hid]).find(h => h?.name === '.mm_header');
-		if (!headerChunk) return;
-		const x = parseXml(headerChunk.value);
+		// Create legend
 		const legend = document.createElement('div');
 		legend.className = 'legend';
 		legend.appendChild(TOKEN.createTextElement('h4', _('Token Legend')));
@@ -207,16 +203,23 @@
 		addLegendItem('legend-color direct-token', 'Direct meaning');
 		addLegendItem('legend-modified', 'Manually modified', true);
 
+		// Create logo element
 		const logo = document.createElement('img');
 		logo.alt = 'MetaphorAID logo';
 		logo.className = 'logo';
 		logo.src = './templates/assets/metaphor-aid.webp';
 		logo.style.height = '3em';
 
-		sel('#header').replaceChildren(
+		// Find the header
+		// The value of hids is in e.detail
+		const headerChunk = e.detail.map(hid => editor.hidden[hid]).find(h => h?.name === '.mm_header');
+		if (!headerChunk) return;
+		const headerChunkValueEl = parseXml(headerChunk.value);
+		const header = sel('#header');
+		header.replaceChildren(
 			logo,
-			TOKEN.createTextElement('h2', selToText(x, 'title', true)),
-			TOKEN.createTextElement('h3', selToText(x, 'author', true)),
+			TOKEN.createTextElement('h2', selToText(headerChunkValueEl, 'title', true)),
+			TOKEN.createTextElement('h3', selToText(headerChunkValueEl, 'author', true)),
 			legend
 		);
 	});
@@ -289,7 +292,7 @@
 
 		const fragment = document.createDocumentFragment();
 		fragment.appendChild(document.createTextNode(`${preview} `));
-		const link = TOKEN.createLink(tid, 'show reason', '\u2026');
+		const link = TOKEN.createLink(tid, 'show reason', '\u2026');  // HORIZONTAL ELLIPSIS
 		link.title = _('Reasoning');
 		fragment.appendChild(link);
 		return fragment;
@@ -472,13 +475,15 @@
 			// Show reasoning if there is any
 			if (selToText(tokenXml, 'reasoning', true)) items.push(TOKEN.createLink(tokenId, 'show reason', 'Reasoning'));
 			// Setup possible token splittings
-			const tkn = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
-			if (tkn.length > 1) {
+			const tokenValue = getTokenFieldText(tokenXml, TOKEN_SURFACE_FIELD);
+			if (tokenValue.length > 1) {
 				const split = {};
-				for (let i = 1; i < tkn.length; ++i) split[i] = tkn.slice(0, i) + ' | ' + tkn.slice(i);
+				for (let i = 1; i < tokenValue.length; ++i)
+					split[i] = tokenValue.slice(0, i) + ' | ' + tokenValue.slice(i);
 				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
+			items.push(TOKEN.createLink(tokenId, 'edit token disabled', 'Fix Token')); // Change the value freely
 			items.push(TOKEN.createSelect(tokenId, 'join token', '', 'Join Token...', TOKEN.SEL_WHERE));
 			items.push(TOKEN.createLink(tokenId, 'ins token disabled', 'Insert Token'));
 			items.push(TOKEN.createLink(tokenId, 'del token disabled', 'Delete Token'));
@@ -805,10 +810,10 @@
 		// Find neighbouring token
 		const joinRight = value !== '0';
 		const offset = joinRight ? 1 : -1;
-		const tokenXml2 = tokens[Number(tokenId) + offset];
-		if (!tokenXml2) return addMsg(_('Invalid Action'));
+		const newTokenXml = tokens[Number(tokenId) + offset];
+		if (!newTokenXml) return addMsg(_('Invalid Action'));
 
-		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
+		const [keepToken, removeToken] = offset > 0 ? [tokenXml, newTokenXml] : [newTokenXml, tokenXml];
 		const form = getTokenSurface(keepToken);
 		const joinedWord = getTokenFieldText(keepToken, TOKEN_SURFACE_FIELD)
 			+ getTokenFieldText(removeToken, TOKEN_SURFACE_FIELD);

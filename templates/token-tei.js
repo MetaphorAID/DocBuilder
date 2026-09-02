@@ -132,27 +132,29 @@
 		// Find the header
 		// The value of hids is in e.detail
 		for (const hid of e.detail) {
-			const h = editor.hidden[hid];
-			if (h.name === '.t_header') {
-				const x = parseXml(h.value);
+			const headerChunk = editor.hidden[hid];
+			if (headerChunk.name === '.t_header') {
+				const headerChunkValueEl = parseXml(headerChunk.value);
 				const header = sel('#header');
 				header.replaceChildren(
-					TOKEN.createTextElement('h2', selToText(x, 'title', true)),
-					TOKEN.createTextElement('h3', selToText(x, 'author', true))
+					TOKEN.createTextElement('h2', selToText(headerChunkValueEl, 'title', true)),
+					TOKEN.createTextElement('h3', selToText(headerChunkValueEl, 'author', true))
 				);
 				continue;
 			}
-			if (h.name !== '.t_annotations') continue;
-			_annots = {id: hid, xml: parseXml(h.value), list: [], ref: {}, changed: false}
-			each('annotation', (annot, index) => {
-				_annots.list.push(annot);
-				each('token', token => {
-					const target = token.getAttribute('target');
-					(_annots.ref[target] ??= {})[index] = (token.previousElementSibling ? 0 : 1)
-						+ (token.nextElementSibling ? 0 : 2);
-				}, annot);
-			}, _annots.xml);
-			sel('#footer').replaceChildren();
+
+			if (headerChunk.name === '.t_annotations') {
+				_annots = {id: hid, xml: parseXml(headerChunk.value), list: [], ref: {}, changed: false}
+				each('annotation', (annot, index) => {
+					_annots.list.push(annot);
+					each('token', token => {
+						const target = token.getAttribute('target');
+						(_annots.ref[target] ??= {})[index] = (token.previousElementSibling ? 0 : 1)
+							+ (token.nextElementSibling ? 0 : 2);
+					}, annot);
+				}, _annots.xml);
+				sel('#footer').replaceChildren();
+			}
 		}
 	});
 
@@ -462,17 +464,17 @@
 			// Annotation features are available only when the document has an <annotations> section
 			if (_annots.xml) {
 				items.push(TOKEN.createSelect(tokenId, 'add annot', '', 'New Annotation...', ANNOT_TYPE));
-				const addIfHas = (lst, label) => {
-					if (Object.keys(lst).length) items.push(TOKEN.createSelect(tokenId, label.key, '', label.text, lst));
+				const addIfHas = (list, label) => {
+					if (Object.keys(list).length) items.push(TOKEN.createSelect(tokenId, label.key, '', label.text, list));
 				};
 
-				const buildList = (items, filterFn, prefix = '') => {
-					const lst = {};
+				const buildList = (items, filterFun, prefix = '') => {
+					const list = {};
 					for (const i in items || {}) {
-						if (!filterFn(items[i])) continue;
-						lst[prefix + i] = xmlToText(_annots.list[i].innerHTML, true);
+						if (!filterFun(items[i])) continue;
+						list[prefix + i] = xmlToText(_annots.list[i].innerHTML, true);
 					}
-					return lst;
+					return list;
 				};
 
 				// Annotations containing the token
@@ -495,10 +497,11 @@
 				TOKEN_STICKY));
 
 			// Setup possible token splittings
-			const tkn = selToText(tokenXml, 'form', true);
-			if (tkn.length > 1) {
+			const tokenValue = selToText(tokenXml, 'form', true);
+			if (tokenValue.length > 1) {
 				const split = {};
-				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
+				for (let i = 1; i < tokenValue.length; ++i)
+					split[i] = encXml(tokenValue.slice(0, i)) + ' | ' + encXml(tokenValue.slice(i));
 				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
@@ -557,9 +560,7 @@
 			TOKEN.createLink(tokenId, 'btn ana save', 'Save')
 		));
 
-		evt('table input', 'focus', function () {
-			trg('.btn', 'click', this.closest('tr'));
-		}, tt);
+		evt('table input', 'focus', () => trg('.btn', 'click', this.closest('tr')), tt);
 	}
 
 	function handleSelAna(target, paragraphId, tokenXml) {
@@ -810,10 +811,10 @@
 		// Find neighbouring token
 		const joinRight = value !== '0';
 		const offset = joinRight ? 1 : -1;
-		const tokenXml2 = tokens[Number(tokenId) + offset];
-		if (!tokenXml2) return addMsg(_('Invalid Action'));
+		const newTokenXml = tokens[Number(tokenId) + offset];
+		if (!newTokenXml) return addMsg(_('Invalid Action'));
 
-		const [keepToken, removeToken] = offset > 0 ? [tokenXml, tokenXml2] : [tokenXml2, tokenXml];
+		const [keepToken, removeToken] = offset > 0 ? [tokenXml, newTokenXml] : [newTokenXml, tokenXml];
 		const joinedWord = selToText(keepToken, 'form') + selToText(removeToken, 'form');
 
 		// Join text

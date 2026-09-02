@@ -8,7 +8,7 @@
 	Locale['No Selected Analyzation'] = 'Nincs kiválasztva elemzés';
 
 	const _active = {};
-	const _cols = {};
+	const _cols = {};  // The dictionary representation of a row
 
 	Editor.TYPES.x_s = {
 		remove: function (input, chunk) {
@@ -20,9 +20,11 @@
 		},
 		render: function (chunk, cid) {
 			if (!_cols.length && editor.hidden[0]) {
+				// Create name value dictionary
 				const cols = editor.hidden[0].value.split('\t');
 				cols.forEach((name, i) => _cols[name] = i);
 
+				// Add missing columns
 				for (const name of ['lemma', 'xpostag', 'verified']) _cols[name] ??= cols.push(name) - 1;
 
 				_cols._length = cols.length;
@@ -32,7 +34,7 @@
 			// Parse the TSV to paragraph format
 			const x = parseTsv(chunk.value);
 			_active[Number(cid)] = x;
-			const ep = renderPar(x);
+			const ep = parsePar(x);
 
 			// Empty paragraph handling
 			if (!ep.children.length) {
@@ -116,7 +118,7 @@
 		wordEl.className = 't';
 
 		// Add joins if needed
-		const joinType = ''; // sticky token ?
+		const joinType = ''; // TODO handle sticky token if wsafter === '""' -> sticky else non-sticky
 		if (['left', 'both'].includes(joinType)) wordEl.classList.add('left');
 		if (['right', 'both'].includes(joinType)) wordEl.classList.add('right');
 		wordEl.dataset.tid = tid;
@@ -149,7 +151,7 @@
 		return wordEl;
 	}
 
-	function renderSent(tokens, tableView) {
+	function renderSentence(tokens, tableView) {
 		// Create and setup sentence element
 		let sentenceEl = document.createElement(tableView ? 'table' : 'div');
 		sentenceEl.className = 's';
@@ -162,7 +164,7 @@
 			sentenceEl = sentenceEl.children[0];
 		}
 		// Put each token into the sentence element
-		each(tokens, function (token, tid) {
+		each(tokens, (token, tid) => {
 			if (!token[0] && token.length < 2) return;
 
 			const renderedToken = renderToken(token, tid, tableView);
@@ -177,14 +179,14 @@
 		return tableView ? sentenceEl.parentNode : sentenceEl;
 	}
 
-	function renderPar(tokens) {
+	function parsePar(tokens) {
 		// Create paragraph element
 		const tableView = localStorage.tableview;
 		const root = document.createElement('div');
 		if (tableView) root.className = 'table';
 
 		// Put sentences into the paragraph element
-		root.appendChild(renderSent(tokens, tableView));
+		root.appendChild(renderSentence(tokens, tableView));
 
 		return root;
 	}
@@ -318,10 +320,11 @@
 			items.push(TOKEN.createLink(tokenId, 'edit ana', 'Select Ana.'));
 
 			// Setup possible token splittings
-			const tkn = getToken(tokenXml);
-			if (tkn.length > 1) {
+			const tokenValue = getToken(tokenXml);
+			if (tokenValue.length > 1) {
 				const split = {};
-				for (let i = 1; i < tkn.length; ++i) split[i] = encXml(tkn.slice(0, i)) + ' | ' + encXml(tkn.slice(i));
+				for (let i = 1; i < tokenValue.length; ++i)
+					split[i] = encXml(tokenValue.slice(0, i)) + ' | ' + encXml(tokenValue.slice(i));
 				items.push(TOKEN.createSelect(tokenId, 'split token', '', 'Split Token...', split));
 			}
 			// Setup other elements
@@ -344,7 +347,7 @@
 
 	function handleEditAna(e, sentence, tokenId, tokenXml) {
 		const btn = (tid, anaId = '', selected = false) => {
-			const button = TOKEN.createLink(tid, `btn selAna${selected ? ' selected' : ''}`, '\u2713');
+			const button = TOKEN.createLink(tid, `btn selAna${selected ? ' selected' : ''}`, '\u2713');  // Check Mark
 			button.dataset.ana = anaId;
 			return button;
 		};
@@ -378,9 +381,7 @@
 			TOKEN.createLink(tokenId, 'btn ana save', 'Save')
 		));
 
-		evt('table input', 'focus', function () {
-			trg('.btn', 'click', this.closest('tr'));
-		}, tt);
+		evt('table input', 'focus', () => trg('.btn', 'click', this.closest('tr')), tt);
 	}
 
 	function handleSelAna(target, paragraphId, tokenXml) {
@@ -509,10 +510,10 @@
 	// }
 
 	function handleSplitToken(paragraphId, paragraphXml, tokenId, tokenXml, value) {
-		const newTokenXml2 = [];
-		resetToken(newTokenXml2, getToken(tokenXml).slice(0, value));
+		const newTokenXml = [];
+		resetToken(newTokenXml, getToken(tokenXml).slice(0, value));
 		resetToken(tokenXml, getToken(tokenXml).slice(value));
-		paragraphXml.splice(tokenId, 0, newTokenXml2);
+		paragraphXml.splice(tokenId, 0, newTokenXml);
 
 		updAna([tokenXml, paragraphXml[Number(tokenId) + 1]], paragraphId);
 	}
@@ -521,11 +522,11 @@
 		// Find neighbouring token
 		const joinRight = value !== '0';
 		const offset = joinRight ? 1 : -1;
-		const tokenXml2 = paragraphXml[Number(tokenId) + offset];
-		if (!tokenXml2) return addMsg(_('Invalid Action'));
+		const newTokenXml = paragraphXml[Number(tokenId) + offset];
+		if (!newTokenXml) return addMsg(_('Invalid Action'));
 
-		resetToken(tokenXml, joinRight ? (getToken(tokenXml) + getToken(tokenXml2)) :
-			(getToken(tokenXml2) + getToken(tokenXml)));
+		resetToken(tokenXml, joinRight ? (getToken(tokenXml) + getToken(newTokenXml)) :
+			(getToken(newTokenXml) + getToken(tokenXml)));
 		delete paragraphXml[Number(tokenId) + offset];
 
 		updAna([tokenXml], paragraphId);
