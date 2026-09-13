@@ -464,7 +464,7 @@ class DocumentManager {
 
 	async createNewDocument(template) {
 		// Before calling this function must load resources that register this template's creation handler in Editor
-		const creationHandler = this.#editor.getNewDocumentType(template.templateInfo.id);
+		const creationHandler = Editor.getNewDocumentType(template.templateInfo.id);
 		if (!creationHandler) return addMsg(_('New document creation not supported for this template'), 'error');
 
 		const result = await creationHandler();
