@@ -26,7 +26,7 @@ Locale = {
 	'Remove from browser storage': 'Törlés a böngésző tárhelyéről',
 	'Remove this document from recent files and browser storage? This cannot be undone.': 'Törli ezt a dokumentumot a legutóbbi fájlok közül és a böngésző tárhelyéről? Ez nem vonható vissza.',
 	'Remove the open document from recent files and browser storage? Any unsaved changes will be lost. This cannot be undone.': 'Törli a megnyitott dokumentumot a legutóbbi fájlok közül és a böngésző tárhelyéről? A nem mentett változtatások elvesznek. Ez nem vonható vissza.',
-	'Export cancelled because another document became active before the save finished.': 'Az export megszakadt, mert a mentés befejezése előtt másik dokumentumra váltottál.',
+	'Export cancelled because the document changed before the save finished, so the stale export was not downloaded.': 'Az export megszakadt, mert a dokumentum a mentés befejezése előtt megváltozott, ezért a korábbi export nem lett letöltve.',
 	'Document changed outside, history action is disabled': 'A dokumentum megváltozott, az előre/hátra lépés le lett tiltva',
 	'Undo/redo history belongs to another document; history was cleared.': 'Az előzmények másik dokumentumhoz tartoznak; a visszavonási és ismétlési előzmények törölve lettek.',
 	'Document not found: ': 'Dokumentum nem található: ',

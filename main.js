@@ -564,12 +564,12 @@ class DocumentManager {
 			// Capture and persist only after every earlier edit has either committed or completed its rollback
 			const data = await this.#persist(editorState.id, this.#editor.chunks);
 
-			// Saving can finish after the user has moved on to another document or reloaded the same one
-			// Avoid downloading the stale export, but make the cancelled export visible
+			// Saving can finish after the user has moved on to another document or reloaded the same one.
+			// In that case the editor state no longer matches the captured export state, so avoid a stale download.
 			if (this.#editor.id !== editorState.id ||
 				this.#editor.chunks !== editorState.chunks ||
 				this.#editor.hidden !== editorState.hidden)
-				return addMsg(_('Export cancelled because another document became active before the save finished.'), 'error');
+				return addMsg(_('Export cancelled because the document changed before the save finished, so the stale export was not downloaded.'), 'error');
 
 			addMsg(_('Document Saved'), 'success');
 			this.#saveQueue.clearFailures(editorState.id);
