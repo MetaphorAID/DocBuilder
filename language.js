@@ -62,7 +62,18 @@ class LanguageManager extends EventTarget {
 
 	localizeStaticUI() {
 		each('.locale', element => {
-			const key = element.dataset.localeKey || element.innerHTML.trim();
+			const hasLocaleKey = Object.hasOwn(element.dataset, 'localeKey');
+			// localeKey is optional: if it is missing, we derive the key from the current source text once
+			// and cache it. Using innerHTML keeps inline markup (for example <b>...</b>) intact.
+			const key = hasLocaleKey ? element.dataset.localeKey : element.innerHTML.trim();
+
+			if (!hasLocaleKey) {
+				console.warn(
+					`[LanguageManager] Missing data-locale-key on a .locale element. Falling back to current innerHTML and caching it as "${key}" for future runs. Please add data-locale-key explicitly in the markup.`,
+					element
+				);
+			}
+
 			element.dataset.localeKey = key;
 			element.innerHTML = this.translate(key);
 		});
