@@ -563,8 +563,10 @@ class DocumentManager {
 		if (disabled) return;
 
 		return this.#undoManager.runExclusive(async editorState => {
-			// Capture and persist only after every earlier edit has either committed or completed its rollback
-			const data = await this.#persist(editorState.id, this.#editor.chunks);
+			// Capture and persist only after every earlier edit has either committed or completed its rollback.
+			// Use the serialized editorState snapshot so export stays aligned with the state that was validated
+			// by runExclusive() before the async save started.
+			const data = await this.#persist(editorState.id, editorState.chunks);
 
 			// Saving can finish after the user has moved on to another document or reloaded the same one.
 			// In that case the editor state no longer matches the captured export state, so avoid a stale download.
