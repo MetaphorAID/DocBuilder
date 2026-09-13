@@ -391,7 +391,9 @@ class SaveQueue {
 		this.#failedSaves.delete(fileName);
 	}
 
-	clearAll() {
+	clearDocumentState() {
+		// Reset only the warning/bookkeeping state for a newly loaded document.
+		// This does not cancel or await queued saves; persistence remains owned by SaveQueue.
 		this.#pendingSaves.clear();
 		this.#failedSaves.clear();
 	}
@@ -581,8 +583,9 @@ class DocumentManager {
 	}
 
 	displayDocument(data) {
-		// Loading a document replaces any pending/failed save state the editor was warning about
-		this.#saveQueue.clearAll();
+		// Loading a document replaces any pending/failed save warning state for the old document.
+		// The queued persistence itself is still owned by SaveQueue and is handled elsewhere.
+		this.#saveQueue.clearDocumentState();
 
 		// Undo and redo only apply to edits made since this document was loaded
 		this.#hist.undo.clearEntries();
