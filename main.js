@@ -1674,7 +1674,6 @@ evt('.ed-recent', 'click', e => {
 		remove.dataset.remove = data;
 		remove.textContent = '\u00d7';  // Multiplication sign simlar to x
 		remove.title = `${_('Remove from browser storage')}: ${label}`;
-		remove.setAttribute('aria-label', remove.title);
 
 		item.append(a, remove);
 		t.appendChild(item);

@@ -108,9 +108,6 @@ class LanguageManager extends EventTarget {
 		this.#switcher.value = this.#activeLanguage;
 		if (this.#switcher.value !== this.#activeLanguage)
 			throw new Error(`Language switcher has no option for: ${this.#activeLanguage}`);
-
-		// Give the select an accessible name; its selected option exposes the current value separately
-		this.#switcher.setAttribute('aria-label', this.translate('Language'));
 	}
 
 	#isSupported(language) {

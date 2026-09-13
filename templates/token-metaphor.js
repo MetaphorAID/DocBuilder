@@ -193,7 +193,6 @@
 			item.className = 'legend-item';
 			const indicator = document.createElement('span');
 			indicator.className = indicatorClass;
-			if (hidden) indicator.setAttribute('aria-hidden', 'true');
 			item.append(indicator, document.createTextNode(_(label)));
 			legend.appendChild(item);
 		};
