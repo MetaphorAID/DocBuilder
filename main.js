@@ -428,8 +428,7 @@ class DocumentManager {
 			documentId => this.#saveQueue.clearFailures(documentId)
 		);
 
-		this.#editor.setChangeHandler((chunks, values, context) =>
-			this.#undoManager.commitEdit(chunks, values, context));
+		this.#editor.setChangeHandler(change => this.#undoManager.commitEdit(change));
 
 		// Init the database and rebuild recent files list
 		this.#init().catch(err => addMsg(_('Database error: ') + err, 'error'));
@@ -1043,7 +1042,7 @@ class Editor {
 
 			// UndoManager owns the asynchronous render batch together with the serialized state transition
 			return Promise.resolve().then(() =>
-				this.#onchangeCallback(chunks, values, {editorState, cids: currentlyVisible, hids}));
+				this.#onchangeCallback({chunks, values, editorState, cids: currentlyVisible, hids}));
 		}
 	}
 
@@ -1417,26 +1416,24 @@ class UndoManager {
 		return {chunksToSave, hiddenToRender};
 	}
 
-	async commitEdit(chunks, values, context = {}) {
+	async commitEdit({chunks, values, editorState, cids, hids}) {
 		const changeIds = Object.keys(chunks);
 		const nextValues = structuredClone(values);
 		const expectedValues = Object.fromEntries(changeIds.map(cid => [cid, chunks[cid].value]));
-		// Context consists of editorState, cids and hids
-		const editorState = context.editorState || this.#editor.captureEditorState();
 		// cids contains all currently displayed chunk IDs for rerendering, not only the changed IDs; hidden changes are tracked separately in hids.
-		const cids = structuredClone(context.cids ?? this.#editor.getVisible());
-		const hids = structuredClone(context.hids ?? changeIds.filter(cid => cid[0] === 'h').map(cid => cid.substring(1)));
+		const renderCids = structuredClone(cids);
+		const renderHids = structuredClone(hids);
 
 		// Rendering is delayed until the operation queue becomes idle, preventing an intermediate edit render
 		// from overwriting the empty view or final viewport owned by a following undo/redo action
 		// Register it before queueing the operation because operation completion flushes this pending render.
-		this.#queueEditRender(editorState, cids, hids);
+		this.#queueEditRender(editorState, renderCids, renderHids);
 
 		// Return the serialized operation promise; the render itself is flushed by the operation bookkeeping above.
 		return this.enqueueOperation(editorState, async editorState => {
 			// Build the pair when this operation reaches the head of the queue, but only if its original
 			// precondition still holds. An edit that was based on a failed earlier edit must fail as well.
-			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids, expectedValues);
+			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, renderCids, expectedValues);
 			// The event produced no effective value change, so there is nothing to persist or undo
 			if (!entries) return;
 
