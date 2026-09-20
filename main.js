@@ -507,6 +507,7 @@ class DocumentManager {
 	}
 
 	async deleteDocument(fileName) {
+		// Ignore malformed remove events instead of deleting an empty database key
 		if (!fileName) return;
 
 		const isActiveDocument = this.#editor.id === fileName;
@@ -560,6 +561,7 @@ class DocumentManager {
 	}
 
 	async export(disabled) {
+		// A disabled export button can still receive a delegated click event
 		if (disabled) return;
 
 		const editorState = this.#editor.captureEditorState();
@@ -842,6 +844,7 @@ class Editor {
 		// Clean up rendered chunks. Let templates release per-render state before their DOM disappears
 		each('[data-cid]', input => {
 			const chunk = this.chunks[input.dataset.cid];
+			// The DOM may outlive the model briefly while a document view is being replaced
 			if (!chunk) return;
 
 			// Call the template's remove() function on the chunk to clear it's state
@@ -905,6 +908,7 @@ class Editor {
 		// Tell the templates to render the hidden chunks in hids
 		if (hids.length) dispatchAppEvent(this.dom, new CustomEvent('change-hidden', {detail: hids}));
 
+		// An empty list is used deliberately to clear the view without rendering a page
 		if (!cids.length) return;
 
 		// Render the chunks
@@ -1044,6 +1048,7 @@ class Editor {
 	}
 
 	#recordChangeForChunk(chunk, chunk_value, key, chunks, values) {
+		// Filler and overlapping chunks have no owning ID and must not be persisted
 		if (!chunk.id) return;
 
 		// Normalise the line ending to ensure comparison isn't affected
@@ -1292,6 +1297,7 @@ class UndoManager {
 		// Serialize the whole state transition, not only its IndexedDB write. This keeps a failed operation's
 		// rollback ahead of every later editor mutation and makes the pre-operation snapshot authoritative
 		const queued = this.#operationQueue.then(() => {
+			// A document switch or reload invalidates work queued for the previous editor state
 			if (!this.#editor.isEditorStateActive(editorState)) return;
 			return operation();
 		});
@@ -1429,6 +1435,7 @@ class UndoManager {
 			// Build the pair when this operation reaches the head of the queue, but only if its original
 			// precondition still holds. An edit that was based on a failed earlier edit must fail as well.
 			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids, expectedValues);
+			// The event produced no effective value change, so there is nothing to persist or undo
 			if (!entries) return;
 
 			// Any new edit invalidates Redo history
@@ -1651,6 +1658,7 @@ function showDocumentLoadError(err) {
 
 	const message = err?.message || String(err || '');
 	const hasCause = err && typeof err === 'object' && 'cause' in err;
+	// There is nothing useful to show when the failure has no message
 	if (!message) return;
 
 	// Wrapped load errors keep their low-level cause here; otherwise log the original error
@@ -1695,6 +1703,7 @@ evt('.ed-undo', 'click', () => documents.undo().catch(err => addMsg(err.message,
 evt('.ed-redo', 'click', () => documents.redo().catch(err => addMsg(err.message, 'error')));
 
 languageManager.addEventListener('change', () => {
+	// Language changes before the first document is opened only affect the UI labels
 	if (!editor.id) return;
 
 	const currentlyVisible = editor.getVisible();
