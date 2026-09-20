@@ -562,10 +562,10 @@ class DocumentManager {
 	async export(disabled) {
 		if (disabled) return;
 
-		return this.#undoManager.runExclusive(async editorState => {
+		const editorState = this.#editor.captureEditorState();
+		return this.#undoManager.enqueueOperation(editorState, async () => {
 			// Capture and persist only after every earlier edit has either committed or completed its rollback.
-			// Use the serialized editorState snapshot so export stays aligned with the state that was validated
-			// by runExclusive() before the async save started.
+			// Use the serialized editorState snapshot so export stays aligned with the state captured before queueing.
 			const data = await this.#persist(editorState.id, editorState.chunks);
 
 			// Saving can finish after the user has moved on to another document or reloaded the same one.
@@ -1280,7 +1280,7 @@ class UndoManager {
 		for (const hid of hids) pending.hids.add(hid);
 	}
 
-	#enqueueOperation(editorState, operation) {
+	enqueueOperation(editorState, operation) {
 		this.#markOperationPending(editorState.id, 1);
 
 		// Serialize the whole state transition, not only its IndexedDB write. This keeps a failed operation's
@@ -1298,11 +1298,6 @@ class UndoManager {
 
 	hasPendingOperation(documentId) {
 		return !!documentId && !!this.#pendingOperations.get(documentId);
-	}
-
-	runExclusive(operation) {
-		const editorState = this.#editor.captureEditorState();
-		return this.#enqueueOperation(editorState, () => operation(editorState));
 	}
 
 	#forEachHistoryChunk(data, callback) {
@@ -1420,7 +1415,7 @@ class UndoManager {
 		// from overwriting the empty view or final viewport owned by a following undo/redo action
 		this.#queueEditRender(editorState, cids, hids);
 
-		return this.#enqueueOperation(editorState, async () => {
+		return this.enqueueOperation(editorState, async () => {
 			// Build the pair when this operation reaches the head of the queue. If an earlier edit failed,
 			// its rollback has already completed and therefore becomes the correct baseline for this edit
 			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids);
@@ -1609,12 +1604,12 @@ class UndoManager {
 
 	undo() {
 		const editorState = this.#editor.captureEditorState();
-		return this.#enqueueOperation(editorState, () => this.#apply(false, editorState));
+		return this.enqueueOperation(editorState, () => this.#apply(false, editorState));
 	}
 
 	redo() {
 		const editorState = this.#editor.captureEditorState();
-		return this.#enqueueOperation(editorState, () => this.#apply(true, editorState));
+		return this.enqueueOperation(editorState, () => this.#apply(true, editorState));
 	}
 
 }
