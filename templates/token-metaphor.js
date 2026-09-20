@@ -97,8 +97,8 @@
 		return field === TOKEN_SURFACE_FIELD ? getTokenSurface(token) : sel(field, token);
 	}
 
-	function getTokenFieldText(token, field, decode = true) {
-		return xmlToText(getTokenField(token, field)?.innerHTML, decode);
+	function getTokenFieldText(token, field) {
+		return getTokenField(token, field)?.textContent.trim() || '';
 	}
 
 	function format(name, el) {

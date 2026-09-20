@@ -32,6 +32,10 @@
 		'Int\u00e9zm\u00e9nyn\u00e9v': 'Intézménynév'
 	}
 
+	function getAnnotationText(annotation) {
+		return annotation?.textContent.trim().replace(/\s+/g, ' ') || '';
+	}
+
 	Locale['Detailed'] = 'Részletes';
 	Locale['Simple'] = 'Egyszerű';
 	Locale['Re-Analyze'] = 'Új elemzés';
@@ -57,7 +61,7 @@
 
 				annotEl.dataset.aid = aid;
 				annotEl.className = 'annot';
-				annotEl.textContent = `${annot.getAttribute('entity')}: ${xmlToText(annot.innerHTML, true)}`;
+				annotEl.textContent = `${annot.getAttribute('entity')}: ${getAnnotationText(annot)}`;
 				sel('#footer').appendChild(annotEl);
 			}
 		}, x);
@@ -472,7 +476,7 @@
 					const list = {};
 					for (const i in items || {}) {
 						if (!filterFun(items[i])) continue;
-						list[prefix + i] = xmlToText(_annots.list[i].innerHTML, true);
+						list[prefix + i] = getAnnotationText(_annots.list[i]);
 					}
 					return list;
 				};
