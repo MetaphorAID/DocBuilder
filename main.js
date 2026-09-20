@@ -570,9 +570,7 @@ class DocumentManager {
 
 			// Saving can finish after the user has moved on to another document or reloaded the same one.
 			// In that case the editor state no longer matches the captured export state, so avoid a stale download.
-			if (this.#editor.id !== editorState.id ||
-				this.#editor.chunks !== editorState.chunks ||
-				this.#editor.hidden !== editorState.hidden)
+			if (!this.#editor.isEditorStateActive(editorState))
 				return addMsg(_('Export cancelled because the document changed before the save finished, so the stale export was not downloaded.'), 'error');
 
 			addMsg(_('Document Saved'), 'success');
@@ -949,6 +947,21 @@ class Editor {
 		return Array.from(this.dom.querySelectorAll('[data-cid]'), el => Number(el.dataset.cid));
 	}
 
+	captureEditorState() {
+		return {
+			id: this.id,
+			chunks: this.chunks,
+			hidden: this.hidden
+		};
+	}
+
+	isEditorStateActive(editorState) {
+		// Checking the ID alone is not enough: the same document may have been reloaded while an operation was queued
+		return this.id === editorState.id &&
+			this.chunks === editorState.chunks &&
+			this.hidden === editorState.hidden;
+	}
+
 	#resetEditorState(dataId, chunks) {
 		// Reset the editor to a clean state
 		this.id = dataId;
@@ -1021,11 +1034,7 @@ class Editor {
 		if (Object.keys(chunks).length > 0) {
 			if (!this.#onchangeCallback) throw new Error('Editor change handler is not configured');
 
-			const editorState = {
-				id: this.id,
-				chunks: this.chunks,
-				hidden: this.hidden
-			};
+			const editorState = this.captureEditorState();
 			const currentlyVisible = this.getVisible();
 
 			// UndoManager owns the asynchronous render batch together with the serialized state transition
@@ -1240,21 +1249,6 @@ class UndoManager {
 		this.#pendingRender = null;
 	}
 
-	#captureEditorState() {
-		return {
-			id: this.#editor.id,
-			chunks: this.#editor.chunks,
-			hidden: this.#editor.hidden
-		};
-	}
-
-	#isEditorStateActive(editorState) {
-		// Checking the ID alone is not enough: the same document may have been reloaded while an operation was queued
-		return this.#editor.id === editorState.id &&
-			this.#editor.chunks === editorState.chunks &&
-			this.#editor.hidden === editorState.hidden;
-	}
-
 	#markOperationPending(documentId, delta) {
 		this.#pendingOperationCount += delta;
 		const pending = (this.#pendingOperations.get(documentId) || 0) + delta;
@@ -1268,7 +1262,7 @@ class UndoManager {
 			// Flush pending render
 			const pending = this.#pendingRender;
 			this.#pendingRender = null;
-			if (pending && this.#isEditorStateActive(pending.editorState))
+			if (pending && this.#editor.isEditorStateActive(pending.editorState))
 				this.#editor.renderPage(pending.cids, Array.from(pending.hids));
 		}
 	}
@@ -1292,7 +1286,7 @@ class UndoManager {
 		// Serialize the whole state transition, not only its IndexedDB write. This keeps a failed operation's
 		// rollback ahead of every later editor mutation and makes the pre-operation snapshot authoritative
 		const queued = this.#operationQueue.then(() => {
-			if (!this.#isEditorStateActive(editorState)) return;
+			if (!this.#editor.isEditorStateActive(editorState)) return;
 			return operation();
 		});
 		const tracked = queued.finally(() => this.#markOperationPending(editorState.id, -1));
@@ -1307,7 +1301,7 @@ class UndoManager {
 	}
 
 	runExclusive(operation) {
-		const editorState = this.#captureEditorState();
+		const editorState = this.#editor.captureEditorState();
 		return this.#enqueueOperation(editorState, () => operation(editorState));
 	}
 
@@ -1418,7 +1412,7 @@ class UndoManager {
 		const changeIds = Object.keys(chunks);
 		const nextValues = structuredClone(values);
 		// Context consists of editorState, cids and hids
-		const editorState = context.editorState || this.#captureEditorState();
+		const editorState = context.editorState || this.#editor.captureEditorState();
 		const cids = structuredClone(context.cids ?? this.#editor.getVisible());
 		const hids = structuredClone(context.hids ?? changeIds.filter(cid => cid[0] === 'h').map(cid => cid.substring(1)));
 
@@ -1439,7 +1433,7 @@ class UndoManager {
 			try {
 				await this.#persistFun(editorState.id, chunksToSave);
 			} catch (err) {
-				if (this.#isEditorStateActive(editorState)) {
+				if (this.#editor.isEditorStateActive(editorState)) {
 					// The operation queue prevents later managed edits from mutating the model before this rollback.
 					// Still verify the applied values so an unknown external mutation is never overwritten silently
 					if (this.#entryMatchesEditor(entries.forward, true)) {
@@ -1464,7 +1458,7 @@ class UndoManager {
 			}
 
 			// From here on persistence has succeeded: later bookkeeping errors must never roll the model back
-			if (!this.#isEditorStateActive(editorState)) return;
+			if (!this.#editor.isEditorStateActive(editorState)) return;
 			try {
 				this.#hist.undo.addEntry(entries.reverse);
 				addMsg(_('Document Saved'), 'success');
@@ -1511,7 +1505,7 @@ class UndoManager {
 				// Editor is changed, persist changes
 				await this.#persistFun(entry.id, chunksToSave);
 			} catch (err) {
-				if (this.#isEditorStateActive(editorState)) {
+				if (this.#editor.isEditorStateActive(editorState)) {
 					// IndexedDB transactions are atomic, and the operation queue has completed every earlier rollback
 					// before this action started. Therefore reverseEntry contains the persisted (pre-action) model
 					if (!this.#entryMatchesEditor(entry, true)) {
@@ -1545,7 +1539,7 @@ class UndoManager {
 
 			// Persistence still targets the document captured by entry.id, but load() may have replaced the shared editor
 			// while the save was queued. A stale history action must not update the new view or its history stacks
-			if (!this.#isEditorStateActive(editorState)) return;
+			if (!this.#editor.isEditorStateActive(editorState)) return;
 
 			// A successful history action restores the viewport recorded with the target entry
 			renderCids = entry.cids;
@@ -1569,7 +1563,7 @@ class UndoManager {
 			}
 		} finally {
 			// Render success or rollback only if this operation still owns the active editor state
-			if (this.#isEditorStateActive(editorState)) this.#editor.renderPage(renderCids, renderHidden);
+			if (this.#editor.isEditorStateActive(editorState)) this.#editor.renderPage(renderCids, renderHidden);
 		}
 	}
 
@@ -1608,18 +1602,18 @@ class UndoManager {
 			// entry has already been popped from the source stack (undo or redo)
 			// Put it back only if rollback restored its expected precondition; otherwise both stacks stay cleared
 			if (!err?.unsafeHistoryRollback &&
-				this.#isEditorStateActive(editorState) && this.#entryMatchesEditor(entry)) from.addEntry(entry);
+				this.#editor.isEditorStateActive(editorState) && this.#entryMatchesEditor(entry)) from.addEntry(entry);
 			throw err;
 		});
 	}
 
 	undo() {
-		const editorState = this.#captureEditorState();
+		const editorState = this.#editor.captureEditorState();
 		return this.#enqueueOperation(editorState, () => this.#apply(false, editorState));
 	}
 
 	redo() {
-		const editorState = this.#captureEditorState();
+		const editorState = this.#editor.captureEditorState();
 		return this.#enqueueOperation(editorState, () => this.#apply(true, editorState));
 	}
 
