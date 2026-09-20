@@ -1583,7 +1583,7 @@ class UndoManager {
 		const from = this.#hist[sourceStack];
 		const to = this.#hist[targetStack];
 
-		// Pop history (undo or redo) if any
+		// Pop the latest history entry; if there is none, there is nothing to undo or redo
 		const entry = from.takeLatestEntry();
 		if (!entry) return Promise.resolve();
 
