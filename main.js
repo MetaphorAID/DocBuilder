@@ -1299,7 +1299,7 @@ class UndoManager {
 		const queued = this.#operationQueue.then(() => {
 			// A document switch or reload invalidates work queued for the previous editor state
 			if (!this.#editor.isEditorStateActive(editorState)) return;
-			return operation();
+			return operation(editorState);
 		});
 		const tracked = queued.finally(() => this.#markOperationFinished(editorState.id));
 
@@ -1431,7 +1431,7 @@ class UndoManager {
 		// from overwriting the empty view or final viewport owned by a following undo/redo action
 		this.#queueEditRender(editorState, cids, hids);
 
-		return this.enqueueOperation(editorState, async () => {
+		return this.enqueueOperation(editorState, async editorState => {
 			// Build the pair when this operation reaches the head of the queue, but only if its original
 			// precondition still holds. An edit that was based on a failed earlier edit must fail as well.
 			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids, expectedValues);
@@ -1625,12 +1625,12 @@ class UndoManager {
 
 	undo() {
 		const editorState = this.#editor.captureEditorState();
-		return this.enqueueOperation(editorState, () => this.#apply(false, editorState));
+		return this.enqueueOperation(editorState, editorState => this.#apply(false, editorState));
 	}
 
 	redo() {
 		const editorState = this.#editor.captureEditorState();
-		return this.enqueueOperation(editorState, () => this.#apply(true, editorState));
+		return this.enqueueOperation(editorState, editorState => this.#apply(true, editorState));
 	}
 
 }
