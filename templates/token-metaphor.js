@@ -9,11 +9,8 @@
 		CONTEXTUAL_INDEX: 'contextualIndex',
 	});
 
-	const MEANING_FIELDS = Object.freeze([
-		MEANING_FIELD.PRIMARY,
-		MEANING_FIELD.OTHER,
-		MEANING_FIELD.CONTEXTUAL_INDEX,
-	]);
+	// Keep the named field values and their form order in one place.
+	const MEANING_FIELDS = Object.freeze(Object.values(MEANING_FIELD));
 
 	const INDIRECT = {
 		'0': '-',
