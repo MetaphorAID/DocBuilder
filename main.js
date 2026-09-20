@@ -1433,6 +1433,10 @@ class UndoManager {
 
 			// Any new edit invalidates Redo history
 			this.#hist.redo.clearEntries();
+			// chunksToSave contains both visible and hidden chunks. hiddenToRender is only needed for the
+			// template-owned UI; the queued render already carries these IDs and runs after the operation,
+			// including after a failed persistence and model rollback. Persistence is one atomic update, so
+			// a failure leaves IndexedDB unchanged and the catch block restores the editor model as well.
 			const {chunksToSave} = this.#applyChunksToEditor(entries.forward);
 
 			try {
