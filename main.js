@@ -1414,6 +1414,7 @@ class UndoManager {
 		const nextValues = structuredClone(values);
 		// Context consists of editorState, cids and hids
 		const editorState = context.editorState || this.#editor.captureEditorState();
+		// cids contains all currently displayed chunk IDs for rerendering, not only the changed IDs; hidden changes are tracked separately in hids.
 		const cids = structuredClone(context.cids ?? this.#editor.getVisible());
 		const hids = structuredClone(context.hids ?? changeIds.filter(cid => cid[0] === 'h').map(cid => cid.substring(1)));
 
