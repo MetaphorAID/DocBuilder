@@ -1357,7 +1357,7 @@ class UndoManager {
 		return {chunks, values};
 	}
 
-	#createEditEntries(documentId, changeIds, values, cids) {
+	#createEditEntries(documentId, changeIds, values, cids, expectedValues = {}) {
 		const forwardChunks = {};
 		const forwardValues = {};
 		const reverseChunks = {};
@@ -1367,6 +1367,8 @@ class UndoManager {
 			const store = cid[0] === 'h' ? 'hidden' : 'chunks';
 			const current = this.#editor[store][cid.substring(1)];
 			if (!current) throw new Error(`History chunk not found in editor store: ${cid}`);
+			if (expectedValues[cid] !== undefined && current.value !== expectedValues[cid])
+				throw new Error(_('Document changed before the edit could be applied'));
 
 			const nextValue = values[cid];
 			if (current.value === nextValue) continue;
@@ -1412,6 +1414,7 @@ class UndoManager {
 	async commitEdit(chunks, values, context = {}) {
 		const changeIds = Object.keys(chunks);
 		const nextValues = structuredClone(values);
+		const expectedValues = Object.fromEntries(changeIds.map(cid => [cid, chunks[cid].value]));
 		// Context consists of editorState, cids and hids
 		const editorState = context.editorState || this.#editor.captureEditorState();
 		// cids contains all currently displayed chunk IDs for rerendering, not only the changed IDs; hidden changes are tracked separately in hids.
@@ -1423,9 +1426,9 @@ class UndoManager {
 		this.#queueEditRender(editorState, cids, hids);
 
 		return this.enqueueOperation(editorState, async () => {
-			// Build the pair when this operation reaches the head of the queue. If an earlier edit failed,
-			// its rollback has already completed and therefore becomes the correct baseline for this edit
-			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids);
+			// Build the pair when this operation reaches the head of the queue, but only if its original
+			// precondition still holds. An edit that was based on a failed earlier edit must fail as well.
+			const entries = this.#createEditEntries(editorState.id, changeIds, nextValues, cids, expectedValues);
 			if (!entries) return;
 
 			// Any new edit invalidates Redo history
