@@ -1249,14 +1249,20 @@ class UndoManager {
 		this.#pendingRender = null;
 	}
 
-	#markOperationPending(documentId, delta) {
-		this.#pendingOperationCount += delta;
-		const pending = (this.#pendingOperations.get(documentId) || 0) + delta;
-		if (pending > 0) {
-			this.#pendingOperations.set(documentId, pending);
-		} else {
-			this.#pendingOperations.delete(documentId);
-		}
+	#markOperationStarted(documentId) {
+		this.#pendingOperationCount++;
+		const pending = (this.#pendingOperations.get(documentId) ?? 0) + 1;
+		this.#pendingOperations.set(documentId, pending);
+	}
+
+	#markOperationFinished(documentId) {
+		const pending = this.#pendingOperations.get(documentId);
+		if (!pending) throw new Error('No pending operation found');
+
+		if (pending === 1) this.#pendingOperations.delete(documentId);
+		else this.#pendingOperations.set(documentId, pending - 1);
+
+		this.#pendingOperationCount--;
 
 		if (!this.#pendingOperationCount) {
 			// Flush pending render
@@ -1281,7 +1287,7 @@ class UndoManager {
 	}
 
 	enqueueOperation(editorState, operation) {
-		this.#markOperationPending(editorState.id, 1);
+		this.#markOperationStarted(editorState.id);
 
 		// Serialize the whole state transition, not only its IndexedDB write. This keeps a failed operation's
 		// rollback ahead of every later editor mutation and makes the pre-operation snapshot authoritative
@@ -1289,7 +1295,7 @@ class UndoManager {
 			if (!this.#editor.isEditorStateActive(editorState)) return;
 			return operation();
 		});
-		const tracked = queued.finally(() => this.#markOperationPending(editorState.id, -1));
+		const tracked = queued.finally(() => this.#markOperationFinished(editorState.id));
 
 		// A rejected operation must not poison the queue tail; its caller still receives the rejection via tracked
 		this.#operationQueue = tracked.catch(() => {});
