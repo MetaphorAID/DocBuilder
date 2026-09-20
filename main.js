@@ -1728,6 +1728,7 @@ evtDelegated(document, '.template-select', 'click', async function () {
 
 		// Find and load the selected template
 		const templateInfo = await templates.getTemplateById(this.dataset.template);
+		// Keep the picker open when the template is unavailable so the user can retry with another one.
 		if (!templateInfo) return addMsg(_('Template not found: ') + this.dataset.template, 'error');
 
 		trg(this.closest('.tooltip'), 'close');
